@@ -1,0 +1,3 @@
+{"idx": 0, "problem": "设$\\mathbb{F}_{81}$为$81$元的有限域。$T=\\{\\alpha\\in\\mathbb{F}_{81}|\\mathbb{F}_{81}=\\mathbb{F}_3(\\alpha)\\}$。求$T$中元素的个数。", "answer": "72", "subject": "抽象代数", "source": "sample"}
+{"idx": 1, "problem": "Let $f_{\\text{inv}} : \\mathbb{R} \\to \\mathbb{R}$ be the inverse function of $f(x) = x^7 + x^5 + 3$. Put $F(x)=\\int_x^{-17} f_{\\text{inv}}(t)dt$. Find the numerical value of $F'(5)$.", "answer": "-1", "subject": "测度积分", "source": "sample"}
+{"idx": 2, "problem": "设函数 $ f(z) = \\frac{1}{(z-1)(z-2)^2(z-3)^3} $，其中 $ z $ 为复变量。求 $ f(z) $ 在简单极点 $ z = 1 $ 处的留数。", "answer": "-1/8", "subject": "复分析", "source": "sample"}

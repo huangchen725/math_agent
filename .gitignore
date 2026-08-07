@@ -1,0 +1,21 @@
+# API key —— 绝对不能推到仓库
+.env
+
+# 运行产物
+outputs/
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# 系统
+.DS_Store
+Thumbs.db
