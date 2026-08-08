@@ -29,33 +29,14 @@ from domain_prompts import get_domain_prompt
 
 # ==================== 提示词设计 ====================
 
-POLICY_PROMPT = """你是一个严谨的数学推理智能体，擅长解决从代数、分析到拓扑、运筹等多领域的数学问题。
+POLICY_PROMPT = """你是数学推理智能体。解题后必须单独一行写：最终答案：XXX
 
-解题规范：
-1. 先分析题意，识别问题所属领域和关键条件。
-2. 规划求解思路：列出关键步骤。
-3. 逐步推导，遇到具体计算时调用工具验证（解方程、求导、积分、留数等）。
-4. 解题完成后，必须单独一行写出：最终答案：XXX
-
-答案格式要求：
-- 必须有"最终答案："这四个字开头的一行
-- 答案尽量简洁：纯数字、分数或简单表达式（如 72, -1, -1/8, 3/10）
-- 分数用 a/b 格式，不要用 LaTeX
-- 这一行只包含答案，不要加单位或多余文字
-
-示例：
-最终答案：72
+答案格式：纯数字或a/b分数，不用LaTeX。如：最终答案：-1/8
 """
 
-POLICY_NO_TOOL_PROMPT = """你是一个严谨的数学推理智能体。请用纯推理（不调用工具）解决以下数学问题。
+POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题，不要调用工具。解题后必须单独一行写：最终答案：XXX
 
-解题规范：
-1. 先分析题意和关键条件。
-2. 逐步推导，每步检查计算。
-3. 解题完成后，必须单独一行写出：最终答案：XXX
-
-答案格式：纯数字或 a/b 分数格式，不要用 LaTeX。
-示例：最终答案：-1/8
+答案格式：纯数字或a/b分数。如：最终答案：-1/8
 """
 
 VERIFIER_PROMPT = """你是一个数学答案验证器。请判断候选解答是否正确解决了题目。
@@ -110,28 +91,29 @@ DOMAIN_HINTS = {
 
 @dataclass
 class AgentConfig:
-    """智能体配置。"""
-    # 候选生成
-    tool_candidates: int = 2           # 工具增强候选数
+    """智能体配置（v3：基于第一次评测日志优化）。"""
+    # 候选生成（减量控时）
+    tool_candidates: int = 1           # 工具增强候选数（2→1，减半API调用）
     plain_candidates: int = 1          # 纯推理候选数
-    verifier_voting_times: int = 2     # 每个候选验证投票次数
+    verifier_voting_times: int = 1     # 每个候选验证投票次数（2→1，减半）
     # 温度
     policy_temperature: float = 0.6    # 候选生成温度
     planner_temperature: float = 0.2   # 规划温度
     verifier_temperature: float = 0.0  # 验证温度
     reflection_temperature: float = 0.3 # 反思温度
-    # token
-    max_tokens: int = 8192             # 候选生成 token
+    # token（提量防截断）
+    max_tokens: int = 16384            # 候选生成 token（8192→16384，防thinking截断）
     verifier_max_tokens: int = 1024    # 验证 token
+    fallback_max_tokens: int = 512    # 截断兜底重试 token
     # thinking mode
     policy_thinking_mode: bool = True
     verifier_thinking_mode: bool = False
     planner_thinking_mode: bool = False
     # 功能开关
-    enable_planner: bool = True
+    enable_planner: bool = False      # 关闭规划（省1次API调用）
     enable_tools: bool = True
-    enable_reflection: bool = True
-    max_tool_rounds: int = 5           # 工具调用最大轮数
+    enable_reflection: bool = False   # 关闭反思（省API调用，控时）
+    max_tool_rounds: int = 3           # 工具调用最大轮数（5→3）
 
 
 class ReasoningAgent:
@@ -152,16 +134,39 @@ class ReasoningAgent:
         )
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
-        """主求解流程。"""
+        """主求解流程。全局 try-except 防止返回空答案。"""
         idx = metadata.get("idx", 0)
         trace: List[Dict] = []
 
-        # 阶段1：题型识别与规划
-        domain_name, domain_prompt, plan_info = self._plan(problem, idx, trace)
+        try:
+            return self._solve_impl(problem, idx, trace)
+        except Exception as e:
+            trace.append({"step": "global_error", "content": f"{type(e).__name__}: {str(e)[:300]}"})
+            # 兜底：尝试快速重答
+            fallback = self._quick_fallback(problem, idx, trace)
+            return {
+                "final_response": fallback or "未解出",
+                "trace": trace,
+            }
 
-        # 阶段2：多候选生成（工具增强 + 纯推理混合，注入领域专属prompt）
+    def _solve_impl(self, problem: str, idx: int, trace: List[Dict]) -> Dict:
+        """实际求解逻辑。"""
+        # 阶段1：题型识别与规划（默认关闭省时）
+        domain_name, domain_prompt, plan_info = self._plan(problem, idx, trace)
+        # 无规划时仍尝试领域路由
+        if not domain_prompt:
+            domain_prompt = get_domain_prompt("")
+
+        # 阶段2：多候选生成
         candidates, gen_trace = self._generate_candidates(problem, idx, domain_prompt, plan_info)
         trace.extend(gen_trace)
+
+        # 截断兜底：候选为空或都没答案时快速重答
+        if not candidates or all(not self._extract_answer(c) for c in candidates):
+            trace.append({"step": "truncated_fallback", "content": "所有候选被截断或无答案，启动兜底"})
+            fb = self._quick_fallback(problem, idx, trace)
+            if fb:
+                return {"final_response": fb, "trace": trace}
 
         # 阶段3：验证投票
         scored = []
@@ -177,7 +182,7 @@ class ReasoningAgent:
             })
             trace.extend(verify_trace)
 
-        # 阶段4：反思纠错（如果最优候选验证不通过，反馈重试）
+        # 阶段4：反思纠错（默认关闭省时）
         if self.config.enable_reflection and scored:
             best_so_far = max(scored, key=lambda x: x["confidence"])
             if best_so_far["raw_confidence"] < 0.5 and best_so_far["answer"]:
@@ -197,15 +202,37 @@ class ReasoningAgent:
                     })
                     trace.extend(refl_trace)
                     trace.extend(refl_verify)
-                    trace.append({"step": "reflection", "content": f"反思重试答案={refl_answer}, 置信={refl_confidence:.2f}"})
 
-        # 阶段5：Self-consistency 聚合 + 答案归一化
+        # 阶段5：Self-consistency 聚合
         final_answer = self._aggregate_answers(scored, trace)
 
+        # 最终兜底：如果聚合结果为空，取第一个候选的末行
+        if not final_answer and scored:
+            final_answer = self._extract_answer(scored[0]["content"]) or "未解出"
+
         return {
-            "final_response": final_answer,
+            "final_response": final_answer or "未解出",
             "trace": trace,
         }
+
+    def _quick_fallback(self, problem: str, idx: int, trace: List[Dict]) -> str:
+        """截断/异常兜底：关thinking+短token+只要答案。"""
+        try:
+            msg = AgentMessage(
+                sender="user",
+                content=f"{problem}\n\n请直接给出最终答案，不要详细推导。格式：最终答案：XXX",
+            )
+            resp = self.plain_agent(
+                msg, session_id=f"{idx}:fallback",
+                temperature=0.0,
+                max_tokens=self.config.fallback_max_tokens,
+                thinking_mode=False,
+            )
+            answer = self._extract_answer(resp.content)
+            trace.append({"step": "fallback_result", "content": answer[:100]})
+            return answer or resp.content.strip()[:200]
+        except Exception:
+            return ""
 
     # ---------- 阶段1：规划 ----------
     def _plan(self, problem: str, idx: int, trace: List[Dict]) -> Tuple[str, str, str]:
