@@ -35,8 +35,13 @@ POLICY_PROMPT = """你是数学推理智能体。
 最终答案：XXX
 （然后给出简要推导，不超过500字）
 
-答案格式：纯数字或a/b分数，不用LaTeX。
-如果无法确定精确答案，给出最佳估计值。
+答案格式：
+- 纯数字或a/b分数，不用LaTeX
+- 多个解用英文逗号或换行分隔，如：2,3 或 2\n3
+- 如果无法确定精确答案，给出最佳估计值
+
+示例：
+最终答案：72
 """
 
 POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
@@ -100,11 +105,11 @@ DOMAIN_HINTS = {
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v3：基于第一次评测日志优化）。"""
-    # 候选生成（减量控时）
-    tool_candidates: int = 1           # 工具增强候选数（2→1，减半API调用）
+    """智能体配置（v5：保留v4安全配置+多解prompt支持）。"""
+    # 候选生成（保持v4保守配置，v5多候选反而降低正确率）
+    tool_candidates: int = 1           # 工具增强候选数
     plain_candidates: int = 1          # 纯推理候选数
-    verifier_voting_times: int = 1     # 每个候选验证投票次数（2→1，减半）
+    verifier_voting_times: int = 1     # 每个候选验证投票次数
     # 温度
     policy_temperature: float = 0.6    # 候选生成温度
     planner_temperature: float = 0.2   # 规划温度
@@ -114,15 +119,15 @@ class AgentConfig:
     max_tokens: int = 4096             # 平台强制4096，无法覆盖
     verifier_max_tokens: int = 1024    # 验证 token
     fallback_max_tokens: int = 512    # 截断兜底重试 token
-    # thinking mode（关闭！4096 token不够thinking用，导致38%截断）
-    policy_thinking_mode: bool = False  # v4: 关闭thinking防截断
+    # thinking mode（关闭避免4096截断）
+    policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
     planner_thinking_mode: bool = False
     # 功能开关
-    enable_planner: bool = False      # 关闭规划（省1次API调用）
+    enable_planner: bool = False
     enable_tools: bool = True
-    enable_reflection: bool = False   # 关闭反思（省API调用，控时）
-    max_tool_rounds: int = 3           # 工具调用最大轮数（5→3）
+    enable_reflection: bool = False
+    max_tool_rounds: int = 3
 
 
 class ReasoningAgent:
