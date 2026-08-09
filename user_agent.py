@@ -29,14 +29,23 @@ from domain_prompts import get_domain_prompt
 
 # ==================== 提示词设计 ====================
 
-POLICY_PROMPT = """你是数学推理智能体。解题后必须单独一行写：最终答案：XXX
+POLICY_PROMPT = """你是数学推理智能体。
 
-答案格式：纯数字或a/b分数，不用LaTeX。如：最终答案：-1/8
+【重要】解题时必须先写答案行，再写推导过程：
+最终答案：XXX
+（然后给出简要推导，不超过500字）
+
+答案格式：纯数字或a/b分数，不用LaTeX。
+如果无法确定精确答案，给出最佳估计值。
 """
 
-POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题，不要调用工具。解题后必须单独一行写：最终答案：XXX
+POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 
-答案格式：纯数字或a/b分数。如：最终答案：-1/8
+【重要】必须先写答案行，再写推导：
+最终答案：XXX
+（然后简要推导，不超过500字）
+
+答案格式：纯数字或a/b分数。
 """
 
 VERIFIER_PROMPT = """你是一个数学答案验证器。请判断候选解答是否正确解决了题目。
@@ -101,12 +110,12 @@ class AgentConfig:
     planner_temperature: float = 0.2   # 规划温度
     verifier_temperature: float = 0.0  # 验证温度
     reflection_temperature: float = 0.3 # 反思温度
-    # token（提量防截断）
-    max_tokens: int = 16384            # 候选生成 token（8192→16384，防thinking截断）
+    # token（平台锁4096，max_tokens传了也没用）
+    max_tokens: int = 4096             # 平台强制4096，无法覆盖
     verifier_max_tokens: int = 1024    # 验证 token
     fallback_max_tokens: int = 512    # 截断兜底重试 token
-    # thinking mode
-    policy_thinking_mode: bool = True
+    # thinking mode（关闭！4096 token不够thinking用，导致38%截断）
+    policy_thinking_mode: bool = False  # v4: 关闭thinking防截断
     verifier_thinking_mode: bool = False
     planner_thinking_mode: bool = False
     # 功能开关
