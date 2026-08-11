@@ -22,25 +22,24 @@ from domain_prompts import get_domain_prompt
 
 # ==================== 提示词 ====================
 
-POLICY_PROMPT = """你是数学推理智能体。请解题并给出完整推理过程。
+POLICY_PROMPT = """你是数学推理智能体。解题并给出推理过程。
 
-格式要求：
-1. 先写解题思路（1-2句）
-2. 逐步推导（关键步骤都要写出）
-3. 最后单独一行写：最终答案：XXX
-
-答案格式：纯数字或 a/b 分数。多解用逗号分隔。
-重要：推理过程必须完整，不要省略关键步骤。
-"""
-
-POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题，给出完整过程。
-
-格式要求：
+格式：
 1. 解题思路
-2. 逐步推导
+2. 关键推导步骤
 3. 最终答案：XXX
 
-答案格式：纯数字或 a/b 分数。
+答案：纯数字或a/b分数。多解用逗号分隔。
+"""
+
+POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
+
+格式：
+1. 解题思路
+2. 关键推导
+3. 最终答案：XXX
+
+答案：纯数字或a/b分数。
 """
 
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
@@ -71,9 +70,9 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v6）。"""
-    tool_candidates: int = 2
-    plain_candidates: int = 1
+    """智能体配置（v7：冲分版）。"""
+    tool_candidates: int = 3
+    plain_candidates: int = 2
     verifier_voting_times: int = 1
     policy_temperature: float = 0.6
     planner_temperature: float = 0.2
@@ -94,6 +93,7 @@ class AgentConfig:
     enable_reflection: bool = True
     max_tool_rounds: int = 3
     enable_fallback: bool = True
+    critic_always: bool = True
 
 
 class ReasoningAgent:
@@ -150,10 +150,10 @@ class ReasoningAgent:
             })
             trace.extend(vt)
 
-        # 阶段4：Critic + 反思
+        # 阶段4：Critic + 反思（v7：始终触发Critic）
         if self.config.enable_critic and scored:
             best = max(scored, key=lambda x: x["confidence"])
-            if best["raw_confidence"] < 0.5 and best["answer"]:
+            if (self.config.critic_always or best["raw_confidence"] < 0.5) and best["answer"]:
                 criticism = self._critic(problem, best["content"], trace)
                 if criticism and "NO ERROR" not in criticism.upper():
                     refined = self._reflect(problem, best["content"], criticism, trace)
