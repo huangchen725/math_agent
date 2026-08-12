@@ -70,9 +70,9 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v7：冲分版）。"""
-    tool_candidates: int = 3
-    plain_candidates: int = 2
+    """智能体配置（v8：回退v6+Critic始终触发）。"""
+    tool_candidates: int = 2           # 回退到v6的2候选
+    plain_candidates: int = 1           # 回退到v6的1纯推理
     verifier_voting_times: int = 1
     policy_temperature: float = 0.6
     planner_temperature: float = 0.2
