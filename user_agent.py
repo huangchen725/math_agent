@@ -124,8 +124,11 @@ class ReasoningAgent:
             return {"final_response": fb or "未解出", "trace": trace}
 
     def _solve_impl(self, problem: str, idx: int, trace: List[Dict]) -> Dict:
-        # 阶段1：规划（默认关闭）
-        domain_prompt = get_domain_prompt("")
+        # 阶段1：关键词检测领域（不花API调用）
+        domain_name = self._detect_domain(problem)
+        domain_prompt = get_domain_prompt(domain_name)
+        if domain_name:
+            trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
         # 阶段2：多候选生成
         candidates, gen_trace = self._generate_candidates(problem, idx, domain_prompt)
@@ -150,10 +153,10 @@ class ReasoningAgent:
             })
             trace.extend(vt)
 
-        # 阶段4：Critic + 反思（v7：始终触发Critic）
+        # 阶段4：Critic + 反思（v10：回退到仅低置信度触发，省API+减截断）
         if self.config.enable_critic and scored:
             best = max(scored, key=lambda x: x["confidence"])
-            if (self.config.critic_always or best["raw_confidence"] < 0.5) and best["answer"]:
+            if best["raw_confidence"] < 0.5 and best["answer"]:
                 criticism = self._critic(problem, best["content"], trace)
                 if criticism and "NO ERROR" not in criticism.upper():
                     refined = self._reflect(problem, best["content"], criticism, trace)
@@ -303,6 +306,39 @@ class ReasoningAgent:
         best = max(with_ans, key=lambda x: x["confidence"])
         trace.append({"step": "select_final", "content": f"选最高分: {best['norm']}"})
         return best["norm"]
+
+    # 关键词→领域映射（不花API调用，秒判领域）
+    _DOMAIN_KEYWORDS = {
+        "抽象代数": ["群", "环", "域", "理想", "有限域", "伽罗瓦", "正规子群", "商群", "同态", "循环群"],
+        "数论": ["同余", "素数", "互素", "欧拉函数", "费马", "威尔逊", "中国剩余", "CRT", "模", "整除"],
+        "线性代数": ["矩阵", "行列式", "特征值", "特征向量", "秩", "线性空间", "向量空间", "特征多项式", "正交", "对角化"],
+        "实分析": ["级数", "收敛", "勒贝格", "一致收敛", "ε-δ", "夹逼", "柯西序列", "完备"],
+        "复分析": ["留数", "柯西", "解析函数", "极点", "整函数", "洛朗", "泰勒展开", "复变", "全纯"],
+        "微积分": ["导数", "积分", "极限", "偏导", "全微分", "链式法则", "分部积分", "换元", "反函数"],
+        "微分方程": ["常微分", "ODE", "齐次方程", "特解", "通解", "初值问题", "边界条件"],
+        "偏微分方程": ["偏微分", "PDE", "分离变量", "热传导", "波动方程", "拉普拉斯", "傅里叶级数", "边界条件"],
+        "泛函分析": ["Banach", "Hilbert", "赋范", "内积空间", "有界算子", "谱", "压缩映射", "不动点"],
+        "测度积分": ["测度", "Lebesgue", "可测", "σ代数", "反函数积分", "绝对连续", "Radon"],
+        "几何": ["三角形", "圆", "面积", "体积", "角度", "切线", "相似", "全等", "正弦定理", "余弦定理"],
+        "微分几何": ["曲率", "测地线", "第一基本形式", "第二基本形式", "Frenet", "挠率", "高斯曲率"],
+        "拓扑": ["基本群", "同伦", "同调", "拓扑空间", "连通", "紧致", "开集", "闭集", "欧拉示性数"],
+        "代数几何": ["仿射簇", "射影", "概形", "Bezout", "齐次坐标", "代数曲线", "除子"],
+        "运筹学": ["线性规划", "对偶", "最优", "目标函数", "约束", "可行域", "KKT", "单纯形"],
+        "概率论": ["概率", "期望", "方差", "分布", "贝叶斯", "马尔可夫", "随机变量", "独立"],
+        "组合": ["排列", "组合", "容斥", "生成函数", "Catalan", "二项式", "计数"],
+        "离散数学": ["图论", "树", "顶点", "边", "哈密顿", "欧拉回路", "二分图", "递推", "布尔"],
+    }
+
+    def _detect_domain(self, problem: str) -> str:
+        """关键词匹配检测数学子领域，不花API调用。"""
+        scores = {}
+        for domain, keywords in self._DOMAIN_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in problem)
+            if score > 0:
+                scores[domain] = score
+        if scores:
+            return max(scores, key=scores.get)
+        return ""
 
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
