@@ -1,9 +1,10 @@
-"""增强版数学推理智能体 v12 —— 回退v10提取逻辑+保留v11关键词扩充。
+"""增强版数学推理智能体 v13 —— max_tokens 4096→8192（官方确认cap是8192）。
 
-v12 改动（相对 v11）：
-- 回退 _extract_answer/_normalize/_numeric/_solve_plain 到 v10 稳定版
-- 保留 v11 的扩充关键词词典（18领域各15-20个关键词）
-- v11的激进归一化和截断检测导致-3题，v12修复
+v13 改动（相对 v12）：
+- max_tokens: 4096 → 8192
+- 官方 7/18 群消息确认平台 max_tokens cap 是 8192，不是 4096
+- 之前我们一直以为是 4096 硬限制，所以截断率一直 14-15%
+- 提升到 8192 预期截断率砍半，捞回 5-8 题
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
 """
@@ -67,7 +68,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v12：回退v10提取+保留v11关键词）。"""
+    """智能体配置（v13：max_tokens 4096→8192）。"""
     tool_candidates: int = 2           # 回退到v6的2候选
     plain_candidates: int = 1           # 回退到v6的1纯推理
     verifier_voting_times: int = 1
@@ -76,7 +77,7 @@ class AgentConfig:
     verifier_temperature: float = 0.0
     critic_temperature: float = 0.3
     reflection_temperature: float = 0.3
-    max_tokens: int = 4096
+    max_tokens: int = 8192             # v13: 官方确认cap是8192（之前传4096太亏）
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
@@ -94,7 +95,7 @@ class AgentConfig:
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v12。"""
+    """增强版数学推理智能体 v13。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
