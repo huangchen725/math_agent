@@ -1,9 +1,9 @@
-"""增强版数学推理智能体 v11 —— 关键词补全 + 答案抽取强化 + 截断根治。
+"""增强版数学推理智能体 v12 —— 回退v10提取逻辑+保留v11关键词扩充。
 
-v11 改动（相对 v10）：
-1. 关键词词典扩充：18 领域各加 5-10 个关键词，识别率 60%→80%+
-2. 答案抽取强化：小数↔分数互转、多解分隔符兼容、LaTeX 深度归一化
-3. 截断根治：所有候选都检测截断→立即 fallback 重试
+v12 改动（相对 v11）：
+- 回退 _extract_answer/_normalize/_numeric/_solve_plain 到 v10 稳定版
+- 保留 v11 的扩充关键词词典（18领域各15-20个关键词）
+- v11的激进归一化和截断检测导致-3题，v12修复
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
 """
@@ -67,7 +67,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v11：关键词补全+答案抽取强化+截断根治）。"""
+    """智能体配置（v12：回退v10提取+保留v11关键词）。"""
     tool_candidates: int = 2           # 回退到v6的2候选
     plain_candidates: int = 1           # 回退到v6的1纯推理
     verifier_voting_times: int = 1
@@ -94,7 +94,7 @@ class AgentConfig:
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v11。"""
+    """增强版数学推理智能体 v12。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
@@ -232,16 +232,10 @@ class ReasoningAgent:
     def _solve_plain(self, problem: str, domain_prompt: str) -> str:
         try:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
-            resp = self._chat(prefix, f"{problem}\n\n请给出完整解答。",
+            return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
                               temperature=self.config.policy_temperature,
                               max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
-            # v11：截断检测——没有"最终答案"且内容较长 → 立即 fallback 补答案
-            if self.config.enable_fallback and resp and "最终答案" not in resp and len(resp) > 2000:
-                fb = self._quick_fallback(problem, [])
-                if fb:
-                    resp = f"{resp}\n最终答案：{fb}"
-            return resp
         except Exception:
             return ""
 
@@ -374,71 +368,40 @@ class ReasoningAgent:
 
     @staticmethod
     def _extract_answer(text: str) -> str:
-        """v11：强化答案抽取——多策略+多解分隔符兼容。"""
+        """v12：回退到v10稳定版——简单可靠。"""
         if not text:
             return ""
-        # 1. 最终答案：XXX（支持逗号/分号/空格/换行分隔多解）
-        m = re.search(r"最终答案\s*[:：]\s*(.+?)(?:\n\n|\n[^,，;；\s]|$)", text, re.DOTALL)
-        if m:
-            return m.group(1).strip()
-        # 2. \boxed{XXX}
+        m = re.search(r"最终答案\s*[:：]\s*(.+?)(?:\n|$)", text)
+        if m: return m.group(1).strip()
         m = re.search(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", text)
-        if m:
-            return m.group(1).strip()
-        # 3. 答案是/为/：XXX
-        m = re.search(r"答案(?:是|为)?\s*[:：]?\s*(.+?)(?:\n\n|\n[^,，;；\s]|$)", text, re.DOTALL)
-        if m:
-            return m.group(1).strip()
-        # 4. 最后一行非空
+        if m: return m.group(1).strip()
+        m = re.search(r"答案(?:是|为)?\s*[:：]?\s*(.+?)(?:\n|。|$)", text)
+        if m: return m.group(1).strip()
         lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
         return lines[-1][:200] if lines else ""
 
     @staticmethod
     def _normalize(answer: str) -> str:
-        """v11：强化归一化——LaTeX深度清理+小数转分数。"""
-        if not answer:
-            return ""
+        """v12：回退到v10稳定版——不做激进转换。"""
+        if not answer: return ""
         s = answer.strip()
-        # 去 \boxed{}
         s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
-        # \frac{a}{b} → a/b（处理两层嵌套）
-        for _ in range(3):
-            s = re.sub(r"\\[df]?frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
-        # 去 LaTeX 命令保留内容
-        s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal|displaystyle)\{([^{}]*)\}", r"\1", s)
-        # 去 \left \right \cdot \times 等
-        s = re.sub(r"\\(?:left|right|cdot|times|cdot|neq|approx|sim|equiv|pm|mp)", "", s)
-        # 去 $ 符号和多余空格
-        s = s.replace("$", "").replace("\\", "").strip()
-        # 小数转分数（常见值）：0.125→1/8, 0.25→1/4, 0.5→1/2, 0.75→3/4
-        decimal_map = {"0.125": "1/8", "0.25": "1/4", "0.5": "1/2", "0.75": "3/4",
-                       "0.2": "1/5", "0.4": "2/5", "0.6": "3/5", "0.8": "4/5",
-                       "-0.125": "-1/8", "-0.25": "-1/4", "-0.5": "-1/2", "-0.75": "-3/4"}
-        for dec, frac in decimal_map.items():
-            s = s.replace(dec, frac)
-        # 去末尾标点和引号
-        s = s.rstrip("。.，,；;）)】")
-        s = s.strip("\"'""''")
-        # 统一多解分隔符为逗号
-        s = re.sub(r"[;；]\s*", ", ", s)
-        s = re.sub(r"\s+", " ", s)
-        return s.strip()
+        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
+        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
+        s = re.sub(r"\\dfrac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
+        s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", s)
+        s = s.replace("\\left","").replace("\\right","").replace("$","")
+        return s.rstrip("。.，,；;").strip("\"'""''").strip()
 
     @staticmethod
     def _numeric(s: str) -> float | None:
-        """v11：支持多解——取第一个解的数值。"""
-        if not s:
-            return None
-        # 多解取第一个
-        first = re.split(r"[,，;；\s]", s.strip())[0]
+        """v12：回退到v10稳定版。"""
         try:
-            if "/" in first:
-                p = first.split("/")
-                if len(p) == 2:
-                    return float(p[0]) / float(p[1])
-            return float(first)
-        except (ValueError, ZeroDivisionError):
-            return None
+            if "/" in s:
+                p = s.split("/")
+                if len(p) == 2: return float(p[0]) / float(p[1])
+            return float(s)
+        except: return None
 
     @staticmethod
     def _is_correct(verdict: str) -> bool:
