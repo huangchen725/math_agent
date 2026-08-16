@@ -1,10 +1,10 @@
-"""增强版数学推理智能体 v13 —— max_tokens 4096→8192（官方确认cap是8192）。
+"""增强版数学推理智能体 v14 —— 重新开启 thinking_mode + 8192 token。
 
-v13 改动（相对 v12）：
-- max_tokens: 4096 → 8192
-- 官方 7/18 群消息确认平台 max_tokens cap 是 8192，不是 4096
-- 之前我们一直以为是 4096 硬限制，所以截断率一直 14-15%
-- 提升到 8192 预期截断率砍半，捞回 5-8 题
+v14 改动（相对 v13）：
+- policy_thinking_mode: False → True
+- v2/v3 时 thinking+8192 被平台锁 4096 导致 321 次截断
+- v13 确认平台接受 8192，thinking 的输出空间翻倍
+- thinking 提供更深推理，预期正确率显著提升
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
 """
@@ -68,7 +68,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v13：max_tokens 4096→8192）。"""
+    """智能体配置（v14：thinking_mode=True + 8192 token）。"""
     tool_candidates: int = 2           # 回退到v6的2候选
     plain_candidates: int = 1           # 回退到v6的1纯推理
     verifier_voting_times: int = 1
@@ -81,7 +81,7 @@ class AgentConfig:
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
-    policy_thinking_mode: bool = False
+    policy_thinking_mode: bool = True   # v14: 重新开启！8192 token 可能够用了
     verifier_thinking_mode: bool = False
     planner_thinking_mode: bool = False
     critic_thinking_mode: bool = False
@@ -95,7 +95,7 @@ class AgentConfig:
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v13。"""
+    """增强版数学推理智能体 v14。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
