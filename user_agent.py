@@ -1,9 +1,10 @@
-"""增强版数学推理智能体 v15 —— 多温度候选 + 交叉验证 + 加权聚合。
+"""增强版数学推理智能体 v16 —— 回退thinking + 保留v15多温度交叉验证。
 
-v15 改动（相对 v14）：
-1. 3个候选用不同温度（0.3保守/0.6平衡/0.9创新）增加答案多样性
-2. 交叉验证：每个候选的答案给其他候选的Solver验证
-3. 加权聚合：验证分×一致性权重，多数票优先
+v16 改动（相对 v15）：
+- policy_thinking_mode: True → False
+- v15的thinking+8192导致331次截断(29%)，正确率暴跌到18.75%
+- 回退到v13的thinking_mode=False(25.89%)
+- 保留v15的多温度候选(0.3/0.6/0.9)+交叉验证+加权聚合
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
 """
@@ -75,7 +76,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v15：多温度候选+交叉验证）。"""
+    """智能体配置（v16：回退thinking+保留多温度交叉验证）。"""
     # 候选生成：3个不同温度
     candidate_temps: tuple = (0.3, 0.6, 0.9)  # v15: 3温度增加多样性
     tool_candidate_count: int = 2             # 前2个用工具
@@ -96,7 +97,7 @@ class AgentConfig:
     cross_check_max_tokens: int = 2048
     fallback_max_tokens: int = 512
     # thinking mode
-    policy_thinking_mode: bool = True
+    policy_thinking_mode: bool = False  # v16: 回退！thinking+8192仍导致29%截断
     verifier_thinking_mode: bool = False
     critic_thinking_mode: bool = False
     cross_check_thinking_mode: bool = False
@@ -109,7 +110,7 @@ class AgentConfig:
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v15——多温度候选+交叉验证。"""
+    """增强版数学推理智能体 v16。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
