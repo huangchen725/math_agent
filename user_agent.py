@@ -1,10 +1,8 @@
-"""增强版数学推理智能体 v16 —— 回退thinking + 保留v15多温度交叉验证。
+"""增强版数学推理智能体 v17 —— 回退到v13最优架构。
 
-v16 改动（相对 v15）：
-- policy_thinking_mode: True → False
-- v15的thinking+8192导致331次截断(29%)，正确率暴跌到18.75%
-- 回退到v13的thinking_mode=False(25.89%)
-- 保留v15的多温度候选(0.3/0.6/0.9)+交叉验证+加权聚合
+v17 = v13架构(thinking=False+8192+2工具+1纯推理+简单投票) + 微分几何修复
+v6→v10→v13 三次成功都是简单配置；v7/v11/v15/v16 四次失败都是加了复杂度
+结论：v13是最优，不再加复杂功能
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
 """
@@ -46,19 +44,6 @@ VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否�
 
 只输出：VERDICT: A（正确）或 VERDICT: B（错误）"""
 
-CROSS_CHECK_PROMPT = """你是数学交叉验证器。题目有多个候选答案，请判断哪个最可能正确。
-
-题目：{problem}
-
-候选答案列表：
-{candidates}
-
-请逐一分析每个答案的正确性，选出最可能正确的答案。
-输出格式：
-分析：XXX
-最佳答案：XXX
-"""
-
 CRITIC_PROMPT = """你是数学解题批评者。请找出候选解答中的错误或可改进之处。
 
 检查：1.逻辑漏洞 2.计算错误 3.边界情况 4.答案格式
@@ -76,31 +61,27 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v16：回退thinking+保留多温度交叉验证）。"""
-    # 候选生成：3个不同温度
-    candidate_temps: tuple = (0.3, 0.6, 0.9)  # v15: 3温度增加多样性
-    tool_candidate_count: int = 2             # 前2个用工具
-    plain_candidate_count: int = 1            # 第3个纯推理
-    # 验证
+    """智能体配置（v17：回退v13最优架构）。"""
+    # 候选生成：v13配置（全部温度0.6，不加多温度）
+    tool_candidates: int = 2
+    plain_candidates: int = 1
     verifier_voting_times: int = 1
-    enable_cross_check: bool = True            # v15: 交叉验证
     # 温度
+    policy_temperature: float = 0.6
     planner_temperature: float = 0.2
     verifier_temperature: float = 0.0
     critic_temperature: float = 0.3
     reflection_temperature: float = 0.3
-    cross_check_temperature: float = 0.0
     # token
     max_tokens: int = 8192
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
-    cross_check_max_tokens: int = 2048
     fallback_max_tokens: int = 512
-    # thinking mode
-    policy_thinking_mode: bool = False  # v16: 回退！thinking+8192仍导致29%截断
+    # thinking mode（v13: False——thinking导致截断）
+    policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
+    planner_thinking_mode: bool = False
     critic_thinking_mode: bool = False
-    cross_check_thinking_mode: bool = False
     # 功能开关
     enable_tools: bool = True
     enable_critic: bool = True
@@ -110,7 +91,7 @@ class AgentConfig:
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v16。"""
+    """增强版数学推理智能体 v17——v13最优架构。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
@@ -143,7 +124,7 @@ class ReasoningAgent:
         if domain_name:
             trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
-        # 阶段2：多温度候选生成
+        # 阶段2：多候选生成（全部温度0.6，v13配置）
         candidates, gen_trace = self._generate_candidates(problem, idx, domain_prompt)
         trace.extend(gen_trace)
 
@@ -165,17 +146,10 @@ class ReasoningAgent:
                 "confidence": confidence + (0.3 if answer else -0.5),
                 "answer": answer,
                 "raw_confidence": confidence,
-                "temp": self.config.candidate_temps[cid] if cid < len(self.config.candidate_temps) else 0.6,
             })
             trace.extend(vt)
 
-        # 阶段4：交叉验证（v15新增）
-        if self.config.enable_cross_check and len(scored) >= 2:
-            cross_result = self._cross_check(problem, scored, trace)
-            if cross_result:
-                trace.append({"step": "cross_check", "content": f"交叉验证最佳: {cross_result[:200]}"})
-
-        # 阶段5：Critic + 反思（仅低置信度触发）
+        # 阶段4：Critic + 反思（仅低置信度触发）
         if self.config.enable_critic and scored:
             best = max(scored, key=lambda x: x["confidence"])
             if best["raw_confidence"] < 0.5 and best["answer"]:
@@ -212,27 +186,23 @@ class ReasoningAgent:
         return f"{content.strip()}\n最终答案：{answer}"
 
     def _generate_candidates(self, problem: str, idx: int, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
-        """v15：3个候选用不同温度（0.3/0.6/0.9）。"""
+        """v17：回退v13——全部温度0.6，简单候选生成。"""
         candidates, trace = [], []
-        temps = self.config.candidate_temps
-
-        for i in range(self.config.tool_candidate_count + self.config.plain_candidate_count):
-            temp = temps[i] if i < len(temps) else 0.6
-            use_tools = i < self.config.tool_candidate_count
-
-            if use_tools and self.config.enable_tools:
-                cand, tt = self._solve_tools(problem, idx, i, domain_prompt, temp)
+        for i in range(self.config.tool_candidates):
+            if self.config.enable_tools:
+                cand, tt = self._solve_tools(problem, idx, i, domain_prompt)
             else:
-                cand = self._solve_plain(problem, domain_prompt, temp)
-                tt = [{"step": f"policy_plain_{i}", "content": cand[:1000]}]
-
+                cand = self._solve_plain(problem, domain_prompt)
+                tt = [{"step": f"policy_tool_{i}", "content": cand[:1000]}]
             candidates.append(cand)
             trace.extend(tt)
-            trace.append({"step": f"candidate_{i}", "content": f"温度={temp}, 工具={use_tools}, 答案={self._extract_answer(cand)[:100]}"})
-
+        for i in range(self.config.plain_candidates):
+            cand = self._solve_plain(problem, domain_prompt)
+            candidates.append(cand)
+            trace.append({"step": f"policy_plain_{i}", "content": cand[:1000]})
         return [c for c in candidates if c], trace
 
-    def _solve_tools(self, problem: str, idx: int, cid: int, domain_prompt: str, temp: float) -> Tuple[str, List[Dict]]:
+    def _solve_tools(self, problem: str, idx: int, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
         try:
             messages = [
                 {"role": "system", "content": domain_prompt or POLICY_PROMPT},
@@ -242,7 +212,7 @@ class ReasoningAgent:
                 self.client, messages,
                 max_rounds=self.config.max_tool_rounds,
                 thinking_mode=self.config.policy_thinking_mode,
-                temperature=temp,
+                temperature=self.config.policy_temperature,
                 max_tokens=self.config.max_tokens,
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
@@ -258,13 +228,13 @@ class ReasoningAgent:
             return response, trace
         except Exception as e:
             trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
-            return self._solve_plain(problem, domain_prompt, temp), trace
+            return self._solve_plain(problem, domain_prompt), trace
 
-    def _solve_plain(self, problem: str, domain_prompt: str, temp: float = 0.6) -> str:
+    def _solve_plain(self, problem: str, domain_prompt: str) -> str:
         try:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
             return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
-                              temperature=temp,
+                              temperature=self.config.policy_temperature,
                               max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
         except Exception:
@@ -285,30 +255,6 @@ class ReasoningAgent:
                 votes.append(False)
                 trace.append({"step": f"verify_err_{cid}_{vid}", "content": str(e)[:200]})
         return (sum(votes) / len(votes) if votes else 0.0), trace
-
-    def _cross_check(self, problem: str, scored: List[Dict], trace: List[Dict]) -> str:
-        """v15：交叉验证——让模型判断多个候选答案中哪个最可能正确。"""
-        try:
-            candidates_str = ""
-            for i, s in enumerate(scored):
-                ans = s.get("answer", "无答案")
-                candidates_str += f"候选{i+1}（温度{s.get('temp',0.6)}, 验证分{s['raw_confidence']:.1f}）：{ans}\n"
-
-            resp = self._chat(
-                CROSS_CHECK_PROMPT.format(problem=problem[:500], candidates=candidates_str),
-                "请分析并选出最可能正确的答案。",
-                temperature=self.config.cross_check_temperature,
-                max_tokens=self.config.cross_check_max_tokens,
-                thinking_mode=self.config.cross_check_thinking_mode,
-            )
-            # 提取最佳答案
-            m = re.search(r"最佳答案\s*[:：]\s*(.+?)(?:\n|$)", resp)
-            if m:
-                return m.group(1).strip()
-            return ""
-        except Exception as e:
-            trace.append({"step": "cross_check_error", "content": str(e)[:200]})
-            return ""
 
     def _critic(self, problem: str, candidate: str, trace: List[Dict]) -> str:
         try:
@@ -337,40 +283,25 @@ class ReasoningAgent:
             return ""
 
     def _aggregate(self, scored: List[Dict], trace: List[Dict]) -> str:
-        """v15：加权聚合——一致性+验证分+温度权重。"""
+        """v17：回退v13——简单多数投票。"""
         if not scored:
             return ""
         with_ans = [s for s in scored if s["answer"]]
         if not with_ans:
             best = max(scored, key=lambda x: x["confidence"])
             return self._normalize(best["content"].strip()[:500])
-
         for s in with_ans:
             s["norm"] = self._normalize(s["answer"])
             s["num"] = self._numeric(s["norm"])
-
-        # 按数值/字符串分组
         groups = {}
         for s in with_ans:
             key = s["num"] if s["num"] is not None else s["norm"]
             groups.setdefault(key, []).append(s)
-
-        # v15：加权——一致性(组大小) × 验证分 × 温度权重(低温更可信)
-        def group_score(key):
-            members = groups[key]
-            consistency = len(members)  # 多少个候选给出了相同答案
-            avg_conf = sum(m["raw_confidence"] for m in members) / len(members)
-            # 低温候选(0.3)权重更高
-            temp_bonus = sum(0.5 if m.get("temp", 0.6) <= 0.3 else 0.3 if m.get("temp", 0.6) <= 0.6 else 0.1 for m in members)
-            return (consistency * 2 + avg_conf + temp_bonus)
-
-        best_key = max(groups.keys(), key=group_score)
+        best_key = max(groups, key=lambda k: (len(groups[k]), max(s["confidence"] for s in groups[k])))
         bg = groups[best_key]
-
         if len(bg) >= 2:
             trace.append({"step": "self_consistency", "content": f"答案 '{bg[0]['norm']}' 获得 {len(bg)} 票一致"})
             return bg[0]["norm"]
-
         best = max(with_ans, key=lambda x: x["confidence"])
         trace.append({"step": "select_final", "content": f"选最高分: {best['norm']}"})
         return best["norm"]
