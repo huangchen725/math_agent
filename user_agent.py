@@ -77,11 +77,6 @@ class AgentConfig:
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
-    # v1.2：题级自适应 max_tokens（证明题上探、短答案压缩，官方 cap 8192 / 默认 4096）
-    adaptive_max_tokens: bool = True
-    prove_max_tokens: int = 8192      # 证明题/解析题：需保留完整证明
-    compute_max_tokens: int = 8192    # 常规计算/方程/微积分/概率（v19 消融证明 4096 会截断丢分，回 8192 对齐 v13）
-    short_max_tokens: int = 2048      # 选择/填空/短答案
     # thinking mode（v13: False——thinking导致截断）
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
@@ -101,7 +96,6 @@ class ReasoningAgent:
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
         self.client = client
-        self._max_tokens = None  # v1.2：每题求解时由 _resolve_max_tokens 决定，供各策略复用
 
     def _chat(self, system_prompt: str, user_content: str, **kwargs) -> str:
         """调用 client.chat，返回文本。"""
@@ -124,11 +118,6 @@ class ReasoningAgent:
             return {"final_response": fb or "未解出", "trace": trace}
 
     def _solve_impl(self, problem: str, idx: int, trace: List[Dict]) -> Dict:
-        # 阶段0（v1.2）：题级自适应 max_tokens + 题型判定（本地规则，不花 API）
-        self._max_tokens = self._resolve_max_tokens(problem)
-        task_type = self._detect_task_type(problem)
-        trace.append({"step": "task_profile", "content": f"type={task_type}, max_tokens={self._max_tokens}"})
-
         # 阶段1：关键词检测领域
         domain_name = self._detect_domain(problem)
         domain_prompt = get_domain_prompt(domain_name)
@@ -185,20 +174,13 @@ class ReasoningAgent:
             final_answer = self._extract_answer(scored[0]["content"]) or "未解出"
 
         best_content = max(scored, key=lambda x: x["confidence"])["content"] if scored else ""
-        final_response = self._build_response(best_content, final_answer, task_type)
+        final_response = self._build_response(best_content, final_answer)
 
         return {"final_response": final_response or final_answer or "未解出", "trace": trace}
 
-    def _build_response(self, content: str, answer: str, task_type: str = "compute") -> str:
-        """v1.2：题型化收敛 final_response。
-
-        - 选择/填空：精简为"最终答案：XXX"（judger 只需选项/结果）
-        - 证明/计算：保留完整 content（含关键推导步骤，官方要求证明题给完整证明）
-        """
+    def _build_response(self, content: str, answer: str) -> str:
         if not content:
             return answer or "未解出"
-        if task_type in ("choice", "fill"):
-            return f"最终答案：{answer}" if answer else content.strip()
         if "最终答案" in content:
             return content.strip()
         return f"{content.strip()}\n最终答案：{answer}"
@@ -231,7 +213,7 @@ class ReasoningAgent:
                 max_rounds=self.config.max_tool_rounds,
                 thinking_mode=self.config.policy_thinking_mode,
                 temperature=self.config.policy_temperature,
-                max_tokens=self._active_max_tokens(),
+                max_tokens=self.config.max_tokens,
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
                 trace = [{"step": f"tool_solve_{cid}", "content": tt}]
@@ -245,10 +227,7 @@ class ReasoningAgent:
             trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
             return response, trace
         except Exception as e:
-            err_msg = str(e)[:200]
-            # v1.2：区分超时与其它错误，超时降级到纯推理，不重复相同工具请求
-            step = f"tool_timeout_{cid}" if ("timeout" in err_msg.lower() or "failed after" in err_msg.lower()) else f"tool_error_{cid}"
-            trace = [{"step": step, "content": err_msg}]
+            trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
             return self._solve_plain(problem, domain_prompt), trace
 
     def _solve_plain(self, problem: str, domain_prompt: str) -> str:
@@ -256,7 +235,7 @@ class ReasoningAgent:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
             return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
                               temperature=self.config.policy_temperature,
-                              max_tokens=self._active_max_tokens(),
+                              max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
         except Exception:
             return ""
@@ -295,7 +274,7 @@ class ReasoningAgent:
             prompt = REFLECTION_PROMPT.format(problem=problem, prev_answer=prev[:2000], feedback=feedback[:500])
             resp = self._chat(POLICY_PROMPT, prompt,
                               temperature=self.config.reflection_temperature,
-                              max_tokens=self._active_max_tokens(),
+                              max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
             trace.append({"step": "reflection", "content": resp[:1000]})
             return resp
@@ -378,40 +357,6 @@ class ReasoningAgent:
             return max(scores, key=scores.get)
         return ""
 
-    def _detect_task_type(self, problem: str) -> str:
-        """本地规则判定题型（v1.2，不花 API 调用）。
-
-        返回 prove / choice / fill / compute。
-        """
-        if re.search(r"证明|求证|show\s+that|prove\b|verify\s+that", problem, re.IGNORECASE):
-            return "prove"
-        # 选择题：出现 (A)/(B)/(C)/(D) 或 A. B. C. D. 选项
-        if re.search(r"[（(]\s*[ABCD]\s*[)）]", problem) or re.search(r"\b[ABCD]\.\s", problem):
-            return "choice"
-        # 填空题：下划线占位
-        if re.search(r"[_＿]{2,}|填空|___", problem):
-            return "fill"
-        return "compute"
-
-    def _resolve_max_tokens(self, problem: str) -> int:
-        """题级自适应 max_tokens（v1.2）。
-
-        证明题上探 8192 以保留完整证明；选择/填空压缩到 2048；其余用 4096。
-        官方规则：不传默认 4096、硬 cap 8192。
-        """
-        if not self.config.adaptive_max_tokens:
-            return self.config.max_tokens
-        task_type = self._detect_task_type(problem)
-        if task_type == "prove":
-            return self.config.prove_max_tokens
-        if task_type in ("choice", "fill"):
-            return self.config.short_max_tokens
-        return self.config.compute_max_tokens
-
-    def _active_max_tokens(self) -> int:
-        """当前题生效的 max_tokens（各策略统一复用，避免重复计算）。"""
-        return self._max_tokens or self.config.max_tokens
-
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
             resp = self._chat(POLICY_NO_TOOL_PROMPT,
@@ -439,26 +384,15 @@ class ReasoningAgent:
 
     @staticmethod
     def _normalize(answer: str) -> str:
-        """v1.2稳定版——归一化答案表达，处理 Unicode/LaTeX 等价形式。"""
+        """v12稳定版——不做激进转换。"""
         if not answer: return ""
         s = answer.strip()
         s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
         s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
+        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\dfrac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", s)
         s = s.replace("\\left","").replace("\\right","").replace("$","")
-        # LaTeX 定界符 \(...\) \[...\]
-        s = s.replace("\\(", "").replace("\\)", "").replace("\\[", "").replace("\\]", "")
-        # LaTeX 命令 → ASCII 等价（\pi→pi、\cdot→* 等）
-        for latex, a in {"\\pi": "pi", "\\infty": "oo", "\\cdot": "*", "\\times": "*",
-                         "\\le": "<=", "\\leq": "<=", "\\ge": ">=", "\\geq": ">=",
-                         "\\ne": "!=", "\\neq": "!=", "\\pm": "+-", "\\mp": "-+"}.items():
-            s = s.replace(latex, a)
-        # Unicode 下标 → 普通字符（C₁ → C1）
-        s = s.translate(str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789"))
-        # Unicode 数学符号 → ASCII 等价（ℤ→Z 等，用于候选等价比较）
-        for u, a in {"ℤ": "Z", "ℝ": "R", "ℕ": "N", "ℚ": "Q", "ℂ": "C", "∞": "oo", "π": "pi", "−": "-", "×": "*", "⋅": "*", "≤": "<=", "≥": ">=", "≠": "!="}.items():
-            s = s.replace(u, a)
         return s.rstrip("。.，,；;").strip("\"'""''").strip()
 
     @staticmethod
