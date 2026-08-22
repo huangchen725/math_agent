@@ -80,7 +80,7 @@ class AgentConfig:
     # v1.2：题级自适应 max_tokens（证明题上探、短答案压缩，官方 cap 8192 / 默认 4096）
     adaptive_max_tokens: bool = True
     prove_max_tokens: int = 8192      # 证明题/解析题：需保留完整证明
-    compute_max_tokens: int = 4096    # 常规计算/方程/微积分/概率
+    compute_max_tokens: int = 8192    # 常规计算/方程/微积分/概率（v19 消融证明 4096 会截断丢分，回 8192 对齐 v13）
     short_max_tokens: int = 2048      # 选择/填空/短答案
     # thinking mode（v13: False——thinking导致截断）
     policy_thinking_mode: bool = False
@@ -439,15 +439,26 @@ class ReasoningAgent:
 
     @staticmethod
     def _normalize(answer: str) -> str:
-        """v12稳定版——不做激进转换。"""
+        """v1.2稳定版——归一化答案表达，处理 Unicode/LaTeX 等价形式。"""
         if not answer: return ""
         s = answer.strip()
         s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
         s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
-        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\dfrac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", s)
         s = s.replace("\\left","").replace("\\right","").replace("$","")
+        # LaTeX 定界符 \(...\) \[...\]
+        s = s.replace("\\(", "").replace("\\)", "").replace("\\[", "").replace("\\]", "")
+        # LaTeX 命令 → ASCII 等价（\pi→pi、\cdot→* 等）
+        for latex, a in {"\\pi": "pi", "\\infty": "oo", "\\cdot": "*", "\\times": "*",
+                         "\\le": "<=", "\\leq": "<=", "\\ge": ">=", "\\geq": ">=",
+                         "\\ne": "!=", "\\neq": "!=", "\\pm": "+-", "\\mp": "-+"}.items():
+            s = s.replace(latex, a)
+        # Unicode 下标 → 普通字符（C₁ → C1）
+        s = s.translate(str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789"))
+        # Unicode 数学符号 → ASCII 等价（ℤ→Z 等，用于候选等价比较）
+        for u, a in {"ℤ": "Z", "ℝ": "R", "ℕ": "N", "ℚ": "Q", "ℂ": "C", "∞": "oo", "π": "pi", "−": "-", "×": "*", "⋅": "*", "≤": "<=", "≥": ">=", "≠": "!="}.items():
+            s = s.replace(u, a)
         return s.rstrip("。.，,；;").strip("\"'""''").strip()
 
     @staticmethod
