@@ -62,12 +62,13 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 @dataclass
 class AgentConfig:
     """智能体配置（v17：回退v13最优架构）。"""
-    # 候选生成：v13配置（全部温度0.6，不加多温度）
-    tool_candidates: int = 2
-    plain_candidates: int = 1
+    # 候选生成：v22 Self-Consistency 深化（8 候选 + 温度多样性，简单多数投票不变）
+    tool_candidates: int = 4
+    plain_candidates: int = 4
     verifier_voting_times: int = 1
     # 温度
     policy_temperature: float = 0.6
+    temperature_spread: float = 0.1   # 候选间温度差（0.6/0.7/0.8/0.9），增加采样多样性
     planner_temperature: float = 0.2
     verifier_temperature: float = 0.0
     critic_temperature: float = 0.3
@@ -186,23 +187,29 @@ class ReasoningAgent:
         return f"{content.strip()}\n最终答案：{answer}"
 
     def _generate_candidates(self, problem: str, idx: int, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
-        """v17：回退v13——全部温度0.6，简单候选生成。"""
+        """v22：Self-Consistency 深化——多候选 + 温度多样性，聚合仍用简单多数投票。"""
         candidates, trace = [], []
         for i in range(self.config.tool_candidates):
+            temp = self._candidate_temperature(i)
             if self.config.enable_tools:
-                cand, tt = self._solve_tools(problem, idx, i, domain_prompt)
+                cand, tt = self._solve_tools(problem, idx, i, domain_prompt, temp)
             else:
-                cand = self._solve_plain(problem, domain_prompt)
+                cand = self._solve_plain(problem, domain_prompt, temp)
                 tt = [{"step": f"policy_tool_{i}", "content": cand[:1000]}]
             candidates.append(cand)
             trace.extend(tt)
         for i in range(self.config.plain_candidates):
-            cand = self._solve_plain(problem, domain_prompt)
+            temp = self._candidate_temperature(i)
+            cand = self._solve_plain(problem, domain_prompt, temp)
             candidates.append(cand)
             trace.append({"step": f"policy_plain_{i}", "content": cand[:1000]})
         return [c for c in candidates if c], trace
 
-    def _solve_tools(self, problem: str, idx: int, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
+    def _candidate_temperature(self, idx_within_type: int) -> float:
+        """候选温度随索引递增（0.6/0.7/0.8/0.9），增加采样多样性。"""
+        return self.config.policy_temperature + idx_within_type * self.config.temperature_spread
+
+    def _solve_tools(self, problem: str, idx: int, cid: int, domain_prompt: str, temperature: float) -> Tuple[str, List[Dict]]:
         try:
             messages = [
                 {"role": "system", "content": domain_prompt or POLICY_PROMPT},
@@ -212,7 +219,7 @@ class ReasoningAgent:
                 self.client, messages,
                 max_rounds=self.config.max_tool_rounds,
                 thinking_mode=self.config.policy_thinking_mode,
-                temperature=self.config.policy_temperature,
+                temperature=temperature,
                 max_tokens=self.config.max_tokens,
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
@@ -228,13 +235,13 @@ class ReasoningAgent:
             return response, trace
         except Exception as e:
             trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
-            return self._solve_plain(problem, domain_prompt), trace
+            return self._solve_plain(problem, domain_prompt, temperature), trace
 
-    def _solve_plain(self, problem: str, domain_prompt: str) -> str:
+    def _solve_plain(self, problem: str, domain_prompt: str, temperature: float) -> str:
         try:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
             return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
-                              temperature=self.config.policy_temperature,
+                              temperature=temperature,
                               max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
         except Exception:
