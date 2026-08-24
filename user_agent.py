@@ -61,10 +61,10 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v17：回退v13最优架构）。"""
-    # 候选生成：v22 Self-Consistency 深化（8 候选 + 温度多样性，简单多数投票不变）
-    tool_candidates: int = 4
-    plain_candidates: int = 4
+    """智能体配置（v23：SC 深化 5 候选，平衡收益与超时）。"""
+    # 候选生成：v23 Self-Consistency 深化（5 候选 = 3 tool + 2 plain，避免 v22 的 8 候选超时）
+    tool_candidates: int = 3
+    plain_candidates: int = 2
     verifier_voting_times: int = 1
     # 温度
     policy_temperature: float = 0.6
