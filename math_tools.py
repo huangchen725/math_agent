@@ -96,6 +96,71 @@ def residue(expression: str, variable: str = "z", pole: str = "0") -> str:
         return f"ERROR: {e}"
 
 
+def _parse_matrix(matrix_str: str):
+    """解析矩阵字符串为 SymPy Matrix。支持 '[[1,2],[3,4]]' 或 'Matrix([[1,2],[3,4]])'。"""
+    s = matrix_str.strip()
+    if s.startswith("Matrix(") and s.endswith(")"):
+        s = s[len("Matrix("):-1]
+    s = s.replace(" ", "")
+    data = json.loads(s)
+    if not isinstance(data, list) or not data:
+        raise ValueError(f"矩阵格式错误: {matrix_str}")
+    return sp.Matrix(data)
+
+
+def matrix_det(matrix: str) -> str:
+    """计算矩阵行列式。"""
+    try:
+        m = _parse_matrix(matrix)
+        return str(sp.simplify(m.det()))
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def matrix_eigenvals(matrix: str) -> str:
+    """计算矩阵特征值，返回 {特征值: 代数重数}。"""
+    try:
+        m = _parse_matrix(matrix)
+        ev = m.eigenvals()
+        parts = [f"{k}: {v}" for k, v in ev.items()]
+        return "{" + ", ".join(parts) + "}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def gcd_lcm(a: str, b: str) -> str:
+    """计算两个整数的最大公约数 gcd 和最小公倍数 lcm。"""
+    try:
+        x = int(_safe_parse(a))
+        y = int(_safe_parse(b))
+        g = sp.gcd(x, y)
+        l = sp.lcm(x, y)
+        return f"gcd={g}, lcm={l}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def mod_pow(base: str, exponent: str, modulus: str) -> str:
+    """计算模幂 base^exponent mod modulus（数论专用，处理大指数）。"""
+    try:
+        b = int(_safe_parse(base))
+        e = int(_safe_parse(exponent))
+        m = int(_safe_parse(modulus))
+        return str(pow(b, e, m))
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def binomial(n: str, k: str) -> str:
+    """计算二项式系数 C(n, k)（组合数）。"""
+    try:
+        n_val = int(_safe_parse(n))
+        k_val = int(_safe_parse(k))
+        return str(sp.binomial(n_val, k_val))
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 # ========== 工具注册表 ==========
 
 TOOL_IMPLEMENTATIONS = {
@@ -105,6 +170,11 @@ TOOL_IMPLEMENTATIONS = {
     "integrate": integrate,
     "limit": limit,
     "residue": residue,
+    "matrix_det": matrix_det,
+    "matrix_eigenvals": matrix_eigenvals,
+    "gcd_lcm": gcd_lcm,
+    "mod_pow": mod_pow,
+    "binomial": binomial,
 }
 
 TOOL_DEFINITIONS = [
@@ -206,6 +276,80 @@ TOOL_DEFINITIONS = [
                     "pole": {"type": "string", "description": "极点位置，如 '1'"},
                 },
                 "required": ["expression", "pole"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "matrix_det",
+            "description": "计算矩阵的行列式（线性代数）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matrix": {"type": "string", "description": "矩阵，JSON二维数组格式，如 '[[1,2],[3,4]]'"},
+                },
+                "required": ["matrix"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "matrix_eigenvals",
+            "description": "计算矩阵的特征值及代数重数（线性代数）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matrix": {"type": "string", "description": "矩阵，JSON二维数组格式，如 '[[1,2],[3,4]]'"},
+                },
+                "required": ["matrix"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gcd_lcm",
+            "description": "计算两个整数的最大公约数 gcd 和最小公倍数 lcm（数论）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "a": {"type": "string", "description": "第一个整数，如 '12'"},
+                    "b": {"type": "string", "description": "第二个整数，如 '18'"},
+                },
+                "required": ["a", "b"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mod_pow",
+            "description": "计算模幂 base^exponent mod modulus（数论，处理大指数幂）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "base": {"type": "string", "description": "底数，如 '3'"},
+                    "exponent": {"type": "string", "description": "指数，如 '100'"},
+                    "modulus": {"type": "string", "description": "模数，如 '7'"},
+                },
+                "required": ["base", "exponent", "modulus"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "binomial",
+            "description": "计算二项式系数 C(n, k) 组合数（组合数学）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "n": {"type": "string", "description": "总数 n，如 '10'"},
+                    "k": {"type": "string", "description": "选取数 k，如 '3'"},
+                },
+                "required": ["n", "k"],
             },
         },
     },
