@@ -384,15 +384,41 @@ class ReasoningAgent:
 
     @staticmethod
     def _normalize(answer: str) -> str:
-        """v12稳定版——不做激进转换。"""
+        """v26——补强归一化：处理 LaTeX 定界符、Unicode 数学符号、上标下标、常见 LaTeX 命令。
+
+        采样收敛实验证明模型答案带 LaTeX 定界符、π²、C_1、{1,3} 等格式，v21 回退时丢了 v20 的增强，
+        导致"答对但格式误判"。本版补回并扩展。
+        """
         if not answer: return ""
         s = answer.strip()
+        # 1. LaTeX 定界符 \(...\) \[...\]
+        s = s.replace(r"\(", "").replace(r"\)", "").replace(r"\[", "").replace(r"\]", "")
+        # 2. \boxed \frac \dfrac 及字体命令
         s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
-        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\dfrac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
         s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", s)
-        s = s.replace("\\left","").replace("\\right","").replace("$","")
+        # 3. \left \right $ 及常见 LaTeX 命令 -> 等价符号
+        s = s.replace("\\left", "").replace("\\right", "").replace("$", "")
+        for cmd, rep in [(r"\pi", "pi"), (r"\cdot", "*"), (r"\times", "*"),
+                         (r"\leq", "<="), (r"\le", "<="), (r"\geq", ">="), (r"\ge", ">="),
+                         (r"\neq", "!="), (r"\ne", "!="), (r"\infty", "oo"), (r"\to", "->")]:
+            s = s.replace(cmd, rep)
+        # 4. LaTeX 下标 C_1 -> C1
+        s = re.sub(r"_([0-9]+)", r"\1", s)
+        # 5. Unicode 上标 -> **幂（π² -> pi**2）
+        for k, v in {"⁰": "**0", "¹": "**1", "²": "**2", "³": "**3", "⁴": "**4",
+                     "⁵": "**5", "⁶": "**6", "⁷": "**7", "⁸": "**8", "⁹": "**9"}.items():
+            s = s.replace(k, v)
+        # 6. Unicode 下标 -> 普通字符（C₁ -> C1）
+        for k, v in {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
+                     "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9"}.items():
+            s = s.replace(k, v)
+        # 7. Unicode 数学符号 -> ASCII
+        for k, v in {"ℤ": "Z", "ℝ": "R", "ℕ": "N", "ℚ": "Q", "ℂ": "C", "π": "pi", "∞": "oo",
+                     "−": "-", "×": "*", "⋅": "*", "≤": "<=", "≥": ">=", "≠": "!=", "∑": "sum",
+                     "∏": "prod", "∫": "int", "√": "sqrt", "→": "->", "∂": "d"}.items():
+            s = s.replace(k, v)
         return s.rstrip("。.，,；;").strip("\"'""''").strip()
 
     @staticmethod
