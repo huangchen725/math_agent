@@ -136,7 +136,16 @@ def build_output_record(item: Dict, agent_result: Dict) -> Dict:
     if not isinstance(final_response, str) or not final_response.strip():
         raise ValueError("agent.solve must return a non-empty string field: final_response")
     if final_response.strip() == "未解出":
-        raise ValueError("agent.solve returned the unsolved sentinel")
+        return {
+            "idx": item["idx"],
+            "status": "error",
+            "final_response": final_response,
+            "error": {
+                "type": "Unsolved",
+                "message": "agent.solve returned the unsolved sentinel",
+            },
+            "trace": agent_result.get("trace", []),
+        }
 
     output = {
         "idx": item["idx"],

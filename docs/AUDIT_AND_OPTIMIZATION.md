@@ -100,6 +100,7 @@
 | INPUT-001 | 核心接口不限制题目和 metadata | 超大输入增加费用和内存压力 | 调用模型前校验 problem、metadata 类型、JSON 可序列化性及默认 20000 字符上限；已测试零调用拒绝 |
 | RUN-001 | 只有单次 HTTP 超时，没有单题统一 deadline | 多分支可持续累积 | 单题预算在每次模型/工具调用前检查 600 秒 deadline；在途 HTTP 仍只能依赖客户端超时 |
 | RUN-002 | Runner 无成功/失败/跳过/耗时汇总 | 运行结果难核查 | 输出 `_run/run_summary.json`，记录输入文件名/SHA-256、模型、耗时、并发与计数，不记录题面 |
+| RUN-003 | `未解出` 在 runner 转换为异常时丢弃 Agent trace | 无法区分数学失败、预算耗尽和 API 节流 | 保存为 error checkpoint并保留原始 trace；已加回归测试 |
 | CLIENT-001 | 响应 usage 未采集 | 无法核对 token | 保持原返回契约，通过 `get_last_response_meta()` 暴露 usage、模型、request id、耗时和尝试次数；预算统一累计 |
 | EVAL-005 | 36 题 A/B 原始分数从 33/36 降至 32/36 | 表面上像工程重构造成能力回退 | 已知 wrong 来自 Unicode/LaTeX 格式漏判，但旧判分器同时存在文字包含假阳性，原始分数整体作废；运行时与离线判分现共享安全归一化，并加入格式正反例测试 |
 | CLIENT-003 | 平台把“请求过于频繁”作为 HTTP 400 + `invalid_request_error` 返回 | 客户端把临时限流当永久参数错误，正式评测可能直接丢题 | 仅当 400 响应的 code/type 或 message 明确表示限流时重试；普通 400、401 不重试；已加正反测试 |

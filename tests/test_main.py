@@ -59,9 +59,20 @@ def test_load_jsonl_validates_problem_and_duplicate_idx(tmp_path: Path):
         load_jsonl(path)
 
 
-def test_build_output_record_rejects_unsolved_sentinel():
-    with pytest.raises(ValueError, match="unsolved sentinel"):
-        build_output_record({"idx": 1}, {"final_response": "未解出", "trace": []})
+def test_build_output_record_preserves_unsolved_trace_for_diagnosis():
+    record = build_output_record(
+        {"idx": 1},
+        {
+            "final_response": "未解出",
+            "trace": [{"step": "global_error", "content": "rate limited"}],
+        },
+    )
+
+    assert record["status"] == "error"
+    assert record["error"]["type"] == "Unsolved"
+    assert record["trace"] == [
+        {"step": "global_error", "content": "rate limited"}
+    ]
 
 
 def test_file_sha256_and_run_summary_are_reproducible(tmp_path: Path):
