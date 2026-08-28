@@ -189,6 +189,14 @@ def build_answer(raw: str) -> Answer:
     )
 
 
+def format_answer_for_output(answer: str) -> str:
+    """Render a compact final-answer body with stable ASCII-safe notation."""
+    value = normalize_answer(answer)
+    value = re.sub(r"^(?:最终)?答案(?:是|为)?\s*[:：]?\s*", "", value)
+    value = value.replace("**", "^")
+    return re.sub(r"\s+", " ", value).strip()
+
+
 def equivalent_answers(left: str, right: str) -> Optional[bool]:
     """Return true/false only when equivalence or difference is safely known."""
     left_normalized = normalize_answer(left)
@@ -204,6 +212,14 @@ def equivalent_answers(left: str, right: str) -> Optional[bool]:
     if (
         left_normalized.casefold() in _CATEGORICAL_ANSWERS
         and right_normalized.casefold() in _CATEGORICAL_ANSWERS
+    ):
+        return False
+    if (
+        left_normalized.casefold() in _CATEGORICAL_ANSWERS
+        and right_normalized.casefold() == f"不{left_normalized.casefold()}"
+    ) or (
+        right_normalized.casefold() in _CATEGORICAL_ANSWERS
+        and left_normalized.casefold() == f"不{right_normalized.casefold()}"
     ):
         return False
     return None

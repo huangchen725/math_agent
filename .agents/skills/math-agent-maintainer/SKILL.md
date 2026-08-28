@@ -17,7 +17,7 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 
 - Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list.
 - Keep the API client injected and secrets environment-only.
-- Preserve the response behavior: selected reasoning plus a `最终答案：...` marker. Do not substitute another output contract without an explicit migration.
+- Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
 - Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
 
@@ -30,6 +30,8 @@ For tool changes, keep an explicit registry, JSON-schema definition, bounded arg
 For runner changes, validate JSONL shape and indexes, keep atomic writes, retry invalid/error checkpoints, and test that paths cannot escape the output directory.
 
 For client changes, retry only transient network/service errors and never log authorization headers or keys.
+
+For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
 
 ## Verify
 

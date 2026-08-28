@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/math-agent/benchmark.schema.json",
+  "title": "Math Agent benchmark record",
+  "type": "object",
+  "required": [
+    "idx",
+    "problem",
+    "answer",
+    "subject",
+    "task_type",
+    "level",
+    "source",
+    "license",
+    "split"
+  ],
+  "properties": {
+    "idx": {"type": ["string", "integer"]},
+    "problem": {"type": "string", "minLength": 1},
+    "answer": {"type": "string", "minLength": 1},
+    "subject": {"type": "string", "minLength": 1},
+    "task_type": {"type": "string", "minLength": 1},
+    "level": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "license": {"type": "string", "minLength": 1},
+    "split": {"enum": ["dev", "test"]}
+  },
+  "additionalProperties": true
+}

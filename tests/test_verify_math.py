@@ -29,6 +29,10 @@ def test_wave_equation_example_has_the_condition_needed_for_its_answer():
     assert "u_t(x,0)=0" in DOMAIN_PROMPTS["偏微分方程"]
 
 
+def test_domain_prompts_require_compact_final_answer_body():
+    assert all("只写答案本体" in prompt for prompt in DOMAIN_PROMPTS.values())
+
+
 def test_verification_defaults_to_dry_run_without_constructing_client(monkeypatch):
     def fail_if_called():
         raise AssertionError("dry-run must not construct an API client")

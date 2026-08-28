@@ -20,7 +20,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `problem` 是题目字符串，必须非空且默认不超过 20000 字符。
 - `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
 - `client` 必须提供 `chat(messages=..., **kwargs)`，由调用方注入。
-- `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理并包含 `最终答案：...`。
+- `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理，并以唯一一行 `最终答案：...` 结尾。该行只含规范化答案体，不含解释性句子；常见 Unicode/LaTeX 表示转换为稳定记号。
 - `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要。
 - `ReasoningAgent.solve()` 捕获全局异常并尝试低成本回退；`main.py` 将空答案和 `未解出` 视为失败记录。
 
@@ -55,6 +55,9 @@ flowchart LR
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
+| `evaluation/audit_dataset.py` | 离线审计 JSONL 的规模、领域分布、来源字段、内部重复及与 prompt/sample 的重合 |
+| `evaluation/judge.py` | 离线保守判分；只接受可证明等价，输出 `correct/wrong/unknown/no_answer`，不属于运行时选择链路 |
+| `evaluation/rescore_report.py` | 不调用模型，使用保守判分器重新核算已有报告，并保留旧 verdict 供差异追踪 |
 
 ## 4. 求解流程
 
@@ -65,7 +68,7 @@ flowchart LR
 5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，仅接受 `VERDICT: A` 为正票；长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
 6. **批评与反思**：最佳候选原始置信度低于 `0.5` 且已有答案时，先批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。
 7. **聚合**：抽取为结构化 `Answer`，使用保守 canonical key 归一化精确数值、集合、多解、常见 Unicode 上下标和 LaTeX 包装，按多数票优先；无法证明的符号或语义等价不合并。没有多数项时选择置信度最高的候选。答案和展示推理始终取自同一个获胜答案组。
-8. **构造响应**：保留获胜候选的推理文本；若其中没有最终答案标记，则附加 `最终答案：...`。fallback 也通过同一构造逻辑。
+8. **构造响应**：移除模型文本中已有的答案标签，保留其余获胜候选推理，并统一追加唯一的 `最终答案：...`。答案体经共享安全归一化后输出；fallback 也通过同一构造逻辑。
 
 `deterministic_verifier.py` 已提供受硬超时保护的确定性验证原语，但本层保守改动没有把它们接入第 5～7 步，也没有改变候选数量、温度、thinking mode 或模型选择。接入前必须先建立固定回归集并验证假阳性/假阴性。
 
@@ -143,7 +146,7 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
-测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端及 runner，不依赖真实 API。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端及 runner，不依赖真实 API。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 

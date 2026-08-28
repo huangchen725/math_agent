@@ -10,7 +10,7 @@ ReasoningAgent(client).solve(problem, metadata)
 ```
 
 - `client` 由调用方注入，代码中不保存 API key。
-- `final_response` 保留选中候选的推理文本，并包含 `最终答案：...`。
+- `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
 - `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 
@@ -86,6 +86,16 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
+对本地 JSONL 题集做题量、领域分布、来源字段、内部重复和 prompt/sample 重合审计，同样不会访问 API：
+
+```bash
+python evaluation/audit_dataset.py path/to/benchmark.jsonl
+python evaluation/audit_dataset.py path/to/benchmark.jsonl --successes 36 --output outputs/benchmark/audit.json
+python evaluation/rescore_report.py path/to/benchmark.jsonl path/to/old_report.json --output outputs/benchmark/rescored.json
+```
+
+审计只检查数据质量，不生成新的模型答案。正式题集记录格式见 `evaluation/benchmark.schema.json`。离线判分使用 `evaluation/judge.py` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
+
 `verify_math.py` 默认只解析 21 个 few-shot，不访问 API：
 
 ```bash
@@ -117,6 +127,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证
+├── evaluation/                # 题集审计与保守离线判分
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
 ├── .agents/skills/            # 仓库级 Codex skill
@@ -129,6 +140,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 - 不提交 `.env`、token、私有题集或包含敏感题面的运行输出。
 - 模型产生的工具参数始终按不可信输入处理，必须保留解析白名单和资源边界。
 - 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
+- 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
 - 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

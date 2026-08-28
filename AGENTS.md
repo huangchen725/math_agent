@@ -8,7 +8,7 @@ This repository is the XH-202627 competition math agent. `user_agent.py::Reasoni
 
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.
 - Keep the client injected by the caller. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
-- `final_response` contains the selected reasoning and a `最终答案：...` marker. Do not silently replace it with a different output contract.
+- `final_response` contains the selected reasoning and ends with exactly one canonical `最终答案：...` line. The answer body must not contain an explanatory sentence.
 - The competition endpoint rejects `stream=True` and `n != 1`.
 - Do not change candidate counts, temperatures, thinking mode, or token budgets without an evaluation plan that isolates one variable and records the dataset/commit/config.
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
@@ -25,6 +25,7 @@ This repository is the XH-202627 competition math agent. `user_agent.py::Reasoni
 - Runtime pipeline: `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`.
 - Offline checks: `tests/`.
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
+- Offline evaluation: `evaluation/audit_dataset.py` audits provenance and prompt/sample overlap; `evaluation/judge.py` keeps unverifiable equivalence as `unknown`.
 - Generated outputs: `outputs/`; never use them as committed source.
 
 ## Verification
@@ -55,3 +56,5 @@ Run focused tests first while iterating, then all offline checks. Do not call th
 - Flag a checkpoint as complete only when it is valid JSON with `status == "success"` and a non-empty `final_response`.
 - Flag additions to runtime dependencies that are not imported directly or justified by an entrypoint.
 - Flag tests that require a real API key or depend on stochastic model output.
+- Flag benchmark records without source, license, split, and calibrated level metadata; flag any test/dev item that overlaps prompt few-shots or public samples.
+- Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.

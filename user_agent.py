@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 from agent_types import Candidate, Verification
-from answer_equivalence import build_answer, normalize_answer, numeric_value
+from answer_equivalence import (
+    build_answer,
+    format_answer_for_output,
+    normalize_answer,
+    numeric_value,
+)
 from budget import BudgetExceeded, ExecutionBudget
 from llm_client import InternChatClient
 from math_tools import run_tool_loop, TOOL_DEFINITIONS
@@ -32,7 +37,7 @@ POLICY_PROMPT = """你是数学推理智能体。解题并给出推理过程。
 2. 关键推导步骤
 3. 最终答案：XXX
 
-答案可以是数字、分数、表达式、集合、区间、公式或数学结论；应简洁、无歧义。
+最终答案行只写答案本体，不写“答案是”、解释或完整句子；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
 """
 
 POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
@@ -42,7 +47,7 @@ POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 2. 关键推导
 3. 最终答案：XXX
 
-答案可以是数字、分数、表达式、集合、区间、公式或数学结论；应简洁、无歧义。
+最终答案行只写答案本体，不写“答案是”、解释或完整句子；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
 """
 
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
@@ -63,7 +68,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 之前的解答：{prev_answer}
 批评反馈：{feedback}
 
-请修正错误，给出完整推理和最终答案。"""
+请修正错误，给出完整推理。最后单独一行写“最终答案：XXX”，XXX 只包含答案本体。"""
 
 
 @dataclass
@@ -269,11 +274,23 @@ class ReasoningAgent:
         return {"final_response": final_response or final_answer or "未解出", "trace": trace}
 
     def _build_response(self, content: str, answer: str) -> str:
+        formatted_answer = format_answer_for_output(answer)
+        if not formatted_answer:
+            return "未解出"
         if not content:
-            return f"最终答案：{answer}" if answer else "未解出"
-        if "最终答案" in content:
-            return content.strip()
-        return f"{content.strip()}\n最终答案：{answer}"
+            return f"最终答案：{formatted_answer}"
+        body_lines = [
+            line
+            for line in content.strip().splitlines()
+            if not re.search(
+                r"(?:最终答案\s*(?:是|为)?\s*[:：]?|答案\s*(?:是|为)\s*[:：]?|答案\s*[:：])",
+                line,
+            )
+        ]
+        body = "\n".join(body_lines).strip()
+        if not body:
+            return f"最终答案：{formatted_answer}"
+        return f"{body}\n最终答案：{formatted_answer}"
 
     def _generate_candidates(self, problem: str, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
         """v17：回退v13——全部温度0.6，简单候选生成。"""
@@ -505,7 +522,7 @@ class ReasoningAgent:
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
             resp = self._chat(POLICY_NO_TOOL_PROMPT,
-                f"{problem}\n\n请直接给出最终答案，不要详细推导。格式：最终答案：XXX",
+                f"{problem}\n\n请直接给出最终答案，不要详细推导。单独一行按“最终答案：XXX”输出，XXX 只写答案本体。",
                 temperature=0.0, max_tokens=self.config.fallback_max_tokens, thinking_mode=False)
             ans = self._extract_answer(resp)
             trace.append({"step": "fallback_result", "content": ans[:100]})

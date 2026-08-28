@@ -1,6 +1,6 @@
 from agent_types import Candidate
-from answer_equivalence import build_answer, equivalent_answers
-from user_agent import ReasoningAgent
+from answer_equivalence import build_answer, equivalent_answers, format_answer_for_output
+from user_agent import POLICY_PROMPT, ReasoningAgent
 
 
 def test_active_response_keeps_reasoning_and_final_marker():
@@ -12,6 +12,38 @@ def test_active_response_keeps_reasoning_and_final_marker():
 def test_active_response_adds_final_marker_when_missing():
     agent = ReasoningAgent(client=object())
     assert agent._build_response("推理步骤", "42") == "推理步骤\n最终答案：42"
+
+
+def test_active_response_rewrites_final_line_to_stable_answer_body():
+    agent = ReasoningAgent(client=object())
+    content = "推理步骤\n3. 最终答案：圆周 S¹ 的基本群是整数加群 ℤ。"
+
+    response = agent._build_response(content, r"\(\displaystyle \frac{1}{R}$")
+
+    assert response == "推理步骤\n最终答案：1/R"
+    assert response.count("最终答案：") == 1
+
+
+def test_active_response_removes_noncanonical_answer_sentence():
+    agent = ReasoningAgent(client=object())
+
+    response = agent._build_response("推理步骤\n因此答案是 10。", "10")
+
+    assert response == "推理步骤\n最终答案：10"
+
+
+def test_active_response_keeps_reasoning_that_mentions_answer_quality():
+    agent = ReasoningAgent(client=object())
+
+    response = agent._build_response("检查候选答案的正确性。", "10")
+
+    assert response == "检查候选答案的正确性。\n最终答案：10"
+
+
+def test_output_formatter_uses_ascii_safe_math_notation():
+    assert format_answer_for_output("3x² - 3") == "3x^2 - 3"
+    assert format_answer_for_output(r"\mathbb{Z}") == "Z"
+    assert "只写答案本体" in POLICY_PROMPT
 
 
 def test_fallback_response_adds_final_marker():
