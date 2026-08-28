@@ -43,7 +43,15 @@ def test_active_response_keeps_reasoning_that_mentions_answer_quality():
 def test_output_formatter_uses_ascii_safe_math_notation():
     assert format_answer_for_output("3x² - 3") == "3x^2 - 3"
     assert format_answer_for_output(r"\mathbb{Z}") == "Z"
+    assert format_answer_for_output("16πi") == "16*pi*i"
+    assert format_answer_for_output("160°") == "160"
     assert "只写答案本体" in POLICY_PROMPT
+
+
+def test_output_formatter_keeps_exact_form_and_removes_root_labels():
+    assert format_answer_for_output("4480/19683 ≈ 0.2276") == "4480/19683"
+    assert format_answer_for_output("m = 4, 7") == "4,7"
+    assert format_answer_for_output("r1 = -2, r2 = 7") == "-2,7"
 
 
 def test_fallback_response_adds_final_marker():
@@ -94,4 +102,6 @@ def test_conservative_equivalence_normalizes_ab_report_format_variants():
     assert equivalent_answers("3x² - 3", "3x^2 - 3") is True
     assert equivalent_answers(r"\(\displaystyle \frac{1}{R}$", "1/R") is True
     assert equivalent_answers(r"\mathbb{Z}", "ℤ") is True
+    assert equivalent_answers("160°", "160") is True
+    assert equivalent_answers("16πi", "16*pi*i") is True
     assert equivalent_answers("圆周 S¹ 的基本群是整数加群 ℤ。", "Z") is None

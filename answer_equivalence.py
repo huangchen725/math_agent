@@ -96,9 +96,14 @@ def normalize_answer(answer: str) -> str:
         "√": "sqrt",
         "→": "->",
         "∂": "d",
+        "°": "",
         "^": "**",
     }.items():
         value = value.replace(source, target)
+    # Preserve explicit multiplication around the mathematical constants pi and i.
+    # Without this, a model answer such as ``16πi`` becomes the ambiguous ``16pii``.
+    value = re.sub(r"(?<=\d)pi", "*pi", value)
+    value = re.sub(r"pi(?=i\b)", "pi*", value)
     return value.rstrip("。.，,；;").strip("\"'").strip()
 
 
@@ -193,6 +198,13 @@ def format_answer_for_output(answer: str) -> str:
     """Render a compact final-answer body with stable ASCII-safe notation."""
     value = normalize_answer(answer)
     value = re.sub(r"^(?:最终)?答案(?:是|为)?\s*[:：]?\s*", "", value)
+    # If the candidate includes both an exact result and a decimal approximation,
+    # keep the exact form in the machine-facing final-answer line.
+    value = re.split(r"\s*(?:≈|≃|~=|\\approx)\s*", value, maxsplit=1)[0]
+    # Characteristic-root labels are explanatory metadata rather than answer data.
+    # Restrict this cleanup to the conventional m/r1/r2 labels.
+    value = re.sub(r"(?i)(?:^|(?<=[,;]))\s*(?:m|r_?\d+)\s*=\s*", "", value)
+    value = re.sub(r"\s*([,;])\s*", r"\1", value)
     value = value.replace("**", "^")
     return re.sub(r"\s+", " ", value).strip()
 
