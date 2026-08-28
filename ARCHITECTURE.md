@@ -58,6 +58,8 @@ flowchart LR
 | `evaluation/audit_dataset.py` | 离线审计 JSONL 的规模、领域分布、来源字段、内部重复及与 prompt/sample 的重合 |
 | `evaluation/judge.py` | 离线保守判分；只接受可证明等价，输出 `correct/wrong/unknown/no_answer`，不属于运行时选择链路 |
 | `evaluation/rescore_report.py` | 不调用模型，使用保守判分器重新核算已有报告，并保留旧 verdict 供差异追踪 |
+| `evaluation/generate_internal_benchmark.py` | 生成可复现的18领域内部合成基准；它不是生产调用链或官方独立题集 |
+| `evaluation/score_run.py` | 汇总 `main.py` 逐题输出、四态判分、领域/难度/题型指标和 usage，并导出人工复核队列 |
 
 ## 4. 求解流程
 
