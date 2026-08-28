@@ -46,6 +46,50 @@ def test_client_retries_server_error(monkeypatch):
     assert len(calls) == 2
 
 
+def test_client_retries_platform_rate_limit_returned_as_400(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    calls = []
+    limited = {
+        "error": {
+            "type": "invalid_request_error",
+            "message": "请求过于频繁，请稍后再试",
+        }
+    }
+    success = {"choices": [{"message": {"content": "ok"}}]}
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return _http_response(400, limited)
+        return _http_response(200, success)
+
+    monkeypatch.setattr(llm_client.requests, "post", fake_post)
+    monkeypatch.setattr(llm_client.time, "sleep", lambda _: None)
+    client = InternChatClient(retry=2)
+
+    assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
+    assert len(calls) == 2
+
+
+def test_client_does_not_retry_generic_bad_request(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(1)
+        return _http_response(
+            400,
+            {"error": {"type": "invalid_request_error", "message": "invalid n"}},
+        )
+
+    monkeypatch.setattr(llm_client.requests, "post", fake_post)
+    client = InternChatClient(retry=3)
+
+    with pytest.raises(RuntimeError):
+        client.chat([{"role": "user", "content": "hello"}])
+    assert len(calls) == 1
+
+
 def test_client_returns_text_when_tool_calls_is_empty(monkeypatch):
     monkeypatch.setenv("INTERN_API_KEY", "test-key")
     payload = {"choices": [{"message": {"content": "ok", "tool_calls": []}}]}

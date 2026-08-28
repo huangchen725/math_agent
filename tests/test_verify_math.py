@@ -20,6 +20,11 @@ def test_text_verification_does_not_accept_substrings_or_negated_claims():
     assert verify_answer("收敛", "不收敛")[0] is False
 
 
+def test_verification_accepts_safe_unicode_and_latex_variants():
+    assert verify_answer("3x^2 - 3", "3x² - 3")[0] is True
+    assert verify_answer("1/R", r"\(\displaystyle \frac{1}{R}$")[0] is True
+
+
 def test_wave_equation_example_has_the_condition_needed_for_its_answer():
     assert "u_t(x,0)=0" in DOMAIN_PROMPTS["偏微分方程"]
 

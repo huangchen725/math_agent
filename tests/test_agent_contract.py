@@ -56,3 +56,10 @@ def test_conservative_equivalence_handles_exact_numbers_and_unordered_answers():
     assert equivalent_answers("1,3", "3,1") is True
     assert equivalent_answers("1", "10") is False
     assert equivalent_answers("x+1", "1+x") is None
+
+
+def test_conservative_equivalence_normalizes_ab_report_format_variants():
+    assert equivalent_answers("3x² - 3", "3x^2 - 3") is True
+    assert equivalent_answers(r"\(\displaystyle \frac{1}{R}$", "1/R") is True
+    assert equivalent_answers(r"\mathbb{Z}", "ℤ") is True
+    assert equivalent_answers("圆周 S¹ 的基本群是整数加群 ℤ。", "Z") is None

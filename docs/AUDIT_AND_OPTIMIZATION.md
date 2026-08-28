@@ -44,10 +44,11 @@
 | 常规最低模型调用 | 约 6 次/题；工具循环、反思与回退会继续增加 |
 | 公开题目 | 3 道 `sample_data/dev.jsonl` 样例，覆盖不足 |
 | few-shot | 18 个领域共 21 个示例；已修复验证脚本只解析 18 个的问题 |
-| 离线测试 | Python 3.12 下 50 项通过 |
-| 语句覆盖率 | 本轮列入检查的 10 个核心/边界模块合计 69%；`agent_types.py` 100%、`llm_client.py` 87%、`budget.py` 85%、`main.py` 85%、`answer_equivalence.py` 84%、`math_tools.py` 78%、`user_agent.py` 64%、`deterministic_verifier.py` 56%、`verify_math.py` 39% |
+| 离线测试 | Python 3.12 下 54 项通过 |
+| 语句覆盖率 | 本轮列入检查的 10 个核心/边界模块合计 70%；`agent_types.py` 100%、`budget.py` 85%、`main.py` 85%、`answer_equivalence.py` 84%、`llm_client.py` 84%、`math_tools.py` 78%、`user_agent.py` 64%、`deterministic_verifier.py` 56%、`verify_math.py` 38% |
 | 静态与安全检查 | Ruff、compileall、Bandit、`pip check`、`pip-audit`、skill 校验通过 |
 | 在线验证 | 本轮未调用真实 API；没有对当前工作树生成新的正确率结论 |
+| 附加 A/B 报告 | 36 题原始判定旧版 33/36、模块化版 32/36；报告中的人工复核为两版 36/36。原始运行目录不在当前工作区，尚不能独立复现 |
 | 工程交付 | 无 CI、许可证、依赖锁定、自动发布包或 secret scan |
 
 这些证据能证明代码可运行和已有基础安全控制，不能证明 18 领域数学正确率、真实成本或线上稳定性。
@@ -100,6 +101,8 @@
 | RUN-001 | 只有单次 HTTP 超时，没有单题统一 deadline | 多分支可持续累积 | 单题预算在每次模型/工具调用前检查 600 秒 deadline；在途 HTTP 仍只能依赖客户端超时 |
 | RUN-002 | Runner 无成功/失败/跳过/耗时汇总 | 运行结果难核查 | 输出 `_run/run_summary.json`，记录输入文件名/SHA-256、模型、耗时、并发与计数，不记录题面 |
 | CLIENT-001 | 响应 usage 未采集 | 无法核对 token | 保持原返回契约，通过 `get_last_response_meta()` 暴露 usage、模型、request id、耗时和尝试次数；预算统一累计 |
+| EVAL-005 | 36 题 A/B 原始分数从 33/36 降至 32/36 | 表面上像工程重构造成能力回退 | 人工复核显示两版均为 36/36；误差来自 Unicode/LaTeX/语义格式误杀。运行时与验证入口现共享保守归一化，并加入报告中的格式反例测试 |
+| CLIENT-003 | 平台把“请求过于频繁”作为 HTTP 400 + `invalid_request_error` 返回 | 客户端把临时限流当永久参数错误，正式评测可能直接丢题 | 仅当 400 响应的 code/type 或 message 明确表示限流时重试；普通 400、401 不重试；已加正反测试 |
 
 ### 5.2 仍需解决的高价值问题
 
@@ -115,7 +118,7 @@
 | OBS-001 | trace 是无 schema 的 `dict` 列表 | 事件名漂移，统计和脱敏困难 | 定义稳定事件字段：阶段、状态、耗时、调用数、摘要、错误码 |
 | PRIV-001 | trace 保存候选片段和工具结果 | 私有题目或模型输出可能泄露 | 增加 `minimal/debug` 两级 trace，默认截断并支持哈希 |
 | PRIV-002 | `SUBMISSION_INFO.md` 含真实手机号 | 公开仓库产生个人隐私风险 | 公共仓库改占位符，私人提交包在生成时注入 |
-| TEST-001 | `user_agent.py` 45%、`verify_math.py` 35% 覆盖 | 关键分支回归风险高 | 用 scripted fake client 覆盖预算、反思、超时、冲突和错误响应 |
+| TEST-001 | `user_agent.py` 64%、`verify_math.py` 38%，部分编排/在线分支仍未覆盖 | 关键分支仍有回归风险 | 用 scripted fake client 继续覆盖反思、超时、冲突和错误响应；在线 smoke 保持显式执行 |
 | DEMO-001 | 点击即调用真实 API，无确认、预算展示、取消或队列限制 | 误触费用、重复请求和体验不稳定 | 增加确认、预计调用上限、禁用重复提交、取消和反馈导出 |
 | BUILD-001 | 无 CI、锁文件、LICENSE、secret scan | 合并质量和供应链不可复现 | 建立最小 CI 和锁定流程，补许可证决策 |
 | DELIVERY-001 | 提交 commit 曾固定为旧值；当前工作树尚未形成最终提交 | 提交信息可能与代码不一致 | 打包脚本从 Git 自动写入 commit、manifest 和校验和 |

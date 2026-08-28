@@ -11,6 +11,15 @@ DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
 DEFAULT_MODEL = "intern-s2-preview"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 4096
+_RATE_LIMIT_CODES = {"rate_limit_error", "rate_limit_exceeded", "too_many_requests"}
+_RATE_LIMIT_MESSAGE_MARKERS = (
+    "请求过于频繁",
+    "访问过于频繁",
+    "too many requests",
+    "requests too frequent",
+    "rate limit exceeded",
+    "rate limit reached",
+)
 
 ChatMessage = Dict[str, Any]
 ChatResponse = Union[str, ChatMessage]
@@ -138,5 +147,35 @@ class InternChatClient:
             return True
         if isinstance(exc, requests.HTTPError) and exc.response is not None:
             status = exc.response.status_code
-            return status in {408, 409, 425, 429} or status >= 500
+            if status in {408, 409, 425, 429} or status >= 500:
+                return True
+            return status == 400 and InternChatClient._is_platform_rate_limit(
+                exc.response
+            )
         return False
+
+    @staticmethod
+    def _is_platform_rate_limit(response: requests.Response) -> bool:
+        """Recognize the endpoint's non-standard HTTP 400 throttling response."""
+        codes = []
+        messages = []
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                codes.extend(str(error.get(key, ""))[:200] for key in ("type", "code"))
+                messages.append(str(error.get("message", ""))[:1000])
+            elif isinstance(error, str):
+                messages.append(error[:1000])
+            message = payload.get("message")
+            if isinstance(message, str):
+                messages.append(message[:1000])
+        if any(code.casefold() in _RATE_LIMIT_CODES for code in codes):
+            return True
+        if not messages:
+            messages.append(response.text[:4000])
+        normalized = " ".join(messages).casefold()
+        return any(marker in normalized for marker in _RATE_LIMIT_MESSAGE_MARKERS)

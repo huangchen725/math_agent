@@ -64,7 +64,7 @@ flowchart LR
 4. **截断回退**：候选无可抽取答案，或长回复缺少最终答案标记时，以温度 `0.0`、最多 `512` tokens 请求直接答案。
 5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，仅接受 `VERDICT: A` 为正票；长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
 6. **批评与反思**：最佳候选原始置信度低于 `0.5` 且已有答案时，先批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。
-7. **聚合**：抽取为结构化 `Answer`，使用保守 canonical key 归一化精确数值、集合和多解，按多数票优先；无法证明的符号等价不合并。没有多数项时选择置信度最高的候选。答案和展示推理始终取自同一个获胜答案组。
+7. **聚合**：抽取为结构化 `Answer`，使用保守 canonical key 归一化精确数值、集合、多解、常见 Unicode 上下标和 LaTeX 包装，按多数票优先；无法证明的符号或语义等价不合并。没有多数项时选择置信度最高的候选。答案和展示推理始终取自同一个获胜答案组。
 8. **构造响应**：保留获胜候选的推理文本；若其中没有最终答案标记，则附加 `最终答案：...`。fallback 也通过同一构造逻辑。
 
 `deterministic_verifier.py` 已提供受硬超时保护的确定性验证原语，但本层保守改动没有把它们接入第 5～7 步，也没有改变候选数量、温度、thinking mode 或模型选择。接入前必须先建立固定回归集并验证假阳性/假阴性。
@@ -118,7 +118,7 @@ flowchart LR
 | `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
 | `INTERN_MODEL` | `intern-s2-preview` |
 
-客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429` 和服务端 `5xx`；认证和参数错误直接失败。客户端保持原有文本/tool-call返回契约，并通过 `get_last_response_meta()` 暴露最近一次响应的 request id、模型、usage、耗时和尝试次数，供单题预算累计。
+客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保持原有文本/tool-call返回契约，并通过 `get_last_response_meta()` 暴露最近一次响应的 request id、模型、usage、耗时和尝试次数，供单题预算累计。
 
 `main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
 

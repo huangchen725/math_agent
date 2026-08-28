@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+from answer_equivalence import normalize_answer as normalize_core_answer
 from llm_client import InternChatClient
 from domain_prompts import DOMAIN_PROMPTS
 
@@ -50,23 +51,8 @@ def parse_fewshot_examples():
 # ==================== 验证器：多种方法比较答案 ====================
 
 def normalize_answer(s: str) -> str:
-    """归一化答案——LaTeX→纯文本。"""
-    if not s:
-        return ""
-    s = s.strip()
-    # \frac{a}{b} → a/b
-    for _ in range(3):
-        s = re.sub(r"\\[df]?frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
-    # \boxed{xxx} → xxx
-    s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
-    # 去 LaTeX 命令
-    s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal|displaystyle)\{([^{}]*)\}", r"\1", s)
-    s = s.replace("\\left", "").replace("\\right", "").replace("$", "")
-    s = s.replace("\\times", "x").replace("\\cdot", "*")
-    s = s.replace("\\pi", "pi").replace("\\infty", "inf")
-    # 去末尾标点
-    s = s.rstrip("。.，,；;）)】").strip()
-    return s.strip()
+    """使用运行时共享的保守归一化，避免验证入口单独漂移。"""
+    return normalize_core_answer(s)
 
 
 def to_numeric(s: str) -> float | None:

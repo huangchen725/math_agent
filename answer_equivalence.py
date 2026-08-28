@@ -40,6 +40,7 @@ def normalize_answer(answer: str) -> str:
     for _ in range(3):
         value = re.sub(r"\\[d]?frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", value)
     value = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", value)
+    value = value.replace(r"\displaystyle", "")
     value = value.replace("\\left", "").replace("\\right", "").replace("$", "")
     for command, replacement in [
         (r"\pi", "pi"),
@@ -56,19 +57,12 @@ def normalize_answer(answer: str) -> str:
     ]:
         value = value.replace(command, replacement)
     value = re.sub(r"_([0-9]+)", r"\1", value)
-    for source, target in {
-        "⁰": "**0",
-        "¹": "**1",
-        "²": "**2",
-        "³": "**3",
-        "⁴": "**4",
-        "⁵": "**5",
-        "⁶": "**6",
-        "⁷": "**7",
-        "⁸": "**8",
-        "⁹": "**9",
-    }.items():
-        value = value.replace(source, target)
+    superscript_digits = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺", "0123456789-+")
+    value = re.sub(
+        r"[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+",
+        lambda match: "^" + match.group(0).translate(superscript_digits),
+        value,
+    )
     for source, target in {
         "₀": "0",
         "₁": "1",
@@ -102,6 +96,7 @@ def normalize_answer(answer: str) -> str:
         "√": "sqrt",
         "→": "->",
         "∂": "d",
+        "^": "**",
     }.items():
         value = value.replace(source, target)
     return value.rstrip("。.，,；;").strip("\"'").strip()
@@ -176,7 +171,7 @@ def canonical_answer(answer: str) -> tuple[Any, ...]:
         keys = tuple(sorted((canonical_answer(part) for part in parts), key=repr))
         return "multi", keys
 
-    return "text", normalized.casefold()
+    return "text", compact.casefold()
 
 
 def answer_kind(answer: str) -> str:
@@ -212,4 +207,3 @@ def equivalent_answers(left: str, right: str) -> Optional[bool]:
     ):
         return False
     return None
-
