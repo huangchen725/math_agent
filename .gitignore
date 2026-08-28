@@ -3,7 +3,9 @@
 
 # 运行产物
 outputs/
-*.json
+verify_report.json
+*.tmp
+*.log
 
 # Python
 __pycache__/
@@ -11,10 +13,17 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # IDE
 .vscode/
 .idea/
+.codex-log/
 
 # 系统
 .DS_Store

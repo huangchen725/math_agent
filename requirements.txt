@@ -1,9 +1,4 @@
+# Runtime dependencies
 requests>=2.31.0
-lagent @ git+https://github.com/InternLM/lagent.git@0ab2e2f550477884743cd63fbca7bc4aa7b00290
-openai
-anthropic
-aiohttp
-asyncache
-asyncer
-tenacity
-sympy
+python-dotenv>=1.0.0
+sympy>=1.12

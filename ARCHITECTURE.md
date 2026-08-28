@@ -1,0 +1,150 @@
+# 数学推理智能体架构
+
+> 状态：当前生效  
+> 更新日期：2026-08-29  
+> 本文件是仓库唯一的架构事实源。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时以本文件和当前代码为准。
+
+## 1. 目标与边界
+
+系统面向竞赛数学题，在调用方注入的 Intern 兼容模型客户端上完成领域提示、候选生成、可选符号计算、模型验证、低置信度反思和答案聚合。
+
+当前仓库只有一套可运行实现。2026-08-28 已删除未接入入口的 `math_agent/` 原型、其 `configs/`/`data/`、专属测试和 `lagent` 复现脚手架，避免并存的环境变量、输出契约和依赖继续漂移。多智能体、共享黑板和自适应候选升级属于未来设想，不是当前能力。
+
+## 2. 外部契约
+
+```python
+ReasoningAgent(client).solve(problem, metadata)
+# -> {"final_response": str, "trace": list[dict]}
+```
+
+- `problem` 是题目字符串，必须非空且默认不超过 20000 字符。
+- `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
+- `client` 必须提供 `chat(messages=..., **kwargs)`，由调用方注入。
+- `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理并包含 `最终答案：...`。
+- `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要。
+- `ReasoningAgent.solve()` 捕获全局异常并尝试低成本回退；`main.py` 将空答案和 `未解出` 视为失败记录。
+
+## 3. 组件与数据流
+
+```mermaid
+flowchart LR
+    I[JSONL / Demo / 调用方] --> C[InternChatClient]
+    I --> A[ReasoningAgent]
+    C --> A
+    D[domain_prompts.py<br/>18 领域提示] --> A
+    B[ExecutionBudget] --> A
+    A --> T[math_tools.py<br/>11 个受限 SymPy 工具]
+    T --> P[tool_executor.py<br/>可终止子进程]
+    T --> A
+    E[Answer / Candidate / Verification] --> A
+    A --> R[final_response + trace]
+    R --> O[每题 JSON / Demo 展示 / 调用方]
+```
+
+| 组件 | 职责 |
+| --- | --- |
+| `user_agent.py` | 维护竞赛接口、固定策略候选生成、验证、反思和聚合，并协调单题预算 |
+| `agent_types.py` | 定义 `Answer`、`Candidate`、`Verification` 内部数据对象 |
+| `answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
+| `budget.py` | 统一记录和限制每题模型请求、usage token、工具调用及阶段 deadline |
+| `domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
+| `math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
+| `tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
+| `deterministic_verifier.py` | 提供方程、导数、积分、行列式、模幂、组合数及符号等价验证原语；当前尚未接入候选选择 |
+| `llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试 |
+| `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
+| `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
+| `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
+
+## 4. 求解流程
+
+1. **领域路由**：`_detect_domain()` 对 18 个领域的关键词做不区分 ASCII 大小写的计数，选择最高分领域；未匹配时使用通用提示。
+2. **候选生成**：默认生成 2 个工具增强候选和 1 个纯推理候选，策略温度 `0.6`、`thinking_mode=False`、单次上限 `8192` tokens。
+3. **工具循环**：每个工具候选最多 3 轮。模型请求工具后，本地执行并把结果作为 `tool` 消息回灌；超过轮数后强制请求一次无工具文本答案。
+4. **截断回退**：候选无可抽取答案，或长回复缺少最终答案标记时，以温度 `0.0`、最多 `512` tokens 请求直接答案。
+5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，仅接受 `VERDICT: A` 为正票；长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
+6. **批评与反思**：最佳候选原始置信度低于 `0.5` 且已有答案时，先批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。
+7. **聚合**：抽取为结构化 `Answer`，使用保守 canonical key 归一化精确数值、集合和多解，按多数票优先；无法证明的符号等价不合并。没有多数项时选择置信度最高的候选。答案和展示推理始终取自同一个获胜答案组。
+8. **构造响应**：保留获胜候选的推理文本；若其中没有最终答案标记，则附加 `最终答案：...`。fallback 也通过同一构造逻辑。
+
+`deterministic_verifier.py` 已提供受硬超时保护的确定性验证原语，但本层保守改动没有把它们接入第 5～7 步，也没有改变候选数量、温度、thinking mode 或模型选择。接入前必须先建立固定回归集并验证假阳性/假阴性。
+
+默认配置由 `AgentConfig` 管理：
+
+| 参数 | 默认值 |
+| --- | ---: |
+| `tool_candidates` / `plain_candidates` | `2` / `1` |
+| `verifier_voting_times` | `1` |
+| `policy_temperature` / `verifier_temperature` | `0.6` / `0.0` |
+| `critic_temperature` / `reflection_temperature` | `0.3` / `0.3` |
+| `max_tokens` / `verifier_max_tokens` / `critic_max_tokens` | `8192` / `1024` / `1024` |
+| `fallback_max_tokens` | `512` |
+| `max_tool_rounds` | `3` |
+| `tool_timeout_seconds` | `5.0` |
+| `max_model_requests` | `16` |
+| `max_total_tokens` | `200000` |
+| `max_tool_calls` | `48` |
+| `problem_timeout_seconds` | `600.0` |
+| `max_problem_chars` / `max_metadata_chars` | `20000` / `20000` |
+| tools / critic / reflection / fallback | 全部启用 |
+
+## 5. 数学工具
+
+当前注册 11 个工具：
+
+| 工具 | 用途 |
+| --- | --- |
+| `calculate` | 解析、化简表达式 |
+| `solve_equation` | 解一元方程 |
+| `differentiate` | 求导 |
+| `integrate` | 不定积分 |
+| `limit` | 求极限 |
+| `residue` | 求复函数留数 |
+| `matrix_det` | 求矩阵行列式 |
+| `matrix_eigenvals` | 求矩阵特征值 |
+| `gcd_lcm` | 求最大公约数与最小公倍数 |
+| `mod_pow` | 模幂 |
+| `binomial` | 组合数 |
+
+模型工具参数是不可信输入。执行层使用无 builtins 的 SymPy 白名单命名空间，并限制表达式 2048 字符、工具参数 8192 字符、结果 8000 字符、矩阵最大 `12×12`、整数最多 1000 位、组合数 `n≤100000`、幂指数 `≤10000`、每轮最多 8 个工具调用。每次注册工具计算在 spawned 子进程中运行，默认超过 5 秒即由父进程终止。未知工具、畸形 JSON、越界输入、超时和子进程失败均返回受控错误，不进入任意代码执行路径。
+
+## 6. 客户端与运行器
+
+`InternChatClient` 使用：
+
+| 环境变量 | 默认值 |
+| --- | --- |
+| `INTERN_API_KEY` | 无，缺失时拒绝启动 |
+| `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
+| `INTERN_MODEL` | `intern-s2-preview` |
+
+客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429` 和服务端 `5xx`；认证和参数错误直接失败。客户端保持原有文本/tool-call返回契约，并通过 `get_last_response_meta()` 暴露最近一次响应的 request id、模型、usage、耗时和尝试次数，供单题预算累计。
+
+`main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
+
+## 7. 信任边界与失败行为
+
+- API key 只从环境变量读取；`.env`、`outputs/` 和验证报告被 Git 忽略。
+- 题目、metadata、模型文本、tool calls、HTTP/JSON 响应和 checkpoint 均视为不可信输入。
+- trace 会包含题面衍生内容、候选片段和工具结果，输出目录应按敏感数据管理。
+- 工具调用失败会退化到纯推理；候选截断会尝试快速回退；全局异常仍保证接口返回结构稳定。
+- SymPy 子进程有墙钟硬超时，但尚无操作系统级内存上限；复杂表达式在超时前仍可能形成内存峰值。
+- 单题 deadline 在各模型/工具调用边界检查，无法提前取消已发出的阻塞 HTTP 请求；单请求由客户端超时保护。
+- token 上限依赖响应 usage 后记账；一次响应若造成超额，后续请求会停止，但已产生的 token 无法撤销。
+- 模型输出具有随机性。正确率、延迟和成本结论必须绑定固定数据集、模型、配置和提交记录。
+
+## 8. 验证边界
+
+默认离线检查：
+
+```bash
+python -m pytest -q
+python -m compileall -q .
+python -m ruff check .
+```
+
+测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端及 runner，不依赖真实 API。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+
+## 9. 架构变更规则
+
+以下变化必须同时更新本文件、README 和相应测试：外部接口、候选/验证流程、工具注册与安全界限、环境变量、运行入口、checkpoint 格式或目录布局。实验数据与演进历史写入 `技术报告.md`，待办与风险写入 `docs/AUDIT_AND_OPTIMIZATION.md`，不要另建第二份架构文档。

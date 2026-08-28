@@ -1,19 +1,26 @@
-"""增强版数学推理智能体 v17 —— 回退到v13最优架构。
-
-v17 = v13架构(thinking=False+8192+2工具+1纯推理+简单投票) + 微分几何修复
-v6→v10→v13 三次成功都是简单配置；v7/v11/v15/v16 四次失败都是加了复杂度
-结论：v13是最优，不再加复杂功能
+"""数学推理智能体的竞赛接口与求解流水线。
 
 接口约束：solve(problem, metadata) -> {"final_response": str, "trace": list}
+架构事实源：ARCHITECTURE.md
 """
+import json
 import re
-from collections import Counter
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
+from agent_types import Candidate, Verification
+from answer_equivalence import build_answer, normalize_answer, numeric_value
+from budget import BudgetExceeded, ExecutionBudget
 from llm_client import InternChatClient
 from math_tools import run_tool_loop, TOOL_DEFINITIONS
 from domain_prompts import get_domain_prompt
+
+
+_ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
+    "active_problem_budget",
+    default=None,
+)
 
 
 # ==================== 提示词 ====================
@@ -25,7 +32,7 @@ POLICY_PROMPT = """你是数学推理智能体。解题并给出推理过程。
 2. 关键推导步骤
 3. 最终答案：XXX
 
-答案：纯数字或a/b分数。多解用逗号分隔。
+答案可以是数字、分数、表达式、集合、区间、公式或数学结论；应简洁、无歧义。
 """
 
 POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
@@ -35,7 +42,7 @@ POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 2. 关键推导
 3. 最终答案：XXX
 
-答案：纯数字或a/b分数。
+答案可以是数字、分数、表达式、集合、区间、公式或数学结论；应简洁、无歧义。
 """
 
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
@@ -61,14 +68,13 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 
 @dataclass
 class AgentConfig:
-    """智能体配置（v17：回退v13最优架构）。"""
-    # 候选生成：v13配置（全部温度0.6，不加多温度）
+    """当前竞赛流水线配置。"""
+    # 候选生成：固定预算，全部使用同一策略温度。
     tool_candidates: int = 2
     plain_candidates: int = 1
     verifier_voting_times: int = 1
     # 温度
     policy_temperature: float = 0.6
-    planner_temperature: float = 0.2
     verifier_temperature: float = 0.0
     critic_temperature: float = 0.3
     reflection_temperature: float = 0.3
@@ -80,7 +86,6 @@ class AgentConfig:
     # thinking mode（v13: False——thinking导致截断）
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
-    planner_thinking_mode: bool = False
     critic_thinking_mode: bool = False
     # 功能开关
     enable_tools: bool = True
@@ -88,10 +93,17 @@ class AgentConfig:
     enable_reflection: bool = True
     enable_fallback: bool = True
     max_tool_rounds: int = 3
+    tool_timeout_seconds: float = 5.0
+    max_model_requests: int = 16
+    max_total_tokens: int = 200_000
+    max_tool_calls: int = 48
+    problem_timeout_seconds: float = 600.0
+    max_problem_chars: int = 20_000
+    max_metadata_chars: int = 20_000
 
 
 class ReasoningAgent:
-    """增强版数学推理智能体 v17——v13最优架构。"""
+    """领域路由、工具增强、验证、反思与聚合智能体。"""
 
     def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
@@ -103,21 +115,88 @@ class ReasoningAgent:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_content})
+        budget = _ACTIVE_BUDGET.get()
+        if budget is not None:
+            budget.consume_model_request()
         resp = self.client.chat(messages=messages, **kwargs)
+        if budget is not None and hasattr(self.client, "get_last_response_meta"):
+            budget.record_response_meta(self.client.get_last_response_meta())
         return resp if isinstance(resp, str) else str(resp.get("content", ""))
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
         """主求解流程。全局 try-except 防空答案。"""
-        idx = metadata.get("idx", 0)
         trace: List[Dict] = []
+        if not isinstance(problem, str) or not problem.strip():
+            return {
+                "final_response": "未解出",
+                "trace": [{"step": "input_error", "content": "problem 必须是非空字符串"}],
+            }
+        if len(problem) > self.config.max_problem_chars:
+            return {
+                "final_response": "未解出",
+                "trace": [{
+                    "step": "input_error",
+                    "content": f"problem 超过 {self.config.max_problem_chars} 字符限制",
+                }],
+            }
+        if not isinstance(metadata, dict):
+            return {
+                "final_response": "未解出",
+                "trace": [{"step": "input_error", "content": "metadata 必须是字典"}],
+            }
         try:
-            return self._solve_impl(problem, idx, trace)
-        except Exception as e:
-            trace.append({"step": "global_error", "content": f"{type(e).__name__}: {str(e)[:300]}"})
-            fb = self._quick_fallback(problem, trace)
-            return {"final_response": fb or "未解出", "trace": trace}
+            serialized_metadata = json.dumps(
+                metadata,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        except (TypeError, ValueError):
+            return {
+                "final_response": "未解出",
+                "trace": [{"step": "input_error", "content": "metadata 必须可序列化为 JSON"}],
+            }
+        if len(serialized_metadata) > self.config.max_metadata_chars:
+            return {
+                "final_response": "未解出",
+                "trace": [{
+                    "step": "input_error",
+                    "content": f"metadata 超过 {self.config.max_metadata_chars} 字符限制",
+                }],
+            }
+        budget = ExecutionBudget(
+            max_model_requests=self.config.max_model_requests,
+            max_total_tokens=self.config.max_total_tokens,
+            max_tool_calls=self.config.max_tool_calls,
+            timeout_seconds=self.config.problem_timeout_seconds,
+        )
+        budget_token = _ACTIVE_BUDGET.set(budget)
+        try:
+            try:
+                result = self._solve_impl(problem, trace)
+            except BudgetExceeded as e:
+                trace.append({"step": "budget_exceeded", "content": str(e)[:300]})
+                result = {"final_response": "未解出", "trace": trace}
+            except Exception as e:
+                trace.append({
+                    "step": "global_error",
+                    "content": f"{type(e).__name__}: {str(e)[:300]}",
+                })
+                try:
+                    fb = self._quick_fallback(problem, trace)
+                    final_response = self._build_response("", fb) if fb else "未解出"
+                    result = {"final_response": final_response, "trace": trace}
+                except BudgetExceeded as budget_error:
+                    trace.append({
+                        "step": "budget_exceeded",
+                        "content": str(budget_error)[:300],
+                    })
+                    result = {"final_response": "未解出", "trace": trace}
+            trace.append({"step": "budget_summary", "content": budget.snapshot()})
+            return result
+        finally:
+            _ACTIVE_BUDGET.reset(budget_token)
 
-    def _solve_impl(self, problem: str, idx: int, trace: List[Dict]) -> Dict:
+    def _solve_impl(self, problem: str, trace: List[Dict]) -> Dict:
         # 阶段1：关键词检测领域
         domain_name = self._detect_domain(problem)
         domain_prompt = get_domain_prompt(domain_name)
@@ -125,7 +204,7 @@ class ReasoningAgent:
             trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
         # 阶段2：多候选生成（全部温度0.6，v13配置）
-        candidates, gen_trace = self._generate_candidates(problem, idx, domain_prompt)
+        candidates, gen_trace = self._generate_candidates(problem, domain_prompt)
         trace.extend(gen_trace)
 
         # 截断兜底
@@ -134,63 +213,74 @@ class ReasoningAgent:
             if self.config.enable_fallback:
                 fb = self._quick_fallback(problem, trace)
                 if fb:
-                    return {"final_response": fb, "trace": trace}
+                    return {"final_response": self._build_response("", fb), "trace": trace}
 
         # 阶段3：验证投票
-        scored = []
+        scored: List[Candidate] = []
         for cid, candidate in enumerate(candidates):
-            confidence, vt = self._verify(problem, candidate, idx, cid)
-            answer = self._extract_answer(candidate)
-            scored.append({
-                "content": candidate,
-                "confidence": confidence + (0.3 if answer else -0.5),
-                "answer": answer,
-                "raw_confidence": confidence,
-            })
+            confidence, vt, verifications = self._verify(problem, candidate, cid)
+            answer = build_answer(self._extract_answer(candidate))
+            strategy = (
+                "tool"
+                if self.config.enable_tools and cid < self.config.tool_candidates
+                else "plain"
+            )
+            scored.append(Candidate(
+                content=candidate,
+                strategy=strategy,
+                confidence=confidence + (0.3 if answer.raw else -0.5),
+                answer=answer,
+                raw_confidence=confidence,
+                verifications=verifications,
+            ))
             trace.extend(vt)
 
         # 阶段4：Critic + 反思（仅低置信度触发）
         if self.config.enable_critic and scored:
-            best = max(scored, key=lambda x: x["confidence"])
-            if best["raw_confidence"] < 0.5 and best["answer"]:
-                criticism = self._critic(problem, best["content"], trace)
+            best = max(scored, key=lambda item: item.confidence)
+            if best.raw_confidence < 0.5 and best.answer.raw:
+                criticism = self._critic(problem, best.content, trace)
                 if criticism and "NO ERROR" not in criticism.upper():
-                    refined = self._reflect(problem, best["content"], criticism, trace)
+                    refined = self._reflect(problem, best.content, criticism, trace)
                     if refined:
-                        rc, rv = self._verify(problem, refined, idx, len(candidates))
-                        ra = self._extract_answer(refined)
-                        scored.append({
-                            "content": refined,
-                            "confidence": rc + (0.3 if ra else -0.5),
-                            "answer": ra,
-                            "raw_confidence": rc,
-                            "temp": 0.3,
-                        })
+                        rc, rv, verifications = self._verify(
+                            problem, refined, len(candidates)
+                        )
+                        ra = build_answer(self._extract_answer(refined))
+                        scored.append(Candidate(
+                            content=refined,
+                            strategy="reflection",
+                            confidence=rc + (0.3 if ra.raw else -0.5),
+                            answer=ra,
+                            raw_confidence=rc,
+                            verifications=verifications,
+                            metadata={"temperature": self.config.reflection_temperature},
+                        ))
                         trace.extend(rv)
 
         # 阶段6：加权聚合
-        final_answer = self._aggregate(scored, trace)
+        final_answer, best_content = self._aggregate(scored, trace)
         if not final_answer and scored:
-            final_answer = self._extract_answer(scored[0]["content"]) or "未解出"
-
-        best_content = max(scored, key=lambda x: x["confidence"])["content"] if scored else ""
+            final_answer = self._extract_answer(scored[0].content) or "未解出"
+        if not best_content and scored:
+            best_content = scored[0].content
         final_response = self._build_response(best_content, final_answer)
 
         return {"final_response": final_response or final_answer or "未解出", "trace": trace}
 
     def _build_response(self, content: str, answer: str) -> str:
         if not content:
-            return answer or "未解出"
+            return f"最终答案：{answer}" if answer else "未解出"
         if "最终答案" in content:
             return content.strip()
         return f"{content.strip()}\n最终答案：{answer}"
 
-    def _generate_candidates(self, problem: str, idx: int, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
+    def _generate_candidates(self, problem: str, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
         """v17：回退v13——全部温度0.6，简单候选生成。"""
         candidates, trace = [], []
         for i in range(self.config.tool_candidates):
             if self.config.enable_tools:
-                cand, tt = self._solve_tools(problem, idx, i, domain_prompt)
+                cand, tt = self._solve_tools(problem, i, domain_prompt)
             else:
                 cand = self._solve_plain(problem, domain_prompt)
                 tt = [{"step": f"policy_tool_{i}", "content": cand[:1000]}]
@@ -202,7 +292,7 @@ class ReasoningAgent:
             trace.append({"step": f"policy_plain_{i}", "content": cand[:1000]})
         return [c for c in candidates if c], trace
 
-    def _solve_tools(self, problem: str, idx: int, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
+    def _solve_tools(self, problem: str, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
         try:
             messages = [
                 {"role": "system", "content": domain_prompt or POLICY_PROMPT},
@@ -214,6 +304,8 @@ class ReasoningAgent:
                 thinking_mode=self.config.policy_thinking_mode,
                 temperature=self.config.policy_temperature,
                 max_tokens=self.config.max_tokens,
+                tool_timeout_seconds=self.config.tool_timeout_seconds,
+                budget=_ACTIVE_BUDGET.get(),
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
                 trace = [{"step": f"tool_solve_{cid}", "content": tt}]
@@ -226,6 +318,8 @@ class ReasoningAgent:
             trace = [{"step": f"tool_solve_{cid}", "content": tt}]
             trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
             return response, trace
+        except BudgetExceeded:
+            raise
         except Exception as e:
             trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
             return self._solve_plain(problem, domain_prompt), trace
@@ -237,74 +331,115 @@ class ReasoningAgent:
                               temperature=self.config.policy_temperature,
                               max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
+        except BudgetExceeded:
+            raise
         except Exception:
             return ""
 
-    def _verify(self, problem: str, candidate: str, idx: int, cid: int) -> Tuple[float, List[Dict]]:
-        votes, trace = [], []
+    def _verify(
+        self,
+        problem: str,
+        candidate: str,
+        cid: int,
+    ) -> Tuple[float, List[Dict], List[Verification]]:
+        votes, trace, verifications = [], [], []
+        review_text = self._review_excerpt(candidate)
         for vid in range(self.config.verifier_voting_times):
             try:
                 verdict = self._chat(VERIFIER_PROMPT,
-                    f"题目：\n{problem}\n\n候选解答：\n{candidate[:3000]}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
+                    f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
                     temperature=self.config.verifier_temperature,
                     max_tokens=self.config.verifier_max_tokens,
                     thinking_mode=self.config.verifier_thinking_mode)
-                votes.append(self._is_correct(verdict))
+                passed = self._is_correct(verdict)
+                votes.append(passed)
+                verifications.append(Verification(
+                    source="model",
+                    status="pass" if passed else "fail",
+                    confidence=1.0 if passed else 0.0,
+                    detail=verdict[:200],
+                ))
                 trace.append({"step": f"verify_{cid}_{vid}", "content": verdict[:200]})
+            except BudgetExceeded:
+                raise
             except Exception as e:
                 votes.append(False)
+                verifications.append(Verification(
+                    source="model",
+                    status="unknown",
+                    confidence=0.0,
+                    detail=f"{type(e).__name__}: {str(e)[:160]}",
+                ))
                 trace.append({"step": f"verify_err_{cid}_{vid}", "content": str(e)[:200]})
-        return (sum(votes) / len(votes) if votes else 0.0), trace
+        return (sum(votes) / len(votes) if votes else 0.0), trace, verifications
 
     def _critic(self, problem: str, candidate: str, trace: List[Dict]) -> str:
         try:
+            review_text = self._review_excerpt(candidate)
             criticism = self._chat(CRITIC_PROMPT,
-                f"题目：\n{problem}\n\n候选解答：\n{candidate[:3000]}\n\n请找出错误或改进点。",
+                f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n请找出错误或改进点。",
                 temperature=self.config.critic_temperature,
                 max_tokens=self.config.critic_max_tokens,
                 thinking_mode=self.config.critic_thinking_mode)
             trace.append({"step": "critic", "content": criticism[:500]})
             return criticism
+        except BudgetExceeded:
+            raise
         except Exception as e:
             trace.append({"step": "critic_error", "content": str(e)[:200]})
             return ""
 
     def _reflect(self, problem: str, prev: str, feedback: str, trace: List[Dict]) -> str:
         try:
-            prompt = REFLECTION_PROMPT.format(problem=problem, prev_answer=prev[:2000], feedback=feedback[:500])
+            prompt = REFLECTION_PROMPT.format(
+                problem=problem,
+                prev_answer=self._review_excerpt(prev, limit=2000),
+                feedback=feedback[:500],
+            )
             resp = self._chat(POLICY_PROMPT, prompt,
                               temperature=self.config.reflection_temperature,
                               max_tokens=self.config.max_tokens,
                               thinking_mode=self.config.policy_thinking_mode)
             trace.append({"step": "reflection", "content": resp[:1000]})
             return resp
+        except BudgetExceeded:
+            raise
         except Exception as e:
             trace.append({"step": "reflect_error", "content": str(e)[:200]})
             return ""
 
-    def _aggregate(self, scored: List[Dict], trace: List[Dict]) -> str:
+    def _aggregate(self, scored: List[Candidate], trace: List[Dict]) -> Tuple[str, str]:
         """v17：回退v13——简单多数投票。"""
         if not scored:
-            return ""
-        with_ans = [s for s in scored if s["answer"]]
+            return "", ""
+        with_ans = [candidate for candidate in scored if candidate.answer.raw]
         if not with_ans:
-            best = max(scored, key=lambda x: x["confidence"])
-            return self._normalize(best["content"].strip()[:500])
-        for s in with_ans:
-            s["norm"] = self._normalize(s["answer"])
-            s["num"] = self._numeric(s["norm"])
+            best = max(scored, key=lambda item: item.confidence)
+            return self._normalize(best.content.strip()[:500]), best.content
         groups = {}
-        for s in with_ans:
-            key = s["num"] if s["num"] is not None else s["norm"]
-            groups.setdefault(key, []).append(s)
-        best_key = max(groups, key=lambda k: (len(groups[k]), max(s["confidence"] for s in groups[k])))
+        for candidate in with_ans:
+            groups.setdefault(candidate.answer.canonical, []).append(candidate)
+        best_key = max(
+            groups,
+            key=lambda key: (
+                len(groups[key]),
+                max(candidate.confidence for candidate in groups[key]),
+            ),
+        )
         bg = groups[best_key]
         if len(bg) >= 2:
-            trace.append({"step": "self_consistency", "content": f"答案 '{bg[0]['norm']}' 获得 {len(bg)} 票一致"})
-            return bg[0]["norm"]
-        best = max(with_ans, key=lambda x: x["confidence"])
-        trace.append({"step": "select_final", "content": f"选最高分: {best['norm']}"})
-        return best["norm"]
+            trace.append({
+                "step": "self_consistency",
+                "content": f"答案 '{bg[0].answer.normalized}' 获得 {len(bg)} 票一致",
+            })
+            selected = max(bg, key=lambda item: item.confidence)
+            return bg[0].answer.normalized, selected.content
+        best = max(with_ans, key=lambda item: item.confidence)
+        trace.append({
+            "step": "select_final",
+            "content": f"选最高分: {best.answer.normalized}",
+        })
+        return best.answer.normalized, best.content
 
     # 关键词→领域映射（v11：扩充至每领域15-20个关键词）
     _DOMAIN_KEYWORDS = {
@@ -348,14 +483,24 @@ class ReasoningAgent:
 
     def _detect_domain(self, problem: str) -> str:
         """关键词匹配检测数学子领域，不花API调用。"""
+        normalized_problem = problem.casefold()
         scores = {}
         for domain, keywords in self._DOMAIN_KEYWORDS.items():
-            score = sum(1 for kw in keywords if kw in problem)
+            score = sum(1 for kw in keywords if kw.casefold() in normalized_problem)
             if score > 0:
                 scores[domain] = score
         if scores:
             return max(scores, key=scores.get)
         return ""
+
+    @staticmethod
+    def _review_excerpt(text: str, limit: int = 3000) -> str:
+        """保留候选开头与结尾，避免验证截断掉末尾最终答案。"""
+        if len(text) <= limit:
+            return text
+        head = limit // 2
+        tail = limit - head
+        return f"{text[:head]}\n...[中间内容已截断]...\n{text[-tail:]}"
 
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
@@ -365,6 +510,8 @@ class ReasoningAgent:
             ans = self._extract_answer(resp)
             trace.append({"step": "fallback_result", "content": ans[:100]})
             return ans or resp.strip()[:200]
+        except BudgetExceeded:
+            raise
         except Exception:
             return ""
 
@@ -384,52 +531,14 @@ class ReasoningAgent:
 
     @staticmethod
     def _normalize(answer: str) -> str:
-        """v26——补强归一化：处理 LaTeX 定界符、Unicode 数学符号、上标下标、常见 LaTeX 命令。
-
-        采样收敛实验证明模型答案带 LaTeX 定界符、π²、C_1、{1,3} 等格式，v21 回退时丢了 v20 的增强，
-        导致"答对但格式误判"。本版补回并扩展。
-        """
-        if not answer: return ""
-        s = answer.strip()
-        # 1. LaTeX 定界符 \(...\) \[...\]
-        s = s.replace(r"\(", "").replace(r"\)", "").replace(r"\[", "").replace(r"\]", "")
-        # 2. \boxed \frac \dfrac 及字体命令
-        s = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", s)
-        s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
-        s = re.sub(r"\\dfrac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", s)
-        s = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", s)
-        # 3. \left \right $ 及常见 LaTeX 命令 -> 等价符号
-        s = s.replace("\\left", "").replace("\\right", "").replace("$", "")
-        for cmd, rep in [(r"\pi", "pi"), (r"\cdot", "*"), (r"\times", "*"),
-                         (r"\leq", "<="), (r"\le", "<="), (r"\geq", ">="), (r"\ge", ">="),
-                         (r"\neq", "!="), (r"\ne", "!="), (r"\infty", "oo"), (r"\to", "->")]:
-            s = s.replace(cmd, rep)
-        # 4. LaTeX 下标 C_1 -> C1
-        s = re.sub(r"_([0-9]+)", r"\1", s)
-        # 5. Unicode 上标 -> **幂（π² -> pi**2）
-        for k, v in {"⁰": "**0", "¹": "**1", "²": "**2", "³": "**3", "⁴": "**4",
-                     "⁵": "**5", "⁶": "**6", "⁷": "**7", "⁸": "**8", "⁹": "**9"}.items():
-            s = s.replace(k, v)
-        # 6. Unicode 下标 -> 普通字符（C₁ -> C1）
-        for k, v in {"₀": "0", "₁": "1", "₂": "2", "₃": "3", "₄": "4",
-                     "₅": "5", "₆": "6", "₇": "7", "₈": "8", "₉": "9"}.items():
-            s = s.replace(k, v)
-        # 7. Unicode 数学符号 -> ASCII
-        for k, v in {"ℤ": "Z", "ℝ": "R", "ℕ": "N", "ℚ": "Q", "ℂ": "C", "π": "pi", "∞": "oo",
-                     "−": "-", "×": "*", "⋅": "*", "≤": "<=", "≥": ">=", "≠": "!=", "∑": "sum",
-                     "∏": "prod", "∫": "int", "√": "sqrt", "→": "->", "∂": "d"}.items():
-            s = s.replace(k, v)
-        return s.rstrip("。.，,；;").strip("\"'""''").strip()
+        """Compatibility wrapper around the shared conservative normalizer."""
+        return normalize_answer(answer)
 
     @staticmethod
     def _numeric(s: str) -> float | None:
-        """v12稳定版。"""
-        try:
-            if "/" in s:
-                p = s.split("/")
-                if len(p) == 2: return float(p[0]) / float(p[1])
-            return float(s)
-        except: return None
+        """Compatibility wrapper returning a float for older callers."""
+        value = numeric_value(s)
+        return float(value) if value is not None else None
 
     @staticmethod
     def _is_correct(verdict: str) -> bool:

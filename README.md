@@ -1,62 +1,134 @@
-# XH-202627 基于 Intern-S 的数学智能体
+# XH-202627 数学推理智能体
 
-基于官方 baseline (InternLM/Challenge-Cup-2026) 增强的数学推理智能体。
+本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
-## 架构
-- **接口**：`ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": [...]}`
-- **核心流程**：题型识别+规划 → 多候选生成 → 验证投票 → 最优选 + 答案抽取
-- **增强点**（相对官方 baseline）：
-  1. 推理规划层：解题前先识别题型+生成求解策略
-  2. 领域路由：12 个数学子领域的专家提示注入
-  3. 答案鲁棒抽取：从模型输出中多策略抽取最终答案
-  4. 候选多样性：温度采样 + 规划信息注入
+## 核心接口
 
-## 快速开始
+```python
+ReasoningAgent(client).solve(problem, metadata)
+# -> {"final_response": str, "trace": list[dict]}
+```
 
-### 1. 配置 API Key
+- `client` 由调用方注入，代码中不保存 API key。
+- `final_response` 保留选中候选的推理文本，并包含 `最终答案：...`。
+- `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
+- 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
+
+## 环境与安装
+
+要求 Python 3.10+。先创建虚拟环境：
+
 ```bash
-# 编辑 .env，填入你的 key
-INTERN_API_KEY=你的token
+python -m venv .venv
 ```
-获取地址：https://internlm.intern-ai.org.cn/api-token
 
-### 2. 安装依赖
+Linux/macOS：
+
 ```bash
-pip install -r requirements.txt
-# lagent 必须从源码装（requirements.txt 已指定 git+url）
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-### 3. 本地运行（样例数据）
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+开发检查和 Gradio 演示分别使用：
+
 ```bash
-python main.py --input_file sample_data/dev.jsonl --output_dir outputs
-```
-结果保存到 `outputs/{idx}.json`，已完成的题会跳过（断点续跑）。
-
-### 4. 提交到判分平台
-1. 在 AtomGit 注册：https://competition.gitcode.com/competition/2074065063594618882/intro
-2. 把代码推送到 GitHub/GitCode 仓库
-3. 在判分系统提交仓库地址 + commit SHA
-4. 限制：每天 2 次，每周 10 次
-
-## 关键约束
-- **不能硬编码 API key**：平台注入 client，key 由官方管理
-- **每题独立进程**：1200 秒/题，6 小时总量，3 并发
-- **输出**：`final_response` 是纯答案字符串（如 "72"），不是 LaTeX
-- **stream=True 和 n!=1 被拒**
-
-## 文件结构
-```
-├── user_agent.py      # 智能体入口（ReasoningAgent）—— 提交核心
-├── llm_client.py      # InternChatClient（官方提供，本地调试用）
-├── main.py            # 本地 runner
-├── requirements.txt   # 依赖
-├── sample_data/       # 样例数据
-│   └── dev.jsonl
-└── .env               # API key 配置（不提交）
+python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements-demo.txt
 ```
 
-## 时间节点
-- 报名：5/30 - 6/30（www.tiaozhanbei.net）
-- AtomGit 注册截止：9/15
-- 作品提交截止：**9/15**（已从 9/5 顺延）
-- 邮箱：changshuai@pjlab.org.cn
+## 配置
+
+将 `.env.example` 复制为本地 `.env`，不要提交密钥：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+| 变量 | 必需 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `INTERN_API_KEY` | 是 | 无 | Intern API token |
+| `INTERN_API_BASE` | 否 | 官方 Chat Completions 地址 | OpenAI 兼容端点 |
+| `INTERN_MODEL` | 否 | `intern-s2-preview` | 模型名 |
+| `LOCAL_MAX_CONCURRENCY` | 否 | `3` | 本地并发，必须为正整数 |
+
+## 运行
+
+批量处理 JSONL：
+
+```bash
+python main.py --input_file sample_data/dev.jsonl --output_dir outputs/run-001
+```
+
+输入每行至少包含非空 `problem`；可选 `idx` 只能使用字母、数字、下划线和连字符。每题结果原子写入独立 JSON 文件，只有有效的成功记录会在断点续跑时跳过。结束后会生成 `_run/run_summary.json`，只记录输入文件名及 SHA-256、模型、耗时和成功/失败/跳过计数，不保存题面。
+
+启动本地演示：
+
+```bash
+python demo.py
+```
+
+演示默认监听 `127.0.0.1:7860`，会使用真实 API。
+
+## 验证
+
+默认检查不访问外部 API：
+
+```bash
+python -m pytest -q
+python -m compileall -q .
+python -m ruff check .
+```
+
+`verify_math.py` 默认只解析 21 个 few-shot，不访问 API：
+
+```bash
+python verify_math.py
+```
+
+在线验证必须显式启用并设置请求硬上限；失败项重试也共享这一上限：
+
+```bash
+python verify_math.py --execute --max-requests 21
+python verify_math.py --execute --max-requests 40 --retry-failures
+```
+
+在线模式会产生真实调用、费用和限流影响。
+
+## 目录
+
+```text
+.
+├── user_agent.py              # 竞赛接口与推理编排
+├── agent_types.py             # Candidate/Answer/Verification 内部类型
+├── answer_equivalence.py      # 保守答案归一化与等价判断
+├── budget.py                  # 单题请求、token、工具与时间预算
+├── math_tools.py              # 11 个受限 SymPy 工具
+├── tool_executor.py           # 可终止子进程与工具硬超时
+├── deterministic_verifier.py # 确定性验证原语（尚未接入选择器）
+├── domain_prompts.py          # 18 个数学领域提示
+├── llm_client.py              # OpenAI 兼容 HTTP 客户端
+├── main.py                    # JSONL 批处理与断点续跑
+├── demo.py                    # Gradio 演示
+├── verify_math.py             # 人工在线验证
+├── sample_data/               # 可公开的小型输入样例
+├── tests/                     # 无网络回归测试
+├── .agents/skills/            # 仓库级 Codex skill
+├── docs/                      # 审计与优化路线
+└── ARCHITECTURE.md            # 唯一架构文档
+```
+
+## 安全与协作
+
+- 不提交 `.env`、token、私有题集或包含敏感题面的运行输出。
+- 模型产生的工具参数始终按不可信输入处理，必须保留解析白名单和资源边界。
+- 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
+- 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
+- [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Math Agent Maintainer"
+  short_description: "Audit and maintain the competition math agent"
+  default_prompt: "Use $math-agent-maintainer to audit and improve this math agent safely."

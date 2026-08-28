@@ -1,9 +1,0 @@
-# 开发 mock 模式：无 API key 也能跑通全流程
-inherits: default.yaml
-
-mock_mode: true
-llm:
-  api_key: ""   # 空 → 自动 mock
-
-paths:
-  problems_file: "data/problems_sample.jsonl"

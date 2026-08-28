@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from contextvars import ContextVar
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 import requests
@@ -13,6 +14,10 @@ DEFAULT_MAX_TOKENS = 4096
 
 ChatMessage = Dict[str, Any]
 ChatResponse = Union[str, ChatMessage]
+_LAST_RESPONSE_META: ContextVar[Dict[str, Any]] = ContextVar(
+    "last_intern_response_meta",
+    default={},
+)
 
 
 class InternChatClient:
@@ -25,7 +30,11 @@ class InternChatClient:
         default_args: Optional[Mapping[str, Any]] = None,
         **request_args: Any,
     ) -> None:
-        raw_api_key = os.environ.get("INTERN_API_KEY")
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        if retry <= 0:
+            raise ValueError("retry must be positive")
+        raw_api_key = (os.environ.get("INTERN_API_KEY") or "").strip()
         if not raw_api_key:
             raise RuntimeError("Missing API key. Set INTERN_API_KEY.")
         self.authorization = (
@@ -75,6 +84,10 @@ class InternChatClient:
             payload["tools"] = tools
         payload.update(request_args)
         payload["messages"] = messages
+        if payload.get("stream"):
+            raise ValueError("stream=True is not supported by the competition endpoint")
+        if payload.get("n", 1) != 1:
+            raise ValueError("n must be 1 for the competition endpoint")
 
         headers = {
             "Content-Type": "application/json",
@@ -82,6 +95,7 @@ class InternChatClient:
         }
 
         last_error = None
+        request_started = time.monotonic()
         for attempt in range(self.retry):
             try:
                 response = requests.post(
@@ -93,12 +107,36 @@ class InternChatClient:
                 response.raise_for_status()
                 data = response.json()
                 message = data["choices"][0]["message"]
-                if "tool_calls" in message:
+                usage = data.get("usage")
+                _LAST_RESPONSE_META.set({
+                    "id": data.get("id"),
+                    "model": data.get("model", self.model),
+                    "usage": usage if isinstance(usage, dict) else {},
+                    "elapsed_ms": round((time.monotonic() - request_started) * 1000),
+                    "attempts": attempt + 1,
+                })
+                if message.get("tool_calls"):
                     return message
                 return message["content"]
             except Exception as exc:
                 last_error = exc
-                if attempt + 1 < self.retry:
+                if attempt + 1 < self.retry and self._is_retryable(exc):
                     time.sleep(2**attempt)
+                else:
+                    break
 
-        raise RuntimeError(f"Chat completion failed after {self.retry} attempts: {last_error}")
+        raise RuntimeError(f"Chat completion failed: {last_error}") from last_error
+
+    @staticmethod
+    def get_last_response_meta() -> Dict[str, Any]:
+        """Return response metadata for the current thread/context without secrets."""
+        return dict(_LAST_RESPONSE_META.get())
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+            return True
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            status = exc.response.status_code
+            return status in {408, 409, 425, 429} or status >= 500
+        return False

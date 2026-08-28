@@ -1,8 +1,0 @@
-# 真实推理模式：需要 API key 和 112 题数据集
-inherits: default.yaml
-
-mock_mode: false
-# api_key 从 .env 环境变量 INTERN_S1_API_KEY 读取（不写进 yaml）
-
-paths:
-  problems_file: "data/problems_full.jsonl"

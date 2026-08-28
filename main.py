@@ -1,7 +1,12 @@
 import argparse
 import asyncio
+import hashlib
 import json
 import os
+import re
+import time
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List
 
@@ -15,27 +20,72 @@ from llm_client import InternChatClient
 from user_agent import ReasoningAgent
 
 
-LOCAL_MAX_CONCURRENCY = int(os.environ.get("LOCAL_MAX_CONCURRENCY", "3"))
+def _positive_env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {value}")
+    return value
+
+
+LOCAL_MAX_CONCURRENCY = _positive_env_int("LOCAL_MAX_CONCURRENCY", 3)
+_SAFE_INDEX = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def _normalized_idx(value: object) -> str:
+    idx = str(value)
+    if not _SAFE_INDEX.fullmatch(idx):
+        raise ValueError(
+            "idx must be 1-128 ASCII letters, digits, underscores, or hyphens"
+        )
+    return idx
 
 
 def load_jsonl(path: Path) -> List[Dict]:
     items = []
-    with path.open("r", encoding="utf-8") as file:
-        for line_number, line in enumerate(file):
+    seen_indexes = set()
+    with path.open("r", encoding="utf-8-sig") as file:
+        for line_number, line in enumerate(file, start=1):
             if not line.strip():
                 continue
-            item = json.loads(line)
-            item.setdefault("idx", line_number)
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON on line {line_number}: {exc.msg}") from exc
+            if not isinstance(item, dict):
+                raise ValueError(f"Line {line_number} must contain a JSON object")
+            item.setdefault("idx", line_number - 1)
+            idx = _normalized_idx(item["idx"])
+            if idx in seen_indexes:
+                raise ValueError(f"Duplicate idx {idx!r} on line {line_number}")
+            seen_indexes.add(idx)
+            problem = item.get("problem")
+            if not isinstance(problem, str) or not problem.strip():
+                raise ValueError(f"Line {line_number} must contain a non-empty problem string")
             items.append(item)
     return items
 
 
 def result_path(output_dir: Path, item: Dict) -> Path:
-    return output_dir / f"{item['idx']}.json"
+    return output_dir / f"{_normalized_idx(item['idx'])}.json"
 
 
 def is_processed(path: Path) -> bool:
-    return path.exists() and path.stat().st_size > 0
+    if not path.is_file() or path.stat().st_size == 0:
+        return False
+    try:
+        record = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(record, dict)
+        and record.get("status") == "success"
+        and isinstance(record.get("final_response"), str)
+        and bool(record["final_response"].strip())
+    )
 
 
 def write_json(path: Path, record: Dict) -> None:
@@ -47,10 +97,46 @@ def write_json(path: Path, record: Dict) -> None:
     tmp_path.replace(path)
 
 
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_run_summary(
+    *,
+    statuses: List[str],
+    input_path: Path,
+    input_sha256: str,
+    model: str,
+    duration_ms: int,
+    started_at: str,
+) -> Dict:
+    counts = Counter(statuses)
+    error_count = counts["error"]
+    return {
+        "status": "complete" if error_count == 0 else "completed_with_errors",
+        "started_at": started_at,
+        "duration_ms": duration_ms,
+        "input_file": input_path.name,
+        "input_sha256": input_sha256,
+        "model": model,
+        "local_max_concurrency": LOCAL_MAX_CONCURRENCY,
+        "total_items": len(statuses),
+        "success": counts["success"],
+        "error": error_count,
+        "skipped": counts["skipped"],
+    }
+
+
 def build_output_record(item: Dict, agent_result: Dict) -> Dict:
     final_response = agent_result.get("final_response", "")
     if not isinstance(final_response, str) or not final_response.strip():
         raise ValueError("agent.solve must return a non-empty string field: final_response")
+    if final_response.strip() == "未解出":
+        raise ValueError("agent.solve returned the unsolved sentinel")
 
     output = {
         "idx": item["idx"],
@@ -81,11 +167,11 @@ async def process_item(
     item: Dict,
     output_dir: Path,
     semaphore: asyncio.Semaphore,
-) -> None:
+) -> str:
     path = result_path(output_dir, item)
     if is_processed(path):
         print(f"Skip idx={item['idx']} because {path} already exists.")
-        return
+        return "skipped"
 
     async with semaphore:
         try:
@@ -103,13 +189,17 @@ async def process_item(
             }
         await asyncio.to_thread(write_json, path, record)
         print(f"Finished idx={item['idx']}")
+        return str(record["status"])
 
 
 async def run(args: argparse.Namespace) -> None:
     input_path = Path(args.input_file)
     output_dir = Path(args.output_dir)
+    started_at = datetime.now(timezone.utc).isoformat()
+    started_monotonic = time.monotonic()
 
     items = load_jsonl(input_path)
+    input_digest = file_sha256(input_path)
 
     client = InternChatClient()
     agent = ReasoningAgent(client=client)
@@ -117,7 +207,16 @@ async def run(args: argparse.Namespace) -> None:
 
     print(f"Loaded {len(items)} items. Max concurrency: {LOCAL_MAX_CONCURRENCY}.")
     tasks = [process_item(agent, item, output_dir, semaphore) for item in items]
-    await asyncio.gather(*tasks)
+    statuses = await asyncio.gather(*tasks)
+    summary = build_run_summary(
+        statuses=statuses,
+        input_path=input_path,
+        input_sha256=input_digest,
+        model=client.model,
+        duration_ms=round((time.monotonic() - started_monotonic) * 1000),
+        started_at=started_at,
+    )
+    await asyncio.to_thread(write_json, output_dir / "_run" / "run_summary.json", summary)
     print(f"Saved outputs to {output_dir}")
 
 

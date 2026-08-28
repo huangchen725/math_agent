@@ -6,21 +6,113 @@
 from __future__ import annotations
 
 import json
-import traceback
+import re
 from typing import Any, Dict, List
 
 import sympy as sp
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations, implicit_multiplication
+from sympy.parsing.sympy_parser import (
+    convert_xor,
+    implicit_multiplication,
+    parse_expr,
+    standard_transformations,
+)
 
-_transformations = standard_transformations + (implicit_multiplication,)
+from tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
+
+_transformations = standard_transformations + (implicit_multiplication, convert_xor)
+_MAX_EXPRESSION_CHARS = 2048
+_MAX_TOOL_ARGUMENT_CHARS = 8192
+_MAX_TOOL_RESULT_CHARS = 8000
+_MAX_MATRIX_DIMENSION = 12
+_MAX_INTEGER_DIGITS = 1000
+_MAX_BINOMIAL_N = 100_000
+_MAX_TOOL_CALLS_PER_ROUND = 8
+_DEFAULT_TOOL_TIMEOUT_SECONDS = 5.0
+
+_SAFE_GLOBALS = {
+    "__builtins__": {},
+    "Symbol": sp.Symbol,
+    "Integer": sp.Integer,
+    "Float": sp.Float,
+    "Rational": sp.Rational,
+    "Function": sp.Function,
+}
+_SAFE_LOCALS = {
+    "pi": sp.pi,
+    "E": sp.E,
+    "I": sp.I,
+    "oo": sp.oo,
+    "Eq": sp.Eq,
+    "Abs": sp.Abs,
+    "sqrt": sp.sqrt,
+    "exp": sp.exp,
+    "log": sp.log,
+    "sin": sp.sin,
+    "cos": sp.cos,
+    "tan": sp.tan,
+    "asin": sp.asin,
+    "acos": sp.acos,
+    "atan": sp.atan,
+    "sinh": sp.sinh,
+    "cosh": sp.cosh,
+    "tanh": sp.tanh,
+    "factorial": sp.factorial,
+    "gamma": sp.gamma,
+}
+
+
+def _bounded_result(value: Any) -> str:
+    text = str(value)
+    if len(text) > _MAX_TOOL_RESULT_CHARS:
+        raise ValueError(f"工具结果过长（>{_MAX_TOOL_RESULT_CHARS} 字符）")
+    return text
+
+
+def _parse_symbol(name: str) -> sp.Symbol:
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name):
+        raise ValueError("变量名只能包含字母、数字和下划线，且必须以字母开头")
+    return sp.Symbol(name)
+
+
+def _parse_integer(value: str, *, field: str) -> int:
+    raw = str(value).strip()
+    if not re.fullmatch(r"[+-]?\d+", raw):
+        raise ValueError(f"{field} 必须是十进制整数")
+    digits = raw.lstrip("+-")
+    if len(digits) > _MAX_INTEGER_DIGITS:
+        raise ValueError(f"{field} 超过 {_MAX_INTEGER_DIGITS} 位限制")
+    return int(raw)
 
 
 def _safe_parse(expr_str: str):
-    """安全解析 SymPy 表达式，处理常见格式问题。"""
+    """在受限命名空间中解析 SymPy 表达式，并拒绝代码语法与超大输入。"""
+    if not isinstance(expr_str, str):
+        raise TypeError("表达式必须是字符串")
+    if len(expr_str) > _MAX_EXPRESSION_CHARS:
+        raise ValueError(f"表达式超过 {_MAX_EXPRESSION_CHARS} 字符限制")
     expr_str = expr_str.strip().rstrip(";")
     expr_str = expr_str.replace("\\", "")
     expr_str = expr_str.replace("{", "(").replace("}", ")")
-    return parse_expr(expr_str, transformations=_transformations)
+    if not expr_str:
+        raise ValueError("表达式不能为空")
+    if "__" in expr_str:
+        raise ValueError("表达式包含不允许的名称")
+    if not re.fullmatch(r"[A-Za-z0-9_\s+\-*/^().,]+", expr_str):
+        raise ValueError("表达式包含不允许的字符")
+    if re.search(r"(?<!\d)\.|\.(?!\d)", expr_str):
+        raise ValueError("点号只能用于十进制小数")
+    if re.search(r"\d{257,}", expr_str):
+        raise ValueError("表达式中的整数常量过长")
+    for match in re.finditer(r"(?:\*\*|\^)\s*(\d+)", expr_str):
+        if int(match.group(1)) > 10_000:
+            raise ValueError("幂指数超过 10000 的安全限制")
+    return parse_expr(
+        expr_str,
+        local_dict=dict(_SAFE_LOCALS),
+        global_dict=dict(_SAFE_GLOBALS),
+        transformations=_transformations,
+        evaluate=True,
+    )
 
 
 def calculate(expression: str) -> str:
@@ -28,7 +120,7 @@ def calculate(expression: str) -> str:
     try:
         result = _safe_parse(expression)
         simplified = sp.simplify(result)
-        return str(simplified)
+        return _bounded_result(simplified)
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -36,7 +128,7 @@ def calculate(expression: str) -> str:
 def solve_equation(equation: str, variable: str = "x") -> str:
     """解方程。例：solve_equation('x**2 - 5*x + 6', 'x') -> '[2, 3]'"""
     try:
-        var = sp.Symbol(variable)
+        var = _parse_symbol(variable)
         if "Eq(" in equation:
             expr = _safe_parse(equation)
         elif "=" in equation and "==" not in equation:
@@ -45,7 +137,7 @@ def solve_equation(equation: str, variable: str = "x") -> str:
         else:
             expr = _safe_parse(equation)
         solutions = sp.solve(expr, var)
-        return str(solutions)
+        return _bounded_result(solutions)
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -53,10 +145,10 @@ def solve_equation(equation: str, variable: str = "x") -> str:
 def differentiate(expression: str, variable: str = "x") -> str:
     """求导数。"""
     try:
-        var = sp.Symbol(variable)
+        var = _parse_symbol(variable)
         expr = _safe_parse(expression)
         result = sp.diff(expr, var)
-        return str(sp.simplify(result))
+        return _bounded_result(sp.simplify(result))
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -64,10 +156,10 @@ def differentiate(expression: str, variable: str = "x") -> str:
 def integrate(expression: str, variable: str = "x") -> str:
     """求不定积分。"""
     try:
-        var = sp.Symbol(variable)
+        var = _parse_symbol(variable)
         expr = _safe_parse(expression)
         result = sp.integrate(expr, var)
-        return str(sp.simplify(result))
+        return _bounded_result(sp.simplify(result))
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -75,11 +167,11 @@ def integrate(expression: str, variable: str = "x") -> str:
 def limit(expression: str, variable: str = "x", point: str = "0") -> str:
     """求极限。"""
     try:
-        var = sp.Symbol(variable)
+        var = _parse_symbol(variable)
         expr = _safe_parse(expression)
         pt = _safe_parse(point)
         result = sp.limit(expr, var, pt)
-        return str(result)
+        return _bounded_result(result)
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -87,32 +179,51 @@ def limit(expression: str, variable: str = "x", point: str = "0") -> str:
 def residue(expression: str, variable: str = "z", pole: str = "0") -> str:
     """求复函数在极点处的留数。"""
     try:
-        var = sp.Symbol(variable)
+        var = _parse_symbol(variable)
         expr = _safe_parse(expression)
         pole_val = _safe_parse(pole)
         result = sp.residue(expr, var, pole_val)
-        return str(result)
+        return _bounded_result(result)
     except Exception as e:
         return f"ERROR: {e}"
 
 
 def _parse_matrix(matrix_str: str):
     """解析矩阵字符串为 SymPy Matrix。支持 '[[1,2],[3,4]]' 或 'Matrix([[1,2],[3,4]])'。"""
+    if not isinstance(matrix_str, str) or len(matrix_str) > _MAX_TOOL_ARGUMENT_CHARS:
+        raise ValueError(f"矩阵参数超过 {_MAX_TOOL_ARGUMENT_CHARS} 字符限制")
     s = matrix_str.strip()
     if s.startswith("Matrix(") and s.endswith(")"):
         s = s[len("Matrix("):-1]
     s = s.replace(" ", "")
     data = json.loads(s)
-    if not isinstance(data, list) or not data:
+    if not isinstance(data, list) or not data or not all(isinstance(row, list) for row in data):
         raise ValueError(f"矩阵格式错误: {matrix_str}")
-    return sp.Matrix(data)
+    rows = len(data)
+    cols = len(data[0]) if data[0] else 0
+    if cols == 0 or any(len(row) != cols for row in data):
+        raise ValueError("矩阵必须是非空的规则二维数组")
+    if rows > _MAX_MATRIX_DIMENSION or cols > _MAX_MATRIX_DIMENSION:
+        raise ValueError(f"矩阵维度不得超过 {_MAX_MATRIX_DIMENSION}x{_MAX_MATRIX_DIMENSION}")
+    parsed = []
+    for row in data:
+        parsed_row = []
+        for cell in row:
+            if isinstance(cell, bool) or not isinstance(cell, (int, float, str)):
+                raise ValueError("矩阵元素必须是数值或数值表达式字符串")
+            value = _safe_parse(str(cell))
+            if value.free_symbols:
+                raise ValueError("矩阵工具只接受数值元素")
+            parsed_row.append(value)
+        parsed.append(parsed_row)
+    return sp.Matrix(parsed)
 
 
 def matrix_det(matrix: str) -> str:
     """计算矩阵行列式。"""
     try:
         m = _parse_matrix(matrix)
-        return str(sp.simplify(m.det()))
+        return _bounded_result(sp.simplify(m.det()))
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -123,7 +234,7 @@ def matrix_eigenvals(matrix: str) -> str:
         m = _parse_matrix(matrix)
         ev = m.eigenvals()
         parts = [f"{k}: {v}" for k, v in ev.items()]
-        return "{" + ", ".join(parts) + "}"
+        return _bounded_result("{" + ", ".join(parts) + "}")
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -131,8 +242,8 @@ def matrix_eigenvals(matrix: str) -> str:
 def gcd_lcm(a: str, b: str) -> str:
     """计算两个整数的最大公约数 gcd 和最小公倍数 lcm。"""
     try:
-        x = int(_safe_parse(a))
-        y = int(_safe_parse(b))
+        x = _parse_integer(a, field="a")
+        y = _parse_integer(b, field="b")
         g = sp.gcd(x, y)
         l = sp.lcm(x, y)
         return f"gcd={g}, lcm={l}"
@@ -143,9 +254,13 @@ def gcd_lcm(a: str, b: str) -> str:
 def mod_pow(base: str, exponent: str, modulus: str) -> str:
     """计算模幂 base^exponent mod modulus（数论专用，处理大指数）。"""
     try:
-        b = int(_safe_parse(base))
-        e = int(_safe_parse(exponent))
-        m = int(_safe_parse(modulus))
+        b = _parse_integer(base, field="base")
+        e = _parse_integer(exponent, field="exponent")
+        m = _parse_integer(modulus, field="modulus")
+        if e < 0:
+            raise ValueError("exponent 必须是非负整数")
+        if m <= 0:
+            raise ValueError("modulus 必须是正整数")
         return str(pow(b, e, m))
     except Exception as e:
         return f"ERROR: {e}"
@@ -154,8 +269,12 @@ def mod_pow(base: str, exponent: str, modulus: str) -> str:
 def binomial(n: str, k: str) -> str:
     """计算二项式系数 C(n, k)（组合数）。"""
     try:
-        n_val = int(_safe_parse(n))
-        k_val = int(_safe_parse(k))
+        n_val = _parse_integer(n, field="n")
+        k_val = _parse_integer(k, field="k")
+        if not 0 <= k_val <= n_val:
+            raise ValueError("组合数要求 0 <= k <= n")
+        if n_val > _MAX_BINOMIAL_N:
+            raise ValueError(f"n 不得超过 {_MAX_BINOMIAL_N}")
         return str(sp.binomial(n_val, k_val))
     except Exception as e:
         return f"ERROR: {e}"
@@ -356,33 +475,49 @@ TOOL_DEFINITIONS = [
 ]
 
 
-def execute_tool_call(tool_call: Dict[str, Any]) -> str:
+def execute_tool_call(
+    tool_call: Dict[str, Any],
+    timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
+) -> str:
     """执行单个 tool_call，返回结果字符串。
 
     tool_call 格式（OpenAI兼容）：
     {"id": "...", "type": "function", "function": {"name": "calculate", "arguments": '{"expression": "1+1"}'}}
     """
-    func_name = tool_call["function"]["name"]
     try:
-        arguments = json.loads(tool_call["function"]["arguments"]) if isinstance(
-            tool_call["function"]["arguments"], str
-        ) else tool_call["function"]["arguments"]
-    except json.JSONDecodeError:
+        function = tool_call["function"]
+        func_name = function["name"]
+        raw_arguments = function.get("arguments", {})
+    except (KeyError, TypeError, AttributeError):
+        return "ERROR: 工具调用格式无效"
+    if not isinstance(func_name, str):
+        return "ERROR: 工具名称必须是字符串"
+    if len(str(raw_arguments)) > _MAX_TOOL_ARGUMENT_CHARS:
+        return f"ERROR: 工具参数超过 {_MAX_TOOL_ARGUMENT_CHARS} 字符限制"
+    try:
+        arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+    except (json.JSONDecodeError, TypeError):
         return "ERROR: 参数JSON解析失败"
+    if not isinstance(arguments, dict):
+        return "ERROR: 工具参数必须是JSON对象"
 
     impl = TOOL_IMPLEMENTATIONS.get(func_name)
     if impl is None:
         return f"ERROR: 未知工具 '{func_name}'"
 
     try:
-        return impl(**arguments)
-    except Exception as e:
+        return _bounded_result(run_with_timeout(impl, arguments, timeout_seconds))
+    except ToolTimeoutError:
+        return f"ERROR: {func_name} 执行超时（>{timeout_seconds:g} 秒）"
+    except (ToolProcessError, ValueError, TypeError) as e:
         return f"ERROR: {func_name} 执行失败: {e}"
 
 
 def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
                   thinking_mode: bool = True, temperature: float = 0.6,
-                  max_tokens: int = 8192) -> tuple[str, List[Dict]]:
+                  max_tokens: int = 8192,
+                  tool_timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
+                  budget=None) -> tuple[str, List[Dict]]:
     """工具调用循环：调 client.chat → 若返回 tool_calls 则执行并回灌 → 直到文本回复。
 
     返回 (最终文本回复, 工具调用trace)
@@ -391,6 +526,8 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
     current_messages = list(messages)
 
     for round_id in range(max_rounds):
+        if budget is not None:
+            budget.consume_model_request()
         response = client.chat(
             messages=current_messages,
             tools=TOOL_DEFINITIONS,
@@ -399,35 +536,82 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
             max_tokens=max_tokens,
             thinking_mode=thinking_mode,
         )
+        if budget is not None and hasattr(client, "get_last_response_meta"):
+            budget.record_response_meta(client.get_last_response_meta())
 
         # 文本回复 → 结束
         if isinstance(response, str):
             trace.append({"step": f"tool_round_{round_id}_text", "content": response[:500]})
             return response, trace
 
+        if not isinstance(response, dict):
+            raise TypeError(f"不支持的模型响应类型: {type(response).__name__}")
+
+        tool_calls = response.get("tool_calls") or []
+        if not tool_calls:
+            content = response.get("content")
+            if isinstance(content, str):
+                trace.append({"step": f"tool_round_{round_id}_text", "content": content[:500]})
+                return content, trace
+            raise ValueError("模型响应既没有文本，也没有 tool_calls")
+        if not isinstance(tool_calls, list):
+            raise TypeError("tool_calls 必须是列表")
+
         # tool_calls → 执行并回灌
         assistant_msg = response  # 完整的 assistant message dict
         current_messages.append(assistant_msg)
 
         tool_results = []
-        for tc in assistant_msg.get("tool_calls", []):
-            result = execute_tool_call(tc)
-            tool_results.append({"tool": tc["function"]["name"], "result": result[:200]})
+        for call_index, tc in enumerate(tool_calls[:_MAX_TOOL_CALLS_PER_ROUND]):
+            if budget is not None:
+                budget.consume_tool_call()
+            result = execute_tool_call(tc, timeout_seconds=tool_timeout_seconds)
+            function = tc.get("function", {}) if isinstance(tc, dict) else {}
+            tool_name = function.get("name", "<invalid>") if isinstance(function, dict) else "<invalid>"
+            tool_call_id = tc.get("id", f"invalid-{round_id}-{call_index}") if isinstance(tc, dict) else f"invalid-{round_id}-{call_index}"
+            tool_results.append({"tool": tool_name, "result": result[:200]})
             current_messages.append({
                 "role": "tool",
-                "tool_call_id": tc["id"],
+                "tool_call_id": str(tool_call_id),
                 "content": result,
+            })
+
+        if len(tool_calls) > _MAX_TOOL_CALLS_PER_ROUND:
+            for call_index, tc in enumerate(
+                tool_calls[_MAX_TOOL_CALLS_PER_ROUND:],
+                start=_MAX_TOOL_CALLS_PER_ROUND,
+            ):
+                tool_call_id = (
+                    tc.get("id", f"limited-{round_id}-{call_index}")
+                    if isinstance(tc, dict)
+                    else f"limited-{round_id}-{call_index}"
+                )
+                current_messages.append({
+                    "role": "tool",
+                    "tool_call_id": str(tool_call_id),
+                    "content": (
+                        "ERROR: 本轮工具调用数量超过限制，"
+                        f"仅执行前 {_MAX_TOOL_CALLS_PER_ROUND} 个"
+                    ),
+                })
+            tool_results.append({
+                "tool": "<limit>",
+                "result": f"仅执行前 {_MAX_TOOL_CALLS_PER_ROUND} 个工具调用",
             })
 
         trace.append({"step": f"tool_round_{round_id}", "content": tool_results})
 
     # 超过最大轮数，强制请求一次无工具的文本回复
+    if budget is not None:
+        budget.consume_model_request()
     response = client.chat(
         messages=current_messages,
         temperature=0.0,
         max_tokens=1024,
         thinking_mode=False,
     )
+    if budget is not None and hasattr(client, "get_last_response_meta"):
+        budget.record_response_meta(client.get_last_response_meta())
     if isinstance(response, str):
         return response, trace
     return str(response)[:500], trace
