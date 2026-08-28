@@ -672,9 +672,15 @@ def generate_records() -> list[dict[str, object]]:
     return records
 
 
+def serialize_records(records: list[dict[str, object]]) -> str:
+    return "".join(
+        json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n"
+        for item in records
+    )
+
+
 def dataset_sha256(records: list[dict[str, object]]) -> str:
-    serialized = "".join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in records)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(serialize_records(records).encode("utf-8")).hexdigest()
 
 
 def parse_args() -> argparse.Namespace:
@@ -688,9 +694,8 @@ def main() -> None:
     args = parse_args()
     records = generate_records()
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as file:
-        for item in records:
-            file.write(json.dumps(item, ensure_ascii=False) + "\n")
+    with args.output.open("w", encoding="utf-8", newline="\n") as file:
+        file.write(serialize_records(records))
     digest = dataset_sha256(records)
     if args.manifest:
         manifest = {

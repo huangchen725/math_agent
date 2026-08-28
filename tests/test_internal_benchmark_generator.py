@@ -1,6 +1,12 @@
 from collections import Counter
 
-from evaluation.generate_internal_benchmark import dataset_sha256, generate_records
+import hashlib
+
+from evaluation.generate_internal_benchmark import (
+    dataset_sha256,
+    generate_records,
+    serialize_records,
+)
 
 
 def test_internal_benchmark_is_balanced_deterministic_and_complete():
@@ -19,6 +25,9 @@ def test_internal_benchmark_is_balanced_deterministic_and_complete():
     assert len({str(item["idx"]) for item in first}) == 396
     assert len({str(item["problem"]) for item in first}) == 396
     assert len(dataset_sha256(first)) == 64
+    assert dataset_sha256(first) == hashlib.sha256(
+        serialize_records(first).encode("utf-8")
+    ).hexdigest()
 
 
 def test_internal_benchmark_records_have_provenance_and_answers():
