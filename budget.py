@@ -23,6 +23,7 @@ class ExecutionBudget:
     completion_tokens: int = 0
     total_tokens: int = 0
     tool_calls: int = 0
+    truncated_responses: int = 0
 
     def __post_init__(self) -> None:
         for name in ("max_model_requests", "max_total_tokens", "max_tool_calls"):
@@ -59,6 +60,11 @@ class ExecutionBudget:
     def record_response_meta(self, metadata: Mapping[str, Any] | None) -> None:
         if not metadata:
             return
+        if str(metadata.get("finish_reason", "")).casefold() in {
+            "length",
+            "max_tokens",
+        }:
+            self.truncated_responses += 1
         usage = metadata.get("usage")
         if not isinstance(usage, Mapping):
             return
@@ -76,6 +82,7 @@ class ExecutionBudget:
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
             "tool_calls": self.tool_calls,
+            "truncated_responses": self.truncated_responses,
             "elapsed_ms": round(self.elapsed_seconds() * 1000),
             "limits": {
                 "model_requests": self.max_model_requests,
@@ -94,4 +101,3 @@ def _nonnegative_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(0, parsed)
-

@@ -42,6 +42,15 @@ def test_execution_budget_enforces_request_and_tool_limits():
         budget.consume_tool_call()
 
 
+def test_execution_budget_records_truncated_responses():
+    budget = ExecutionBudget(timeout_seconds=10)
+
+    budget.record_response_meta({"finish_reason": "length", "usage": {}})
+    budget.record_response_meta({"finish_reason": "stop", "usage": {}})
+
+    assert budget.snapshot()["truncated_responses"] == 1
+
+
 def test_agent_records_per_problem_budget_usage():
     client = TextClient()
     config = AgentConfig(

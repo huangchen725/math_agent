@@ -45,6 +45,7 @@ def _budget_snapshot(trace: object) -> dict[str, int]:
                 "completion_tokens",
                 "total_tokens",
                 "tool_calls",
+                "truncated_responses",
                 "elapsed_ms",
             )
             if isinstance(content.get(key, 0), (int, float))

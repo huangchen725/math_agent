@@ -103,7 +103,7 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
     payload = {
         "id": "request-1",
         "model": "test-model",
-        "choices": [{"message": {"content": "ok"}}],
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "length"}],
         "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
     }
     monkeypatch.setattr(llm_client.requests, "post", lambda *a, **k: _http_response(200, payload))
@@ -111,6 +111,7 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
 
     assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
     assert client.get_last_response_meta()["usage"]["total_tokens"] == 5
+    assert client.get_last_response_meta()["finish_reason"] == "length"
 
 
 @pytest.mark.parametrize("kwargs", [{"stream": True}, {"n": 2}])

@@ -32,22 +32,24 @@ _ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
 
 POLICY_PROMPT = """你是数学推理智能体。解题并给出推理过程。
 
-格式：
-1. 解题思路
-2. 关键推导步骤
-3. 最终答案：XXX
+输出顺序：
+1. 第一行先写：最终答案：XXX
+2. 解题思路
+3. 关键推导步骤
 
 最终答案行只写答案本体，不写“答案是”、解释或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
+即使推导很长，也必须先写第一行答案，推导尽量紧凑。
 """
 
 POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 
-格式：
-1. 解题思路
-2. 关键推导
-3. 最终答案：XXX
+输出顺序：
+1. 第一行先写：最终答案：XXX
+2. 解题思路
+3. 关键推导
 
 最终答案行只写答案本体，不写“答案是”、解释或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
+即使推导很长，也必须先写第一行答案，推导尽量紧凑。
 """
 
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
@@ -68,7 +70,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 之前的解答：{prev_answer}
 批评反馈：{feedback}
 
-请修正错误，给出完整推理。最后单独一行写“最终答案：XXX”，XXX 只包含答案本体；若已有精确形式，不要只写小数近似值。"""
+请修正错误。第一行先写“最终答案：XXX”，再给出紧凑的完整推理；XXX 只包含答案本体，若已有精确形式，不要只写小数近似值。"""
 
 
 @dataclass
@@ -526,7 +528,16 @@ class ReasoningAgent:
                 temperature=0.0, max_tokens=self.config.fallback_max_tokens, thinking_mode=False)
             ans = self._extract_answer(resp)
             trace.append({"step": "fallback_result", "content": ans[:100]})
-            return ans or resp.strip()[:200]
+            if ans:
+                return ans
+            bare = resp.strip()
+            if (
+                "\n" not in bare
+                and 0 < len(bare) <= 200
+                and not re.search(r"[。！？]|因此|无法|需要|计算|推理|解答", bare)
+            ):
+                return bare
+            return ""
         except BudgetExceeded:
             raise
         except Exception:
@@ -534,17 +545,20 @@ class ReasoningAgent:
 
     @staticmethod
     def _extract_answer(text: str) -> str:
-        """v12稳定版——简单可靠。"""
+        """Extract only an explicit answer marker; never guess from a truncated tail."""
         if not text:
             return ""
         m = re.search(r"最终答案\s*[:：]\s*(.+?)(?:\n|$)", text)
         if m: return m.group(1).strip()
         m = re.search(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", text)
         if m: return m.group(1).strip()
-        m = re.search(r"答案(?:是|为)?\s*[:：]?\s*(.+?)(?:\n|。|$)", text)
+        m = re.search(
+            r"(?:候选)?答案(?:\s*(?:是|为)\s*|\s*[:：]\s*)"
+            r"(.+?)(?:\n|。|$)",
+            text,
+        )
         if m: return m.group(1).strip()
-        lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
-        return lines[-1][:200] if lines else ""
+        return ""
 
     @staticmethod
     def _normalize(answer: str) -> str:

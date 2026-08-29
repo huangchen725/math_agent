@@ -24,7 +24,11 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
                 "trace": [
                     {
                         "step": "budget_summary",
-                        "content": {"model_requests": 3, "total_tokens": 100},
+                        "content": {
+                            "model_requests": 3,
+                            "total_tokens": 100,
+                            "truncated_responses": 1,
+                        },
                     }
                 ],
             }
@@ -54,4 +58,5 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
     assert scored["summary"]["error"] == 1
     assert scored["summary"]["missing"] == 1
     assert scored["summary"]["usage"]["model_requests"] == 3
+    assert scored["summary"]["usage"]["truncated_responses"] == 1
     assert scored["by_subject"]["数论"]["total"] == 3

@@ -115,11 +115,13 @@ class InternChatClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                message = data["choices"][0]["message"]
+                choice = data["choices"][0]
+                message = choice["message"]
                 usage = data.get("usage")
                 _LAST_RESPONSE_META.set({
                     "id": data.get("id"),
                     "model": data.get("model", self.model),
+                    "finish_reason": choice.get("finish_reason"),
                     "usage": usage if isinstance(usage, dict) else {},
                     "elapsed_ms": round((time.monotonic() - request_started) * 1000),
                     "attempts": attempt + 1,

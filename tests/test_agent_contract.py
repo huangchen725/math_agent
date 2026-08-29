@@ -14,6 +14,16 @@ def test_active_response_adds_final_marker_when_missing():
     assert agent._build_response("推理步骤", "42") == "推理步骤\n最终答案：42"
 
 
+def test_answer_first_candidate_is_rendered_with_one_final_answer_at_tail():
+    agent = ReasoningAgent(client=object())
+    content = "最终答案：42\n推理步骤"
+
+    response = agent._build_response(content, agent._extract_answer(content))
+
+    assert response == "推理步骤\n最终答案：42"
+    assert response.count("最终答案：") == 1
+
+
 def test_active_response_rewrites_final_line_to_stable_answer_body():
     agent = ReasoningAgent(client=object())
     content = "推理步骤\n3. 最终答案：圆周 S¹ 的基本群是整数加群 ℤ。"
@@ -46,6 +56,12 @@ def test_output_formatter_uses_ascii_safe_math_notation():
     assert format_answer_for_output("16πi") == "16*pi*i"
     assert format_answer_for_output("160°") == "160"
     assert "只写答案本体" in POLICY_PROMPT
+    assert "第一行先写" in POLICY_PROMPT
+
+
+def test_extractor_does_not_treat_truncated_reasoning_tail_as_answer():
+    assert ReasoningAgent._extract_answer("解题思路\n所以还需要继续计算") == ""
+    assert ReasoningAgent._extract_answer("当前答案尚未计算完成") == ""
 
 
 def test_output_formatter_keeps_exact_form_and_removes_root_labels():
