@@ -28,7 +28,21 @@ def extract_final_answer(final_response: str) -> str:
     return matches[-1].strip() if matches else ""
 
 
-def _budget_snapshot(trace: object) -> dict[str, int]:
+_SCALAR_USAGE_FIELDS = (
+    "model_requests",
+    "normal_model_requests",
+    "recovery_requests",
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "tool_calls",
+    "truncated_responses",
+    "truncated_fragments_in_final",
+    "elapsed_ms",
+)
+
+
+def _budget_snapshot(trace: object) -> dict[str, Any]:
     if not isinstance(trace, list):
         return {}
     for event in reversed(trace):
@@ -37,19 +51,16 @@ def _budget_snapshot(trace: object) -> dict[str, int]:
         content = event.get("content")
         if not isinstance(content, dict):
             return {}
-        return {
+        snapshot: dict[str, Any] = {
             key: int(content.get(key, 0))
-            for key in (
-                "model_requests",
-                "prompt_tokens",
-                "completion_tokens",
-                "total_tokens",
-                "tool_calls",
-                "truncated_responses",
-                "elapsed_ms",
-            )
+            for key in _SCALAR_USAGE_FIELDS
             if isinstance(content.get(key, 0), (int, float))
         }
+        for key in ("requests_by_stage", "truncated_by_stage", "truncation_recovery"):
+            value = content.get(key)
+            if isinstance(value, dict):
+                snapshot[key] = dict(value)
+        return snapshot
     return {}
 
 
@@ -76,6 +87,11 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
     results = []
     totals: Counter[str] = Counter()
     usage: Counter[str] = Counter()
+    requests_by_stage: Counter[str] = Counter()
+    truncated_by_stage: Counter[str] = Counter()
+    recovery: Counter[str] = Counter()
+    problems_with_truncation = 0
+    truncated_problems_with_valid_answer = 0
     for position, item in enumerate(dataset):
         idx = str(item.get("idx", position))
         output_path = output_dir / f"{idx}.json"
@@ -105,7 +121,30 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                     status = judged.status
                     method = judged.method
                     detail = judged.detail
-                usage.update(_budget_snapshot(record.get("trace")))
+                budget_snapshot = _budget_snapshot(record.get("trace"))
+                usage.update({
+                    key: int(budget_snapshot.get(key, 0))
+                    for key in _SCALAR_USAGE_FIELDS
+                })
+                requests_by_stage.update({
+                    str(key): int(value)
+                    for key, value in budget_snapshot.get("requests_by_stage", {}).items()
+                    if isinstance(value, (int, float))
+                })
+                truncated_by_stage.update({
+                    str(key): int(value)
+                    for key, value in budget_snapshot.get("truncated_by_stage", {}).items()
+                    if isinstance(value, (int, float))
+                })
+                recovery.update({
+                    str(key): int(value)
+                    for key, value in budget_snapshot.get("truncation_recovery", {}).items()
+                    if isinstance(value, (int, float))
+                })
+                if int(budget_snapshot.get("truncated_responses", 0)) > 0:
+                    problems_with_truncation += 1
+                    if actual:
+                        truncated_problems_with_valid_answer += 1
         totals[status] += 1
         results.append(
             {
@@ -126,6 +165,52 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
     conservative_low, conservative_high = wilson_interval(totals["correct"], total)
     upper_successes = totals["correct"] + totals["unknown"]
     review_low, review_high = wilson_interval(upper_successes, total)
+    stage_stats = {
+        stage: {
+            "request_count": requests_by_stage[stage],
+            "truncated_count": truncated_by_stage[stage],
+            "truncation_rate": (
+                truncated_by_stage[stage] / requests_by_stage[stage]
+                if requests_by_stage[stage] else 0.0
+            ),
+        }
+        for stage in sorted(set(requests_by_stage) | set(truncated_by_stage))
+    }
+    candidate_stages = {"policy_tool", "policy_plain", "tool_final", "reflection"}
+    candidate_requests = sum(requests_by_stage[stage] for stage in candidate_stages)
+    candidate_truncations = sum(truncated_by_stage[stage] for stage in candidate_stages)
+    total_requests = usage["model_requests"]
+    total_truncations = usage["truncated_responses"]
+    truncation_summary = {
+        "request_count": total_requests,
+        "truncated_count": total_truncations,
+        "truncation_rate": total_truncations / total_requests if total_requests else 0.0,
+        "candidate_generation": {
+            "request_count": candidate_requests,
+            "truncated_count": candidate_truncations,
+            "truncation_rate": (
+                candidate_truncations / candidate_requests if candidate_requests else 0.0
+            ),
+        },
+        "by_stage": stage_stats,
+        "problems_with_truncation": problems_with_truncation,
+        "recovery": {
+            "required": recovery["required"],
+            "handled": recovery["handled"],
+            "succeeded": recovery["succeeded"],
+            "failed": recovery["failed"],
+            "coverage": (
+                recovery["handled"] / recovery["required"]
+                if recovery["required"] else 1.0
+            ),
+        },
+        "truncated_problems_with_valid_answer": truncated_problems_with_valid_answer,
+        "valid_answer_rate_after_truncation": (
+            truncated_problems_with_valid_answer / problems_with_truncation
+            if problems_with_truncation else 1.0
+        ),
+        "truncated_fragments_in_final": usage["truncated_fragments_in_final"],
+    }
     return {
         "summary": {
             "total": total,
@@ -135,6 +220,8 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
             "conservative_wilson_95": [conservative_low, conservative_high],
             "reviewable_wilson_95_upper_scenario": [review_low, review_high],
             "usage": dict(usage),
+            "truncation": truncation_summary,
+            "invalid": totals["no_answer"],
         },
         "by_subject": _group_summary(results, "subject"),
         "by_level": _group_summary(results, "level"),

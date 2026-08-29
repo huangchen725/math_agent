@@ -11,7 +11,7 @@ ReasoningAgent(client).solve(problem, metadata)
 
 - `client` 由调用方注入，代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
-- `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
+- `trace` 记录领域判断、题型长度目标、候选生成、工具调用、验证、截断恢复、反思、最终答案来源和单题预算摘要；截断事件只保存阶段、token 与处理状态，不保存残缺回复。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 
 ## 环境与安装
@@ -98,6 +98,14 @@ python evaluation/score_run.py outputs/private-eval/benchmark.jsonl outputs/priv
 
 审计和评分命令不访问模型 API。`generate_internal_benchmark.py` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)。正式题集记录格式见 `evaluation/benchmark.schema.json`。离线判分使用 `evaluation/judge.py` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
+截断专项压力集固定在 `evaluation/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `score_run.py` 报告交给门禁：
+
+```bash
+python evaluation/truncation_gate.py outputs/truncation/run-1-score.json outputs/truncation/run-2-score.json outputs/truncation/run-3-score.json --output outputs/truncation/gate.json
+```
+
+门禁要求请求级截断点估计和单侧 95% Wilson 上界都低于 5%，候选生成自身截断率低于 5%，恢复覆盖率 100%，无截断残句进入最终答案，`invalid=0`，且保守正确率不明显低于 22% 基线。该命令本身不访问 API；生成三个在线运行目录仍会产生真实调用和费用。
+
 `verify_math.py` 默认只解析 21 个 few-shot，不访问 API：
 
 ```bash
@@ -118,7 +126,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ```text
 .
 ├── user_agent.py              # 竞赛接口与推理编排
-├── agent_types.py             # Candidate/Answer/Verification 内部类型
+├── agent_types.py             # 调用结果与 Candidate/Answer/Verification 内部类型
 ├── answer_equivalence.py      # 保守答案归一化与等价判断
 ├── budget.py                  # 单题请求、token、工具与时间预算
 ├── math_tools.py              # 11 个受限 SymPy 工具
@@ -129,7 +137,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证
-├── evaluation/                # 题集审计与保守离线判分
+├── evaluation/                # 题集、审计、保守判分与截断门禁
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
 ├── .agents/skills/            # 仓库级 Codex skill

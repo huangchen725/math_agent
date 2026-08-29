@@ -18,6 +18,7 @@ from sympy.parsing.sympy_parser import (
 )
 
 from tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
+from agent_types import ModelCallResult
 
 _transformations = standard_transformations + (implicit_multiplication, convert_xor)
 _MAX_EXPRESSION_CHARS = 2048
@@ -517,7 +518,8 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
                   thinking_mode: bool = True, temperature: float = 0.6,
                   max_tokens: int = 8192,
                   tool_timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
-                  budget=None) -> tuple[str, List[Dict]]:
+                  budget=None, *, candidate_id: int | None = None,
+                  final_instruction: str = "", return_call_result: bool = False):
     """工具调用循环：调 client.chat → 若返回 tool_calls 则执行并回灌 → 直到文本回复。
 
     返回 (最终文本回复, 工具调用trace)
@@ -525,10 +527,41 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
     trace: List[Dict] = []
     current_messages = list(messages)
 
-    for round_id in range(max_rounds):
+    def call_model(*, stage: str, **kwargs):
+        request_id = None
         if budget is not None:
-            budget.consume_model_request()
-        response = client.chat(
+            request_id = budget.consume_model_request(
+                stage=stage,
+                candidate_id=candidate_id,
+            )
+        response = client.chat(**kwargs)
+        metadata = {}
+        if budget is not None and hasattr(client, "get_last_response_meta"):
+            metadata = client.get_last_response_meta()
+            metadata = metadata if isinstance(metadata, dict) else {}
+            budget.record_response_meta(metadata, request_id)
+        elif hasattr(client, "get_last_response_meta"):
+            metadata = client.get_last_response_meta()
+            metadata = metadata if isinstance(metadata, dict) else {}
+        text = response if isinstance(response, str) else str(response.get("content", ""))
+        result = ModelCallResult(
+            text=text,
+            stage=stage,
+            finish_reason=str(metadata.get("finish_reason", "")),
+            usage=metadata.get("usage", {}) if isinstance(metadata, dict) else {},
+            candidate_id=candidate_id,
+            request_id=request_id,
+        )
+        return response, result
+
+    def finish(text: str, result: ModelCallResult):
+        if return_call_result:
+            return text, trace, result
+        return text, trace
+
+    for round_id in range(max_rounds):
+        response, call_result = call_model(
+            stage="policy_tool",
             messages=current_messages,
             tools=TOOL_DEFINITIONS,
             tool_choice="auto",
@@ -536,13 +569,18 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
             max_tokens=max_tokens,
             thinking_mode=thinking_mode,
         )
-        if budget is not None and hasattr(client, "get_last_response_meta"):
-            budget.record_response_meta(client.get_last_response_meta())
+
+        if call_result.truncated:
+            trace.append({
+                "step": f"tool_round_{round_id}_truncated",
+                "content": {"stage": "policy_tool", "candidate_id": candidate_id},
+            })
+            return finish(call_result.text, call_result)
 
         # 文本回复 → 结束
         if isinstance(response, str):
             trace.append({"step": f"tool_round_{round_id}_text", "content": response[:500]})
-            return response, trace
+            return finish(response, call_result)
 
         if not isinstance(response, dict):
             raise TypeError(f"不支持的模型响应类型: {type(response).__name__}")
@@ -552,7 +590,7 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
             content = response.get("content")
             if isinstance(content, str):
                 trace.append({"step": f"tool_round_{round_id}_text", "content": content[:500]})
-                return content, trace
+                return finish(content, call_result)
             raise ValueError("模型响应既没有文本，也没有 tool_calls")
         if not isinstance(tool_calls, list):
             raise TypeError("tool_calls 必须是列表")
@@ -602,16 +640,15 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
         trace.append({"step": f"tool_round_{round_id}", "content": tool_results})
 
     # 超过最大轮数，强制请求一次无工具的文本回复
-    if budget is not None:
-        budget.consume_model_request()
-    response = client.chat(
+    if final_instruction:
+        current_messages.append({"role": "user", "content": final_instruction})
+    response, call_result = call_model(
+        stage="tool_final",
         messages=current_messages,
         temperature=0.0,
-        max_tokens=1024,
+        max_tokens=max_tokens,
         thinking_mode=False,
     )
-    if budget is not None and hasattr(client, "get_last_response_meta"):
-        budget.record_response_meta(client.get_last_response_meta())
     if isinstance(response, str):
-        return response, trace
-    return str(response)[:500], trace
+        return finish(response, call_result)
+    return finish(str(response.get("content", ""))[:500], call_result)

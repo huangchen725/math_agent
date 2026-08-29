@@ -28,6 +28,15 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
                             "model_requests": 3,
                             "total_tokens": 100,
                             "truncated_responses": 1,
+                            "requests_by_stage": {"policy_plain": 2, "verifier": 1},
+                            "truncated_by_stage": {"policy_plain": 1},
+                            "truncation_recovery": {
+                                "required": 1,
+                                "handled": 1,
+                                "succeeded": 1,
+                                "failed": 0,
+                            },
+                            "truncated_fragments_in_final": 0,
                         },
                     }
                 ],
@@ -59,4 +68,10 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
     assert scored["summary"]["missing"] == 1
     assert scored["summary"]["usage"]["model_requests"] == 3
     assert scored["summary"]["usage"]["truncated_responses"] == 1
+    truncation = scored["summary"]["truncation"]
+    assert truncation["truncation_rate"] == 1 / 3
+    assert truncation["by_stage"]["policy_plain"]["truncated_count"] == 1
+    assert truncation["problems_with_truncation"] == 1
+    assert truncation["recovery"]["coverage"] == 1.0
+    assert truncation["valid_answer_rate_after_truncation"] == 1.0
     assert scored["by_subject"]["数论"]["total"] == 3

@@ -94,6 +94,26 @@ def test_aggregate_returns_content_from_majority_answer_group():
     assert "最终答案：2" in content
 
 
+def test_aggregate_never_selects_candidate_marked_as_truncated():
+    agent = ReasoningAgent(client=object())
+    scored = [
+        Candidate(
+            "截断残句\n最终答案：999",
+            "plain",
+            build_answer("999"),
+            9.0,
+            1.0,
+            metadata={"truncated": True},
+        ),
+        Candidate("完整推理\n最终答案：2", "plain", build_answer("2"), 0.3, 0.0),
+    ]
+
+    answer, content = agent._aggregate(scored, [])
+
+    assert answer == "2"
+    assert "截断残句" not in content
+
+
 def test_review_excerpt_keeps_final_answer_at_tail():
     candidate = "开头" + "x" * 4000 + "\n最终答案：42"
     excerpt = ReasoningAgent._review_excerpt(candidate, limit=100)

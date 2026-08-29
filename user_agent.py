@@ -7,9 +7,9 @@ import json
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-from agent_types import Candidate, Verification
+from agent_types import Candidate, ModelCallResult, Verification
 from answer_equivalence import (
     build_answer,
     format_answer_for_output,
@@ -18,7 +18,7 @@ from answer_equivalence import (
 )
 from budget import BudgetExceeded, ExecutionBudget
 from llm_client import InternChatClient
-from math_tools import run_tool_loop, TOOL_DEFINITIONS
+from math_tools import run_tool_loop
 from domain_prompts import get_domain_prompt
 
 
@@ -38,7 +38,7 @@ POLICY_PROMPT = """你是数学推理智能体。解题并给出推理过程。
 3. 关键推导步骤
 
 最终答案行只写答案本体，不写“答案是”、解释或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
-即使推导很长，也必须先写第一行答案，推导尽量紧凑。
+即使推导很长，也必须先写第一行答案。只保留决定结论的推导，省略重复验算、背景定义和无关展开。
 """
 
 POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
@@ -49,20 +49,20 @@ POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 3. 关键推导
 
 最终答案行只写答案本体，不写“答案是”、解释或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
-即使推导很长，也必须先写第一行答案，推导尽量紧凑。
+即使推导很长，也必须先写第一行答案。只保留决定结论的推导，省略重复验算、背景定义和无关展开。
 """
 
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
 
 判断维度：1.推理逻辑 2.计算准确性 3.最终答案
 
-只输出：VERDICT: A（正确）或 VERDICT: B（错误）"""
+只输出一行：VERDICT: A（正确）或 VERDICT: B（错误）。不要解释。"""
 
 CRITIC_PROMPT = """你是数学解题批评者。请找出候选解答中的错误或可改进之处。
 
 检查：1.逻辑漏洞 2.计算错误 3.边界情况 4.答案格式
 
-如果有错误，指出具体位置和正确做法。如果没有错误，输出：NO ERROR"""
+如果有错误，用不超过 6 行指出首个决定性错误和正确做法，不要复述题目或完整解答。如果没有错误，只输出：NO ERROR"""
 
 REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解答。
 
@@ -70,7 +70,7 @@ REFLECTION_PROMPT = """你之前的解答可能有误。请根据反馈重新解
 之前的解答：{prev_answer}
 批评反馈：{feedback}
 
-请修正错误。第一行先写“最终答案：XXX”，再给出紧凑的完整推理；XXX 只包含答案本体，若已有精确形式，不要只写小数近似值。"""
+请修正错误。第一行先写“最终答案：XXX”，再给出紧凑的完整推理；XXX 只包含答案本体，若已有精确形式，不要只写小数近似值。省略重复验算、背景定义和无关展开。"""
 
 
 @dataclass
@@ -90,6 +90,11 @@ class AgentConfig:
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
+    calculation_reasoning_target_tokens: int = 1800
+    proof_reasoning_target_tokens: int = 3500
+    recovery_max_tokens: int = 2048
+    max_recoveries_per_candidate: int = 1
+    max_recovery_requests: int = 4
     # thinking mode（v13: False——thinking导致截断）
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
@@ -108,6 +113,27 @@ class AgentConfig:
     max_problem_chars: int = 20_000
     max_metadata_chars: int = 20_000
 
+    def __post_init__(self) -> None:
+        for name in (
+            "max_tokens",
+            "verifier_max_tokens",
+            "critic_max_tokens",
+            "fallback_max_tokens",
+            "calculation_reasoning_target_tokens",
+            "proof_reasoning_target_tokens",
+            "recovery_max_tokens",
+            "max_model_requests",
+            "max_total_tokens",
+            "max_tool_calls",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        for name in ("max_recoveries_per_candidate", "max_recovery_requests"):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        if self.max_recoveries_per_candidate > 1:
+            raise ValueError("max_recoveries_per_candidate cannot exceed 1")
+
 
 class ReasoningAgent:
     """领域路由、工具增强、验证、反思与聚合智能体。"""
@@ -116,19 +142,61 @@ class ReasoningAgent:
         self.config = config or AgentConfig()
         self.client = client
 
-    def _chat(self, system_prompt: str, user_content: str, **kwargs) -> str:
-        """调用 client.chat，返回文本。"""
+    def _chat_result(
+        self,
+        system_prompt: str,
+        user_content: str,
+        *,
+        stage: str,
+        candidate_id: int | None = None,
+        recovery: bool = False,
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        """调用模型，并返回文本及当前调用的无敏感元数据。"""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_content})
         budget = _ACTIVE_BUDGET.get()
+        request_id = None
         if budget is not None:
-            budget.consume_model_request()
+            request_id = budget.consume_model_request(
+                stage=stage,
+                candidate_id=candidate_id,
+                recovery=recovery,
+            )
         resp = self.client.chat(messages=messages, **kwargs)
+        metadata: Dict[str, Any] = {}
         if budget is not None and hasattr(self.client, "get_last_response_meta"):
-            budget.record_response_meta(self.client.get_last_response_meta())
-        return resp if isinstance(resp, str) else str(resp.get("content", ""))
+            metadata = self.client.get_last_response_meta()
+            metadata = metadata if isinstance(metadata, dict) else {}
+            budget.record_response_meta(metadata, request_id)
+        elif hasattr(self.client, "get_last_response_meta"):
+            metadata = self.client.get_last_response_meta()
+            metadata = metadata if isinstance(metadata, dict) else {}
+        text = resp if isinstance(resp, str) else str(resp.get("content", ""))
+        return ModelCallResult(
+            text=text,
+            stage=stage,
+            finish_reason=str(metadata.get("finish_reason", "")),
+            usage=metadata.get("usage", {}) if isinstance(metadata, dict) else {},
+            candidate_id=candidate_id,
+            request_id=request_id,
+        )
+
+    def _chat(self, system_prompt: str, user_content: str, **kwargs: Any) -> str:
+        """兼容旧内部调用：仍只返回文本。"""
+        stage = str(kwargs.pop("stage", "unknown"))
+        candidate_id = kwargs.pop("candidate_id", None)
+        recovery = bool(kwargs.pop("recovery", False))
+        return self._chat_result(
+            system_prompt,
+            user_content,
+            stage=stage,
+            candidate_id=candidate_id,
+            recovery=recovery,
+            **kwargs,
+        ).text
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
         """主求解流程。全局 try-except 防空答案。"""
@@ -172,6 +240,7 @@ class ReasoningAgent:
             }
         budget = ExecutionBudget(
             max_model_requests=self.config.max_model_requests,
+            max_recovery_requests=self.config.max_recovery_requests,
             max_total_tokens=self.config.max_total_tokens,
             max_tool_calls=self.config.max_tool_calls,
             timeout_seconds=self.config.problem_timeout_seconds,
@@ -198,6 +267,7 @@ class ReasoningAgent:
                         "content": str(budget_error)[:300],
                     })
                     result = {"final_response": "未解出", "trace": trace}
+            self._contain_pending_truncations(budget)
             trace.append({"step": "budget_summary", "content": budget.snapshot()})
             return result
         finally:
@@ -210,35 +280,62 @@ class ReasoningAgent:
         if domain_name:
             trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
-        # 阶段2：多候选生成（全部温度0.6，v13配置）
-        candidates, gen_trace = self._generate_candidates(problem, domain_prompt)
+        # 阶段2：多候选生成。API 上限保持 8192，prompt 按题型约束目标长度。
+        reasoning_target = self._reasoning_target_tokens(problem)
+        trace.append({
+            "step": "reasoning_budget",
+            "content": {
+                "kind": "proof" if self._is_proof_like(problem) else "calculation",
+                "target_tokens": reasoning_target,
+                "api_max_tokens": self.config.max_tokens,
+            },
+        })
+        candidates, gen_trace, emergency_hints = self._generate_candidates(
+            problem,
+            domain_prompt,
+            reasoning_target,
+        )
         trace.extend(gen_trace)
 
-        # 截断兜底
-        if not candidates or all(not self._extract_answer(c) for c in candidates):
-            trace.append({"step": "truncated_fallback", "content": "所有候选被截断"})
+        # 所有正常候选都不可用时，只允许一次整题紧急答案调用。
+        if not candidates:
+            trace.append({
+                "step": "emergency_required",
+                "content": {"reason": "no_eligible_candidate"},
+            })
             if self.config.enable_fallback:
-                fb = self._quick_fallback(problem, trace)
-                if fb:
-                    return {"final_response": self._build_response("", fb), "trace": trace}
+                answer = self._emergency_answer(problem, emergency_hints, trace)
+                if answer:
+                    return {
+                        "final_response": self._build_response("", answer),
+                        "trace": trace,
+                    }
+            return {"final_response": "未解出", "trace": trace}
 
         # 阶段3：验证投票
         scored: List[Candidate] = []
-        for cid, candidate in enumerate(candidates):
-            confidence, vt, verifications = self._verify(problem, candidate, cid)
-            answer = build_answer(self._extract_answer(candidate))
-            strategy = (
-                "tool"
-                if self.config.enable_tools and cid < self.config.tool_candidates
-                else "plain"
+        for cid, result in enumerate(candidates):
+            candidate_id = result.candidate_id if result.candidate_id is not None else cid
+            confidence, vt, verifications = self._verify(
+                problem,
+                result.text,
+                candidate_id,
             )
+            answer = build_answer(self._extract_answer(result.text))
+            strategy = "tool" if result.stage in {"policy_tool", "tool_final"} else "plain"
             scored.append(Candidate(
-                content=candidate,
+                content=result.text,
                 strategy=strategy,
                 confidence=confidence + (0.3 if answer.raw else -0.5),
                 answer=answer,
                 raw_confidence=confidence,
                 verifications=verifications,
+                metadata={
+                    "source": "recovery" if result.stage == "recovery" else result.stage,
+                    "candidate_id": candidate_id,
+                    "request_id": result.request_id,
+                    "truncated": False,
+                },
             ))
             trace.extend(vt)
 
@@ -248,29 +345,58 @@ class ReasoningAgent:
             if best.raw_confidence < 0.5 and best.answer.raw:
                 criticism = self._critic(problem, best.content, trace)
                 if criticism and "NO ERROR" not in criticism.upper():
-                    refined = self._reflect(problem, best.content, criticism, trace)
+                    reflection_cid = (
+                        self.config.tool_candidates + self.config.plain_candidates
+                    )
+                    refined_result = self._reflect_result(
+                        problem,
+                        best.content,
+                        criticism,
+                        trace,
+                        candidate_id=reflection_cid,
+                    )
+                    refined, hint = self._prepare_candidate(
+                        problem,
+                        refined_result,
+                        reflection_cid,
+                        trace,
+                    )
+                    if hint:
+                        emergency_hints.append(hint)
                     if refined:
                         rc, rv, verifications = self._verify(
-                            problem, refined, len(candidates)
+                            problem, refined.text, reflection_cid
                         )
-                        ra = build_answer(self._extract_answer(refined))
+                        ra = build_answer(self._extract_answer(refined.text))
                         scored.append(Candidate(
-                            content=refined,
+                            content=refined.text,
                             strategy="reflection",
                             confidence=rc + (0.3 if ra.raw else -0.5),
                             answer=ra,
                             raw_confidence=rc,
                             verifications=verifications,
-                            metadata={"temperature": self.config.reflection_temperature},
+                            metadata={
+                                "temperature": self.config.reflection_temperature,
+                                "source": (
+                                    "recovery" if refined.stage == "recovery" else "reflection"
+                                ),
+                                "candidate_id": reflection_cid,
+                                "request_id": refined.request_id,
+                                "truncated": False,
+                            },
                         ))
                         trace.extend(rv)
 
         # 阶段6：加权聚合
         final_answer, best_content = self._aggregate(scored, trace)
-        if not final_answer and scored:
-            final_answer = self._extract_answer(scored[0].content) or "未解出"
-        if not best_content and scored:
-            best_content = scored[0].content
+        if not final_answer:
+            answer = self._emergency_answer(problem, emergency_hints, trace)
+            if answer:
+                return {
+                    "final_response": self._build_response("", answer),
+                    "trace": trace,
+                }
+            return {"final_response": "未解出", "trace": trace}
         final_response = self._build_response(best_content, final_answer)
 
         return {"final_response": final_response or final_answer or "未解出", "trace": trace}
@@ -279,8 +405,11 @@ class ReasoningAgent:
         formatted_answer = format_answer_for_output(answer)
         if not formatted_answer:
             return "未解出"
+        formatted_answer = formatted_answer.splitlines()[0].strip()
+        if not formatted_answer:
+            return "未解出"
         if not content:
-            return f"最终答案：{formatted_answer}"
+            return self._validated_response(f"最终答案：{formatted_answer}", formatted_answer)
         body_lines = [
             line
             for line in content.strip().splitlines()
@@ -291,33 +420,80 @@ class ReasoningAgent:
         ]
         body = "\n".join(body_lines).strip()
         if not body:
-            return f"最终答案：{formatted_answer}"
-        return f"{body}\n最终答案：{formatted_answer}"
+            return self._validated_response(f"最终答案：{formatted_answer}", formatted_answer)
+        response = f"{body}\n最终答案：{formatted_answer}"
+        return self._validated_response(response, formatted_answer)
 
-    def _generate_candidates(self, problem: str, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
-        """v17：回退v13——全部温度0.6，简单候选生成。"""
-        candidates, trace = [], []
+    def _generate_candidates(
+        self,
+        problem: str,
+        domain_prompt: str,
+        reasoning_target: int,
+    ) -> Tuple[List[ModelCallResult], List[Dict], List[str]]:
+        """生成候选，并在截断时恢复一次；残缺文本永不进入候选列表。"""
+        candidates: List[ModelCallResult] = []
+        trace: List[Dict] = []
+        emergency_hints: List[str] = []
+        candidate_id = 0
         for i in range(self.config.tool_candidates):
             if self.config.enable_tools:
-                cand, tt = self._solve_tools(problem, i, domain_prompt)
+                result, tt = self._solve_tools_result(
+                    problem,
+                    candidate_id,
+                    domain_prompt,
+                    reasoning_target,
+                )
             else:
-                cand = self._solve_plain(problem, domain_prompt)
-                tt = [{"step": f"policy_tool_{i}", "content": cand[:1000]}]
-            candidates.append(cand)
+                result = self._solve_plain_result(
+                    problem,
+                    domain_prompt,
+                    reasoning_target,
+                    candidate_id=candidate_id,
+                )
+                tt = self._candidate_trace(result, f"policy_tool_{i}")
+            prepared, hint = self._prepare_candidate(problem, result, candidate_id, trace)
+            if prepared:
+                candidates.append(prepared)
+            if hint:
+                emergency_hints.append(hint)
             trace.extend(tt)
+            candidate_id += 1
         for i in range(self.config.plain_candidates):
-            cand = self._solve_plain(problem, domain_prompt)
-            candidates.append(cand)
-            trace.append({"step": f"policy_plain_{i}", "content": cand[:1000]})
-        return [c for c in candidates if c], trace
+            result = self._solve_plain_result(
+                problem,
+                domain_prompt,
+                reasoning_target,
+                candidate_id=candidate_id,
+            )
+            prepared, hint = self._prepare_candidate(problem, result, candidate_id, trace)
+            if prepared:
+                candidates.append(prepared)
+            if hint:
+                emergency_hints.append(hint)
+            trace.extend(self._candidate_trace(result, f"policy_plain_{i}"))
+            candidate_id += 1
+        return candidates, trace, emergency_hints
 
-    def _solve_tools(self, problem: str, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
+    def _solve_tools_result(
+        self,
+        problem: str,
+        cid: int,
+        domain_prompt: str,
+        reasoning_target: int,
+    ) -> Tuple[ModelCallResult, List[Dict]]:
         try:
+            length_instruction = self._reasoning_instruction(reasoning_target)
             messages = [
                 {"role": "system", "content": domain_prompt or POLICY_PROMPT},
-                {"role": "user", "content": f"{problem}\n\n请调用工具验证关键计算。候选编号：{cid}"},
+                {
+                    "role": "user",
+                    "content": (
+                        f"{problem}\n\n请调用工具验证关键计算。候选编号：{cid}。"
+                        f"\n{length_instruction}"
+                    ),
+                },
             ]
-            response, tt = run_tool_loop(
+            response, tt, result = run_tool_loop(
                 self.client, messages,
                 max_rounds=self.config.max_tool_rounds,
                 thinking_mode=self.config.policy_thinking_mode,
@@ -325,35 +501,63 @@ class ReasoningAgent:
                 max_tokens=self.config.max_tokens,
                 tool_timeout_seconds=self.config.tool_timeout_seconds,
                 budget=_ACTIVE_BUDGET.get(),
+                candidate_id=cid,
+                final_instruction=(
+                    "工具轮次已结束。第一行必须写“最终答案：XXX”，再给出必要推导。"
+                    + length_instruction
+                ),
+                return_call_result=True,
             )
-            if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
-                trace = [{"step": f"tool_solve_{cid}", "content": tt}]
-                trace.append({"step": f"truncated_{cid}", "content": "截断兜底"})
-                fb = self._quick_fallback(problem, trace)
-                if fb:
-                    response = fb
-                trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
-                return response, trace
             trace = [{"step": f"tool_solve_{cid}", "content": tt}]
-            trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
-            return response, trace
+            trace.extend(self._candidate_trace(result, f"policy_tool_{cid}"))
+            return result, trace
         except BudgetExceeded:
             raise
         except Exception as e:
             trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
-            return self._solve_plain(problem, domain_prompt), trace
+            return self._solve_plain_result(
+                problem,
+                domain_prompt,
+                reasoning_target,
+                candidate_id=cid,
+            ), trace
 
-    def _solve_plain(self, problem: str, domain_prompt: str) -> str:
+    def _solve_plain_result(
+        self,
+        problem: str,
+        domain_prompt: str,
+        reasoning_target: int,
+        *,
+        candidate_id: int | None = None,
+    ) -> ModelCallResult:
         try:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
-            return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
-                              temperature=self.config.policy_temperature,
-                              max_tokens=self.config.max_tokens,
-                              thinking_mode=self.config.policy_thinking_mode)
+            return self._chat_result(
+                prefix,
+                f"{problem}\n\n请给出完整解答。\n{self._reasoning_instruction(reasoning_target)}",
+                stage="policy_plain",
+                candidate_id=candidate_id,
+                temperature=self.config.policy_temperature,
+                max_tokens=self.config.max_tokens,
+                thinking_mode=self.config.policy_thinking_mode,
+            )
         except BudgetExceeded:
             raise
-        except Exception:
-            return ""
+        except Exception as exc:
+            return ModelCallResult(
+                text="",
+                stage="policy_plain",
+                finish_reason=f"error:{type(exc).__name__}",
+                candidate_id=candidate_id,
+            )
+
+    def _solve_plain(self, problem: str, domain_prompt: str) -> str:
+        """兼容旧内部测试的纯文本包装。"""
+        return self._solve_plain_result(
+            problem,
+            domain_prompt,
+            self._reasoning_target_tokens(problem),
+        ).text
 
     def _verify(
         self,
@@ -361,28 +565,41 @@ class ReasoningAgent:
         candidate: str,
         cid: int,
     ) -> Tuple[float, List[Dict], List[Verification]]:
-        votes, trace, verifications = [], [], []
+        votes: List[bool] = []
+        trace, verifications = [], []
         review_text = self._review_excerpt(candidate)
         for vid in range(self.config.verifier_voting_times):
             try:
-                verdict = self._chat(VERIFIER_PROMPT,
+                result = self._chat_result(VERIFIER_PROMPT,
                     f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
+                    stage="verifier",
+                    candidate_id=cid,
                     temperature=self.config.verifier_temperature,
                     max_tokens=self.config.verifier_max_tokens,
                     thinking_mode=self.config.verifier_thinking_mode)
-                passed = self._is_correct(verdict)
-                votes.append(passed)
+                if result.truncated:
+                    result = self._retry_truncated_verifier(problem, review_text, cid, result, trace)
+                verdict = result.text
+                parsed = self._parse_verdict(verdict) if not result.truncated else None
+                if parsed is not None:
+                    votes.append(parsed)
                 verifications.append(Verification(
                     source="model",
-                    status="pass" if passed else "fail",
-                    confidence=1.0 if passed else 0.0,
-                    detail=verdict[:200],
+                    status=("pass" if parsed else "fail") if parsed is not None else "unknown",
+                    confidence=1.0 if parsed is True else (0.0 if parsed is False else 0.5),
+                    detail=(
+                        verdict[:200]
+                        if not result.truncated
+                        else "truncated verifier response quarantined"
+                    ),
                 ))
-                trace.append({"step": f"verify_{cid}_{vid}", "content": verdict[:200]})
+                trace.append({
+                    "step": f"verify_{cid}_{vid}",
+                    "content": verdict[:200] if not result.truncated else "截断结果已隔离",
+                })
             except BudgetExceeded:
                 raise
             except Exception as e:
-                votes.append(False)
                 verifications.append(Verification(
                     source="model",
                     status="unknown",
@@ -390,16 +607,22 @@ class ReasoningAgent:
                     detail=f"{type(e).__name__}: {str(e)[:160]}",
                 ))
                 trace.append({"step": f"verify_err_{cid}_{vid}", "content": str(e)[:200]})
-        return (sum(votes) / len(votes) if votes else 0.0), trace, verifications
+        return (sum(votes) / len(votes) if votes else 0.5), trace, verifications
 
     def _critic(self, problem: str, candidate: str, trace: List[Dict]) -> str:
         try:
             review_text = self._review_excerpt(candidate)
-            criticism = self._chat(CRITIC_PROMPT,
+            result = self._chat_result(CRITIC_PROMPT,
                 f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n请找出错误或改进点。",
+                stage="critic",
                 temperature=self.config.critic_temperature,
                 max_tokens=self.config.critic_max_tokens,
                 thinking_mode=self.config.critic_thinking_mode)
+            if result.truncated:
+                self._mark_truncation(result, "quarantined", bool(self._extract_first_line_answer(result.text)))
+                trace.append({"step": "critic_truncated", "content": {"action": "discard"}})
+                return ""
+            criticism = result.text
             trace.append({"step": "critic", "content": criticism[:500]})
             return criticism
         except BudgetExceeded:
@@ -408,33 +631,351 @@ class ReasoningAgent:
             trace.append({"step": "critic_error", "content": str(e)[:200]})
             return ""
 
-    def _reflect(self, problem: str, prev: str, feedback: str, trace: List[Dict]) -> str:
+    def _reflect_result(
+        self,
+        problem: str,
+        prev: str,
+        feedback: str,
+        trace: List[Dict],
+        *,
+        candidate_id: int,
+    ) -> ModelCallResult:
         try:
             prompt = REFLECTION_PROMPT.format(
                 problem=problem,
                 prev_answer=self._review_excerpt(prev, limit=2000),
                 feedback=feedback[:500],
             )
-            resp = self._chat(POLICY_PROMPT, prompt,
-                              temperature=self.config.reflection_temperature,
-                              max_tokens=self.config.max_tokens,
-                              thinking_mode=self.config.policy_thinking_mode)
-            trace.append({"step": "reflection", "content": resp[:1000]})
-            return resp
+            prompt += "\n" + self._reasoning_instruction(self._reasoning_target_tokens(problem))
+            result = self._chat_result(
+                POLICY_PROMPT,
+                prompt,
+                stage="reflection",
+                candidate_id=candidate_id,
+                temperature=self.config.reflection_temperature,
+                max_tokens=self.config.max_tokens,
+                thinking_mode=self.config.policy_thinking_mode,
+            )
+            trace.extend(self._candidate_trace(result, "reflection"))
+            return result
         except BudgetExceeded:
             raise
         except Exception as e:
             trace.append({"step": "reflect_error", "content": str(e)[:200]})
+            return ModelCallResult(
+                text="",
+                stage="reflection",
+                finish_reason=f"error:{type(e).__name__}",
+                candidate_id=candidate_id,
+            )
+
+    def _reflect(self, problem: str, prev: str, feedback: str, trace: List[Dict]) -> str:
+        """兼容旧内部调用的纯文本包装。"""
+        return self._reflect_result(
+            problem,
+            prev,
+            feedback,
+            trace,
+            candidate_id=-1,
+        ).text
+
+    @staticmethod
+    def _candidate_trace(result: ModelCallResult, step: str) -> List[Dict]:
+        if result.truncated:
+            return [{
+                "step": step,
+                "content": {
+                    "stage": result.stage,
+                    "candidate_id": result.candidate_id,
+                    "finish_reason": result.finish_reason,
+                    "response_quarantined": True,
+                },
+            }]
+        return [{"step": step, "content": result.text[:1000]}]
+
+    def _prepare_candidate(
+        self,
+        problem: str,
+        result: ModelCallResult,
+        candidate_id: int,
+        trace: List[Dict],
+    ) -> Tuple[ModelCallResult | None, str]:
+        """Accept a complete candidate or recover a truncated one exactly once."""
+        if not result.truncated:
+            if self._extract_answer(result.text):
+                return result, ""
+            trace.append({
+                "step": "candidate_rejected",
+                "content": {
+                    "candidate_id": candidate_id,
+                    "stage": result.stage,
+                    "reason": "missing_explicit_answer",
+                },
+            })
+            return None, ""
+
+        original_answer = self._extract_first_line_answer(result.text)
+        budget = _ACTIVE_BUDGET.get()
+        recovery_limit = max(0, self.config.max_recovery_requests - 1)
+        can_recover = (
+            self.config.max_recoveries_per_candidate > 0
+            and budget is not None
+            and budget.recovery_requests < recovery_limit
+        )
+        event = {
+            "candidate_id": candidate_id,
+            "stage": result.stage,
+            "original_answer_present": bool(original_answer),
+            "recovery_attempted": can_recover,
+        }
+        if not can_recover:
+            self._mark_truncation(result, "quarantined", bool(original_answer))
+            event["recovery_result"] = "quarantined"
+            trace.append({"step": "truncation_recovery", "content": event})
+            return None, original_answer
+
+        if original_answer:
+            recovery_prompt = (
+                f"原题：\n{problem}\n\n截断回复第一行给出的答案是：{original_answer}\n\n"
+                "请独立核验这个答案；如有错请纠正。第一行只写“最终答案：XXX”，"
+                "随后只给决定结论的核验，目标不超过 800 输出 token。"
+            )
+        else:
+            recovery_prompt = (
+                f"原题：\n{problem}\n\n上一次解答被截断且没有可用答案。"
+                "请重新短解，第一行只写“最终答案：XXX”，随后只保留决定结论的步骤，"
+                "省略背景和重复验算。"
+            )
+        try:
+            recovered = self._chat_result(
+                POLICY_NO_TOOL_PROMPT,
+                recovery_prompt,
+                stage="recovery",
+                candidate_id=candidate_id,
+                recovery=True,
+                temperature=0.0,
+                max_tokens=self.config.recovery_max_tokens,
+                thinking_mode=False,
+            )
+        except BudgetExceeded:
+            self._mark_truncation(result, "quarantined", bool(original_answer))
+            event["recovery_result"] = "budget_exhausted"
+            trace.append({"step": "truncation_recovery", "content": event})
+            return None, original_answer
+
+        recovered_answer = self._extract_first_line_answer(recovered.text)
+        if not recovered.truncated and recovered_answer:
+            self._mark_truncation(result, "recovered", bool(original_answer))
+            event["recovery_result"] = "success"
+            trace.append({"step": "truncation_recovery", "content": event})
+            return recovered, original_answer
+
+        if recovered.truncated:
+            self._mark_truncation(
+                recovered,
+                "quarantined",
+                bool(recovered_answer),
+            )
+        self._mark_truncation(result, "recovery_failed", bool(original_answer))
+        event["recovery_result"] = (
+            "truncated_again" if recovered.truncated else "missing_explicit_answer"
+        )
+        trace.append({"step": "truncation_recovery", "content": event})
+        return None, recovered_answer or original_answer
+
+    def _retry_truncated_verifier(
+        self,
+        problem: str,
+        review_text: str,
+        candidate_id: int,
+        original: ModelCallResult,
+        trace: List[Dict],
+    ) -> ModelCallResult:
+        """Retry a truncated verifier once; unresolved output remains unknown."""
+        try:
+            retried = self._chat_result(
+                VERIFIER_PROMPT,
+                f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n"
+                "上次验证输出被截断。只输出一行 VERDICT: A 或 VERDICT: B。",
+                stage="verifier",
+                candidate_id=candidate_id,
+                temperature=self.config.verifier_temperature,
+                max_tokens=self.config.verifier_max_tokens,
+                thinking_mode=self.config.verifier_thinking_mode,
+            )
+        except BudgetExceeded:
+            self._mark_truncation(original, "quarantined", False)
+            trace.append({
+                "step": "verifier_recovery",
+                "content": {"candidate_id": candidate_id, "result": "budget_exhausted"},
+            })
+            return original
+
+        parsed = None if retried.truncated else self._parse_verdict(retried.text)
+        if parsed is not None:
+            self._mark_truncation(original, "recovered", False)
+            status = "success"
+        else:
+            self._mark_truncation(original, "recovery_failed", False)
+            status = "truncated_again" if retried.truncated else "unknown"
+        if retried.truncated:
+            self._mark_truncation(retried, "quarantined", False)
+        trace.append({
+            "step": "verifier_recovery",
+            "content": {"candidate_id": candidate_id, "result": status},
+        })
+        return retried
+
+    def _emergency_answer(
+        self,
+        problem: str,
+        answer_hints: List[str],
+        trace: List[Dict],
+    ) -> str:
+        """Make one short whole-problem answer call while quarantining its reasoning."""
+        budget = _ACTIVE_BUDGET.get()
+        if budget is None or self.config.max_recovery_requests <= 0:
             return ""
+        unique_hints = []
+        for hint in answer_hints:
+            normalized = format_answer_for_output(hint)
+            if normalized and normalized not in unique_hints:
+                unique_hints.append(normalized[:200])
+        hint_text = (
+            "\n可供独立检查的截断首行答案：" + "；".join(unique_hints[:4])
+            if unique_hints else ""
+        )
+        try:
+            result = self._chat_result(
+                POLICY_NO_TOOL_PROMPT,
+                f"{problem}{hint_text}\n\n所有完整候选均不可用。请独立作答。"
+                "第一行且只需一行输出“最终答案：XXX”，XXX 只写答案本体。",
+                stage="emergency",
+                recovery=True,
+                temperature=0.0,
+                max_tokens=self.config.fallback_max_tokens,
+                thinking_mode=False,
+            )
+        except BudgetExceeded as exc:
+            trace.append({"step": "emergency_unavailable", "content": str(exc)[:200]})
+            return ""
+        answer = self._extract_first_line_answer(result.text)
+        if result.truncated:
+            if answer:
+                self._mark_truncation(result, "answer_salvaged", True)
+                source = "emergency_truncated_answer_only"
+            else:
+                self._mark_truncation(result, "quarantined", False)
+                trace.append({
+                    "step": "emergency_result",
+                    "content": {"valid": False, "truncated": True},
+                })
+                return ""
+        elif answer:
+            source = "emergency"
+        else:
+            trace.append({
+                "step": "emergency_result",
+                "content": {"valid": False, "truncated": False},
+            })
+            return ""
+        if budget is not None:
+            budget.set_final_answer_source(source)
+        trace.append({
+            "step": "final_answer_source",
+            "content": {"source": source, "reasoning_included": False},
+        })
+        return answer
+
+    @staticmethod
+    def _validated_response(response: str, answer: str) -> str:
+        matches = re.findall(r"^\s*最终答案\s*[:：]\s*(.*?)\s*$", response, re.MULTILINE)
+        lines = [line for line in response.splitlines() if line.strip()]
+        valid = (
+            len(matches) == 1
+            and bool(matches[0].strip())
+            and bool(lines)
+            and re.fullmatch(r"\s*最终答案\s*[:：]\s*.+?\s*", lines[-1]) is not None
+        )
+        return response if valid else f"最终答案：{answer}"
+
+    @staticmethod
+    def _is_proof_like(problem: str) -> bool:
+        normalized = problem.casefold()
+        markers = (
+            "证明", "推导", "分类讨论", "讨论所有", "充要条件", "必要性", "充分性",
+            "prove", "show that", "derive", "classify", "if and only if",
+        )
+        return any(marker in normalized for marker in markers)
+
+    def _reasoning_target_tokens(self, problem: str) -> int:
+        return (
+            self.config.proof_reasoning_target_tokens
+            if self._is_proof_like(problem)
+            else self.config.calculation_reasoning_target_tokens
+        )
+
+    @staticmethod
+    def _reasoning_instruction(target_tokens: int) -> str:
+        return (
+            f"将推理目标控制在 {target_tokens} 输出 token 以内；只保留决定结论的步骤，"
+            "省略重复验算、背景定义和无关展开。第一行必须先给最终答案。"
+        )
+
+    @staticmethod
+    def _extract_first_line_answer(text: str) -> str:
+        for line in (text or "").splitlines():
+            if not line.strip():
+                continue
+            match = re.fullmatch(r"\s*最终答案\s*[:：]\s*(.+?)\s*", line)
+            return match.group(1).strip() if match else ""
+        return ""
+
+    @staticmethod
+    def _parse_verdict(verdict: str) -> bool | None:
+        matches = re.findall(r"\bVERDICT\s*[:：]\s*([AB])\b", verdict, re.IGNORECASE)
+        if matches:
+            return matches[-1].upper() == "A"
+        matches = re.findall(r"^\s*([AB])\s*$", verdict, re.IGNORECASE | re.MULTILINE)
+        if matches:
+            return matches[-1].upper() == "A"
+        return None
+
+    @staticmethod
+    def _mark_truncation(
+        result: ModelCallResult,
+        status: str,
+        original_answer_present: bool,
+    ) -> None:
+        budget = _ACTIVE_BUDGET.get()
+        if budget is not None:
+            budget.mark_truncation_handled(
+                result.request_id,
+                status=status,
+                original_answer_present=original_answer_present,
+            )
+
+    @staticmethod
+    def _contain_pending_truncations(budget: ExecutionBudget) -> None:
+        for event in budget.truncation_events:
+            if event.get("recovery_status") == "pending":
+                budget.mark_truncation_handled(
+                    event.get("request_id"),
+                    status="quarantined",
+                    original_answer_present=bool(event.get("original_answer_present")),
+                )
 
     def _aggregate(self, scored: List[Candidate], trace: List[Dict]) -> Tuple[str, str]:
         """v17：回退v13——简单多数投票。"""
         if not scored:
             return "", ""
-        with_ans = [candidate for candidate in scored if candidate.answer.raw]
+        with_ans = [
+            candidate
+            for candidate in scored
+            if candidate.answer.raw and not candidate.metadata.get("truncated", False)
+        ]
         if not with_ans:
-            best = max(scored, key=lambda item: item.confidence)
-            return self._normalize(best.content.strip()[:500]), best.content
+            return "", ""
         groups = {}
         for candidate in with_ans:
             groups.setdefault(candidate.answer.canonical, []).append(candidate)
@@ -452,13 +993,30 @@ class ReasoningAgent:
                 "content": f"答案 '{bg[0].answer.normalized}' 获得 {len(bg)} 票一致",
             })
             selected = max(bg, key=lambda item: item.confidence)
+            self._record_final_source(selected, trace)
             return bg[0].answer.normalized, selected.content
         best = max(with_ans, key=lambda item: item.confidence)
         trace.append({
             "step": "select_final",
             "content": f"选最高分: {best.answer.normalized}",
         })
+        self._record_final_source(best, trace)
         return best.answer.normalized, best.content
+
+    @staticmethod
+    def _record_final_source(candidate: Candidate, trace: List[Dict]) -> None:
+        source = str(candidate.metadata.get("source") or candidate.strategy)
+        budget = _ACTIVE_BUDGET.get()
+        if budget is not None:
+            budget.set_final_answer_source(source)
+        trace.append({
+            "step": "final_answer_source",
+            "content": {
+                "source": source,
+                "candidate_id": candidate.metadata.get("candidate_id"),
+                "reasoning_included": True,
+            },
+        })
 
     # 关键词→领域映射（v11：扩充至每领域15-20个关键词）
     _DOMAIN_KEYWORDS = {
@@ -573,9 +1131,4 @@ class ReasoningAgent:
 
     @staticmethod
     def _is_correct(verdict: str) -> bool:
-        m = re.findall(r"\bVERDICT\s*[:：]\s*([AB])", verdict, re.IGNORECASE)
-        if m: return m[-1].upper() == "A"
-        m = re.findall(r"^\s*([AB])\s*$", verdict, re.IGNORECASE | re.MULTILINE)
-        if m: return m[-1].upper() == "A"
-        words = re.findall(r"\b[A-Z]+\b", verdict.upper())
-        return "CORRECT" in words and "INCORRECT" not in words
+        return ReasoningAgent._parse_verdict(verdict) is True
