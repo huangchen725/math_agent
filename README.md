@@ -98,6 +98,18 @@ python evaluation/score_run.py outputs/private-eval/benchmark.jsonl outputs/priv
 
 审计和评分命令不访问模型 API。`generate_internal_benchmark.py` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)。正式题集记录格式见 `evaluation/benchmark.schema.json`。离线判分使用 `evaluation/judge.py` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
+下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。主要离线入口为：
+
+```bash
+python evaluation/import_putnam_bench.py path/to/PutnamBench/informal/putnam.json --source-commit COMMIT --output outputs/ability/benchmark.jsonl --manifest outputs/ability/source.json --recent-count 36
+python evaluation/freeze_experiment.py outputs/ability/benchmark.jsonl --output outputs/ability/baseline-manifest.json --experiment-id baseline-v1 --model intern-s2-preview --dataset-role public_test --repetitions 3 --concurrency 1
+python evaluation/blind_review.py create outputs/ability/benchmark.jsonl outputs/ability/old-run outputs/ability/new-run --packet outputs/ability/review.jsonl --key outputs/ability/review-key.json
+python evaluation/blind_review.py resolve outputs/ability/review-completed.jsonl outputs/ability/review-key.json --baseline-adjudications outputs/ability/old-adjudications.jsonl --candidate-adjudications outputs/ability/new-adjudications.jsonl
+python evaluation/score_run.py outputs/ability/benchmark.jsonl outputs/ability/old-run --adjudications outputs/ability/old-adjudications.jsonl --report outputs/ability/old-score.json
+```
+
+`paired_compare.py` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。真实基线尚未执行；单版本 120 题 × 3 次预计约 3,240 个模型请求，硬上限 7,200，运行前必须重新确认费用与额度。
+
 截断专项压力集固定在 `evaluation/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `score_run.py` 报告交给门禁：
 
 ```bash

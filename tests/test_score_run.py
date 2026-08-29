@@ -75,3 +75,48 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
     assert truncation["recovery"]["coverage"] == 1.0
     assert truncation["valid_answer_rate_after_truncation"] == 1.0
     assert scored["by_subject"]["数论"]["total"] == 3
+
+
+def test_manual_benchmark_stays_unknown_until_blind_adjudication(tmp_path):
+    dataset = [
+        {
+            "idx": "proof-1",
+            "problem": "prove it",
+            "answer": "manual",
+            "subject": "分析",
+            "grading_mode": "manual_blind",
+        }
+    ]
+    (tmp_path / "proof-1.json").write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "final_response": "A proof attempt.\n最终答案：成立",
+                "trace": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    automatic = score_run(dataset, tmp_path)
+    reviewed = score_run(
+        dataset,
+        tmp_path,
+        {
+            "proof-1": {
+                "idx": "proof-1",
+                "status": "correct",
+                "reviewer_id": "reviewer-1",
+                "blind": True,
+                "score": 8,
+            }
+        },
+    )
+
+    assert automatic["summary"]["unknown"] == 1
+    assert automatic["results"][0]["method"] == "manual_review_required"
+    assert reviewed["summary"]["correct"] == 1
+    assert reviewed["summary"]["adjudicated"] == 1
+    assert reviewed["results"][0]["auto_status"] == "unknown"
+    assert reviewed["results"][0]["human_score"] == 8

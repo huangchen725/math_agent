@@ -1,7 +1,7 @@
 # 数学推理智能体架构
 
 > 状态：当前生效  
-> 更新日期：2026-08-29  
+> 更新日期：2026-08-30
 > 本文件是仓库唯一的架构事实源。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时以本文件和当前代码为准。
 
 ## 1. 目标与边界
@@ -61,6 +61,10 @@ flowchart LR
 | `evaluation/generate_internal_benchmark.py` | 生成可复现的18领域内部合成基准；它不是生产调用链或官方独立题集 |
 | `evaluation/score_run.py` | 汇总 `main.py` 逐题输出、四态判分、领域/难度/题型、usage、分阶段截断和恢复指标，并导出人工复核队列 |
 | `evaluation/truncation_gate.py` | 合并一次或多次离线评分报告，按请求级截断率、单侧 Wilson 上界、候选阶段、恢复、格式和正确率执行发布门禁 |
+| `evaluation/freeze_experiment.py` | 冻结数据 SHA-256、运行时文件指纹、commit、模型、AgentConfig、并发、重复次数和数据泄漏审计；脏工作树只能生成 draft |
+| `evaluation/import_putnam_bench.py` | 从固定上游 commit 确定性抽样第三方公开大学竞赛题；题面只写入被 Git 忽略的本地输出 |
+| `evaluation/blind_review.py` | 对旧版/新版输出逐题随机交换 A/B 标签，并在人工复核完成后解盲为两份裁决记录 |
+| `evaluation/paired_compare.py` | 对三轮新旧报告进行逐题配对、bootstrap 区间、精确 McNemar 检验、回退清单和证据门禁 |
 | `evaluation/truncation_stress.jsonl` | 18 领域各 2 题的项目自建长输出压力集；只测可靠性，不是官方正确率基准 |
 
 ## 4. 求解流程
@@ -153,7 +157,7 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
-测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 

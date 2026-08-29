@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "status": "prepared_not_executed",
+  "protocol_id": "ability-baseline-v1",
+  "baseline_runtime_commit": "831b94f1f0e2e57a4cf93e5c4b3f588c89f0d5cb",
+  "primary_public_benchmark": {
+    "source": "PutnamBench informal statements",
+    "source_url": "https://github.com/trishullab/PutnamBench",
+    "source_commit": "34eba93650f2fa803ca6aae6dfd2c9f22d46c00d",
+    "source_sha256": "54c89a29aa685e29e52ef802bba48007fb973753a0e3744be883b9e09e2b5403",
+    "selection_seed": 20260830,
+    "items": 120,
+    "answer_target_items": 72,
+    "proof_items": 48,
+    "recent_from_year": 2022,
+    "recent_items": 36,
+    "dataset_sha256": "f5f7666651b4a8b4214d6fae7a1a24e1caa4b816cb8b0d2f3a12b2a40c57f0d7",
+    "grading_mode": "manual_blind",
+    "claim_boundary": "Third-party public benchmark; model pretraining overlap is unknown."
+  },
+  "sealed_acceptance_benchmark": {
+    "status": "required_not_available",
+    "minimum_items": 100,
+    "target_items": 200,
+    "policy": "Independent authorship or private third-party source; one-time use; retire to regression after disclosure."
+  },
+  "runner": {
+    "configured_model": "intern-s2-preview",
+    "repetitions_per_version": 3,
+    "local_max_concurrency": 1,
+    "estimated_requests_per_problem": 9,
+    "hard_request_cap_per_problem": 20,
+    "estimated_requests_per_version": 3240,
+    "hard_request_cap_per_version": 7200
+  },
+  "comparison": {
+    "paired_by_idx": true,
+    "blind_manual_review": true,
+    "primary_statistic": "paired accuracy delta",
+    "confidence_interval": "item-level paired bootstrap 95%",
+    "significance_test": "one-sided exact McNemar on majority-over-repetitions outcomes",
+    "minimum_repetitions": 3
+  },
+  "acceptance": {
+    "paired_bootstrap_lower_bound_above_zero": true,
+    "one_sided_mcnemar_p_below": 0.05,
+    "positive_runs_required_fraction": 0.6666666667,
+    "candidate_invalid": 0,
+    "candidate_truncated_fragments_in_final": 0,
+    "candidate_truncation_gate_must_pass": true
+  }
+}

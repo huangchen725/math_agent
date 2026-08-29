@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -21,11 +22,52 @@ from evaluation.judge import judge_answer
 
 _FINAL_ANSWER = re.compile(r"^\s*最终答案\s*[:：]\s*(.*?)\s*$", re.MULTILINE)
 STATUSES = ("correct", "wrong", "unknown", "no_answer", "error", "missing")
+ADJUDICATION_STATUSES = {"correct", "wrong", "unknown", "no_answer"}
 
 
 def extract_final_answer(final_response: str) -> str:
     matches = _FINAL_ANSWER.findall(final_response or "")
     return matches[-1].strip() if matches else ""
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_adjudications(path: Path) -> dict[str, dict[str, Any]]:
+    adjudications: dict[str, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8-sig") as file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid adjudication JSON on line {line_number}") from exc
+            if not isinstance(record, dict):
+                raise ValueError(f"adjudication line {line_number} is not an object")
+            idx = str(record.get("idx", ""))
+            status = str(record.get("status", ""))
+            reviewer_id = str(record.get("reviewer_id", "")).strip()
+            if not idx or idx in adjudications:
+                raise ValueError(f"missing or duplicate adjudication idx on line {line_number}")
+            if status not in ADJUDICATION_STATUSES:
+                raise ValueError(f"invalid adjudication status on line {line_number}: {status!r}")
+            if record.get("blind") is not True or not reviewer_id:
+                raise ValueError(
+                    f"adjudication line {line_number} must have blind=true and reviewer_id"
+                )
+            score = record.get("score")
+            if score is not None and (
+                not isinstance(score, (int, float)) or not 0 <= float(score) <= 10
+            ):
+                raise ValueError(f"invalid adjudication score on line {line_number}")
+            adjudications[idx] = dict(record)
+    return adjudications
 
 
 _SCALAR_USAGE_FIELDS = (
@@ -83,7 +125,16 @@ def _group_summary(items: list[dict[str, Any]], field: str) -> dict[str, Any]:
     return summary
 
 
-def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]:
+def score_run(
+    dataset: list[dict[str, Any]],
+    output_dir: Path,
+    adjudications: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    adjudications = adjudications or {}
+    dataset_indexes = {str(item.get("idx", position)) for position, item in enumerate(dataset)}
+    extra_adjudications = sorted(set(adjudications) - dataset_indexes)
+    if extra_adjudications:
+        raise ValueError(f"adjudications contain unknown idx values: {extra_adjudications[:10]}")
     results = []
     totals: Counter[str] = Counter()
     usage: Counter[str] = Counter()
@@ -92,6 +143,7 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
     recovery: Counter[str] = Counter()
     problems_with_truncation = 0
     truncated_problems_with_valid_answer = 0
+    adjudicated_count = 0
     for position, item in enumerate(dataset):
         idx = str(item.get("idx", position))
         output_path = output_dir / f"{idx}.json"
@@ -99,6 +151,9 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
         actual = ""
         method = ""
         detail = ""
+        auto_status = ""
+        reviewer_id = ""
+        human_score: float | None = None
         if not output_path.is_file():
             status = "missing"
         else:
@@ -117,10 +172,15 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                     detail = str(error)[:500]
                 else:
                     actual = extract_final_answer(str(record.get("final_response", "")))
-                    judged = judge_answer(str(item.get("answer", "")), actual)
-                    status = judged.status
-                    method = judged.method
-                    detail = judged.detail
+                    if str(item.get("grading_mode", "")) == "manual_blind":
+                        status = "unknown" if actual else "no_answer"
+                        method = "manual_review_required"
+                        detail = "dataset requires blinded mathematical review"
+                    else:
+                        judged = judge_answer(str(item.get("answer", "")), actual)
+                        status = judged.status
+                        method = judged.method
+                        detail = judged.detail
                 budget_snapshot = _budget_snapshot(record.get("trace"))
                 usage.update({
                     key: int(budget_snapshot.get(key, 0))
@@ -145,6 +205,16 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                     problems_with_truncation += 1
                     if actual:
                         truncated_problems_with_valid_answer += 1
+        auto_status = status
+        adjudication = adjudications.get(idx)
+        if adjudication is not None and status not in {"error", "missing"}:
+            status = str(adjudication["status"])
+            reviewer_id = str(adjudication["reviewer_id"])
+            score = adjudication.get("score")
+            human_score = float(score) if isinstance(score, (int, float)) else None
+            method = "blind_human_review"
+            detail = "blind adjudication override"
+            adjudicated_count += 1
         totals[status] += 1
         results.append(
             {
@@ -155,9 +225,12 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                 "template_family": item.get("template_family", "<missing>"),
                 "expected": item.get("answer", ""),
                 "actual": actual,
+                "auto_status": auto_status,
                 "status": status,
                 "method": method,
                 "detail": detail,
+                "reviewer_id": reviewer_id,
+                "human_score": human_score,
             }
         )
 
@@ -222,6 +295,7 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
             "usage": dict(usage),
             "truncation": truncation_summary,
             "invalid": totals["no_answer"],
+            "adjudicated": adjudicated_count,
         },
         "by_subject": _group_summary(results, "subject"),
         "by_level": _group_summary(results, "level"),
@@ -237,14 +311,48 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--review", type=Path)
+    parser.add_argument(
+        "--adjudications",
+        type=Path,
+        help="Optional blind-review JSONL produced by evaluation/blind_review.py.",
+    )
     return parser.parse_args()
+
+
+def build_provenance(dataset_path: Path, output_dir: Path) -> dict[str, Any]:
+    digest = file_sha256(dataset_path)
+    provenance: dict[str, Any] = {"dataset_sha256": digest}
+    summary_path = output_dir / "_run" / "run_summary.json"
+    if not summary_path.is_file():
+        provenance["run_summary_present"] = False
+        return provenance
+    loaded = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(loaded, dict):
+        raise ValueError("run summary is not a JSON object")
+    recorded_digest = str(loaded.get("input_sha256", ""))
+    if recorded_digest and recorded_digest != digest:
+        raise ValueError("run summary input_sha256 does not match the scored dataset")
+    provenance.update(
+        {
+            "run_summary_present": True,
+            "input_sha256": recorded_digest,
+            "model": loaded.get("model"),
+            "local_max_concurrency": loaded.get("local_max_concurrency"),
+            "started_at": loaded.get("started_at"),
+            "duration_ms": loaded.get("duration_ms"),
+            "run_status": loaded.get("status"),
+        }
+    )
+    return provenance
 
 
 def main() -> None:
     args = parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    scored = score_run(load_jsonl(args.dataset), args.output_dir)
+    adjudications = load_adjudications(args.adjudications) if args.adjudications else None
+    scored = score_run(load_jsonl(args.dataset), args.output_dir, adjudications)
+    scored["provenance"] = build_provenance(args.dataset, args.output_dir)
     serialized = json.dumps(scored, ensure_ascii=False, indent=2)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(serialized + "\n", encoding="utf-8")

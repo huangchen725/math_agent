@@ -79,6 +79,18 @@ def default_references() -> list[ReferenceProblem]:
     return references
 
 
+def references_from_dataset(path: Path) -> list[ReferenceProblem]:
+    """Load another JSONL split as overlap-only references."""
+    return [
+        ReferenceProblem(
+            f"reference_dataset:{path.name}",
+            str(item.get("subject", "")),
+            str(item["problem"]),
+        )
+        for item in load_jsonl(path)
+    ]
+
+
 def _match_problem(
     problem: str,
     references: Iterable[ReferenceProblem],
@@ -211,6 +223,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("dataset", type=Path, help="JSONL benchmark to audit")
     parser.add_argument("--successes", type=int, help="Observed correct count")
     parser.add_argument("--near-threshold", type=float, default=0.82)
+    parser.add_argument(
+        "--reference-dataset",
+        type=Path,
+        action="append",
+        default=[],
+        help="Additional JSONL split to check for cross-dataset leakage.",
+    )
     parser.add_argument("--output", type=Path, help="Optional JSON report path")
     parser.add_argument("--quiet", action="store_true", help="Write JSON without printing it")
     return parser.parse_args()
@@ -221,9 +240,12 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     records = load_jsonl(args.dataset)
+    references = default_references()
+    for reference_path in args.reference_dataset:
+        references.extend(references_from_dataset(reference_path))
     report = audit_dataset(
         records,
-        default_references(),
+        references,
         successes=args.successes,
         near_threshold=args.near_threshold,
     )
