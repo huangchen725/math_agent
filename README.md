@@ -106,6 +106,8 @@ python evaluation/truncation_gate.py outputs/truncation/run-1-score.json outputs
 
 门禁要求请求级截断点估计和单侧 95% Wilson 上界都低于 5%，候选生成自身截断率低于 5%，恢复覆盖率 100%，无截断残句进入最终答案，`invalid=0`，且保守正确率不明显低于 22% 基线。该命令本身不访问 API；生成三个在线运行目录仍会产生真实调用和费用。
 
+当前 35B 三轮真实压力结果为 800 次请求、0 截断，单侧 95% Wilson 上界 0.3371%，详细冻结条件与边界见 [35B 截断专项压力测试](docs/evaluations/TRUNCATION_STRESS_35B_V1.md)。
+
 `verify_math.py` 默认只解析 21 个 few-shot，不访问 API：
 
 ```bash
