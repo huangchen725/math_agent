@@ -1,5 +1,5 @@
-from agent_types import Candidate, Verification
-from answer_equivalence import build_answer, equivalent_answers, format_answer_for_output
+from math_agent.agent_types import Candidate, Verification
+from math_agent.answer_equivalence import build_answer, equivalent_answers, format_answer_for_output
 from user_agent import AgentConfig, POLICY_PROMPT, ReasoningAgent
 
 

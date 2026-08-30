@@ -6,7 +6,7 @@ from contextvars import ContextVar
 
 import pytest
 
-from budget import BudgetExceeded, ExecutionBudget
+from math_agent.budget import BudgetExceeded, ExecutionBudget
 from user_agent import AgentConfig, ReasoningAgent
 
 

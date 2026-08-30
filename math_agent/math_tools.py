@@ -17,8 +17,8 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 
-from tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
-from agent_types import ModelCallResult
+from .agent_types import ModelCallResult
+from .tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
 
 _transformations = standard_transformations + (implicit_multiplication, convert_xor)
 _MAX_EXPRESSION_CHARS = 2048

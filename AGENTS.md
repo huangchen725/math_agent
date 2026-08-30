@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. `user_agent.py::ReasoningAgent` and its flat-module dependencies are the only runtime architecture. `ARCHITECTURE.md` is the sole architecture source of truth.
+This repository is the XH-202627 competition math agent. `math_agent/` is the only runtime implementation; root `user_agent.py` is the official compatibility facade. `ARCHITECTURE.md` is the sole architecture source of truth.
 
 ## Non-negotiable contracts
 
@@ -22,7 +22,7 @@ This repository is the XH-202627 competition math agent. `user_agent.py::Reasoni
 
 ## Relevant files
 
-- Runtime pipeline: `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `task_router.py`, `deterministic_verifier.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`.
+- Runtime pipeline: compatibility facade `user_agent.py`, implementation package `math_agent/`, and adapters `main.py`/`demo.py`.
 - Offline checks: `tests/`.
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
 - Offline evaluation: `evaluation/audit_dataset.py` audits provenance and prompt/sample overlap; `evaluation/judge.py` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.

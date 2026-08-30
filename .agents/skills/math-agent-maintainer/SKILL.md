@@ -11,7 +11,7 @@ Maintain the repository's single runtime architecture and its competition contra
 
 Read `AGENTS.md` and inspect `git status` before editing. Preserve unrelated working-tree changes.
 
-Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The runtime path is `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `task_router.py`, `deterministic_verifier.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`, and `demo.py`.
+Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The only runtime implementation is the `math_agent/` package. Root `user_agent.py` is the competition compatibility facade; `main.py` and `demo.py` are adapters and must import the package public API.
 
 ## Preserve active contracts
 

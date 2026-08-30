@@ -45,8 +45,9 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert len(manifest["code"]["runtime_sha256"]) == 64
     assert manifest["agent_config_sha256"]
     assert manifest["runner"] == {"repetitions": 3, "local_max_concurrency": 1}
-    assert "task_router.py" in RUNTIME_FILES
-    assert "deterministic_verifier.py" in RUNTIME_FILES
+    assert "math_agent/task_router.py" in RUNTIME_FILES
+    assert "math_agent/deterministic_verifier.py" in RUNTIME_FILES
+    assert "agent_types.py" not in RUNTIME_FILES
 
 
 def test_test_manifest_detects_cross_dataset_template_leakage(tmp_path):

@@ -1,6 +1,6 @@
 import pytest
 
-from task_router import analyze_task
+from math_agent.task_router import analyze_task
 
 
 @pytest.mark.parametrize(

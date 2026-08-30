@@ -26,7 +26,7 @@ from evaluation.audit_dataset import (
     default_references,
     load_jsonl,
 )
-from user_agent import AgentConfig
+from math_agent import AgentConfig
 
 
 VALID_DATASET_ROLES = {"development", "regression", "public_test", "sealed_test"}
@@ -43,16 +43,19 @@ REQUIRED_FIELDS = (
 )
 RUNTIME_FILES = (
     "user_agent.py",
-    "agent_types.py",
-    "answer_equivalence.py",
-    "task_router.py",
-    "deterministic_verifier.py",
-    "budget.py",
-    "domain_prompts.py",
-    "math_tools.py",
-    "tool_executor.py",
-    "llm_client.py",
+    "math_agent/__init__.py",
+    "math_agent/agent.py",
+    "math_agent/agent_types.py",
+    "math_agent/answer_equivalence.py",
+    "math_agent/task_router.py",
+    "math_agent/deterministic_verifier.py",
+    "math_agent/budget.py",
+    "math_agent/domain_prompts.py",
+    "math_agent/math_tools.py",
+    "math_agent/tool_executor.py",
+    "math_agent/llm_client.py",
     "main.py",
+    "demo.py",
 )
 
 

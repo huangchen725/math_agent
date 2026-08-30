@@ -5,6 +5,8 @@
 ## 核心接口
 
 ```python
+from user_agent import ReasoningAgent
+
 ReasoningAgent(client).solve(problem, metadata)
 # -> {"final_response": str, "trace": list[dict]}
 ```
@@ -141,16 +143,18 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 
 ```text
 .
-├── user_agent.py              # 竞赛接口与推理编排
-├── agent_types.py             # 调用结果与 Candidate/Answer/Verification 内部类型
-├── answer_equivalence.py      # 保守答案归一化与等价判断
-├── task_router.py             # 零调用题型识别与严格验证计划
-├── budget.py                  # 单题请求、token、工具与时间预算
-├── math_tools.py              # 11 个受限 SymPy 工具
-├── tool_executor.py           # 可终止子进程与工具硬超时
-├── deterministic_verifier.py # 隔离执行的确定性验证与候选证据
-├── domain_prompts.py          # 18 个数学领域提示
-├── llm_client.py              # OpenAI 兼容 HTTP 客户端
+├── user_agent.py              # 竞赛兼容入口，只导出公开接口
+├── math_agent/                # 唯一运行时实现包
+│   ├── agent.py               # ReasoningAgent 流水线编排
+│   ├── agent_types.py         # 调用、候选、答案与验证类型
+│   ├── answer_equivalence.py  # 保守答案归一化与等价判断
+│   ├── task_router.py         # 零调用题型识别与严格验证计划
+│   ├── budget.py              # 单题请求、token、工具与时间预算
+│   ├── math_tools.py          # 11 个受限 SymPy 工具及工具循环
+│   ├── tool_executor.py       # 可终止子进程与工具硬超时
+│   ├── deterministic_verifier.py # 隔离验证与候选证据
+│   ├── domain_prompts.py      # 18 个数学领域提示
+│   └── llm_client.py          # OpenAI 兼容 HTTP 客户端
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证

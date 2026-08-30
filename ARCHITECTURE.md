@@ -8,7 +8,7 @@
 
 系统面向竞赛数学题，在调用方注入的 Intern 兼容模型客户端上完成领域与题型分析、候选生成、可选符号计算、确定性/模型验证、低置信度反思和答案聚合。
 
-当前仓库只有一套可运行实现。2026-08-28 已删除未接入入口的 `math_agent/` 原型、其 `configs/`/`data/`、专属测试和 `lagent` 复现脚手架，避免并存的环境变量、输出契约和依赖继续漂移。多智能体、共享黑板和自适应候选升级属于未来设想，不是当前能力。
+当前仓库只有一套可运行实现，全部位于 `math_agent/` 包。根目录 `user_agent.py` 只是竞赛兼容入口，与 `math_agent` 导出同一个 `ReasoningAgent` 和 `AgentConfig`，不保留第二份实现。2026-08-28 删除的同名目录是未接入入口、依赖不同的旧原型；2026-08-30 建立的是现有扁平运行时的保守包化迁移，两者没有代码继承关系。多智能体、共享黑板和自适应候选升级仍属于未来设想，不是当前能力。
 
 ## 2. 外部契约
 
@@ -28,17 +28,18 @@ ReasoningAgent(client).solve(problem, metadata)
 
 ```mermaid
 flowchart LR
-    I[JSONL / Demo / 调用方] --> C[InternChatClient]
-    I --> A[ReasoningAgent]
+    I[JSONL / Demo / 调用方] --> F[user_agent.py<br/>兼容入口]
+    F --> A[math_agent.agent<br/>ReasoningAgent]
+    I --> C[InternChatClient]
     C --> A
-    D[domain_prompts.py<br/>18 领域提示] --> A
-    I --> Q[task_router.py<br/>题型与严格验证计划]
+    D[math_agent/domain_prompts.py<br/>18 领域提示] --> A
+    I --> Q[math_agent/task_router.py<br/>题型与严格验证计划]
     Q --> A
     B[ExecutionBudget] --> A
-    A --> T[math_tools.py<br/>11 个受限 SymPy 工具]
-    T --> P[tool_executor.py<br/>可终止子进程]
+    A --> T[math_agent/math_tools.py<br/>11 个受限 SymPy 工具]
+    T --> P[math_agent/tool_executor.py<br/>可终止子进程]
     T --> A
-    A --> V[deterministic_verifier.py<br/>受限确定性验证]
+    A --> V[math_agent/deterministic_verifier.py<br/>受限确定性验证]
     V --> P
     V --> A
     E[Answer / Candidate / Verification] --> A
@@ -48,16 +49,18 @@ flowchart LR
 
 | 组件 | 职责 |
 | --- | --- |
-| `user_agent.py` | 维护竞赛接口、固定策略候选生成、验证、反思和聚合，并协调单题预算 |
-| `agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
-| `answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
-| `task_router.py` | 零模型调用识别一个或多个题型；仅对结构明确的直接计算题生成至多一个可执行验证计划，证明、数域不明或复合任务只保留标签 |
-| `budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
-| `domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
-| `math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
-| `tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
-| `deterministic_verifier.py` | 在可终止子进程中执行封闭数值表达式、有限方程解集、导数、积分、极限、留数、行列式、模幂、组合数及符号等价验证；结果为 `pass/fail/unknown` |
-| `llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试 |
+| `user_agent.py` | 竞赛兼容入口，只重新导出 `math_agent` 中的公开类型；不得增加运行时实现 |
+| `math_agent/__init__.py` | 唯一包级公开 API，导出 `ReasoningAgent`、`AgentConfig`、`InternChatClient` 和核心数据类型 |
+| `math_agent/agent.py` | 维护固定策略候选生成、验证、反思和聚合，并协调单题预算 |
+| `math_agent/agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
+| `math_agent/answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
+| `math_agent/task_router.py` | 零模型调用识别一个或多个题型；仅对结构明确的直接计算题生成至多一个可执行验证计划，证明、数域不明或复合任务只保留标签 |
+| `math_agent/budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
+| `math_agent/domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
+| `math_agent/math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
+| `math_agent/tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
+| `math_agent/deterministic_verifier.py` | 在可终止子进程中执行封闭数值表达式、有限方程解集、导数、积分、极限、留数、行列式、模幂、组合数及符号等价验证；结果为 `pass/fail/unknown` |
+| `math_agent/llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试 |
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |

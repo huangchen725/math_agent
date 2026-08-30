@@ -1,8 +1,8 @@
 import pytest
 import requests
 
-import llm_client
-from llm_client import InternChatClient
+from math_agent import llm_client
+from math_agent.llm_client import InternChatClient
 
 
 def _http_response(status: int, payload=None) -> requests.Response:

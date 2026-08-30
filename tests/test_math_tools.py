@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from math_tools import (
+from math_agent.math_tools import (
     binomial,
     calculate,
     differentiate,

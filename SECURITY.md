@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-当前安全维护范围是 `main` 分支上的唯一运行链路及其边界模块：`user_agent.py`、`agent_types.py`、`answer_equivalence.py`、`budget.py`、`math_tools.py`、`tool_executor.py`、`llm_client.py`、`main.py` 和 `demo.py`。
+当前安全维护范围是 `main` 分支上的唯一运行实现 `math_agent/`，以及竞赛兼容入口 `user_agent.py`、批处理入口 `main.py` 和 Demo 入口 `demo.py`。根兼容入口不得复制或分叉包内实现。
 
 ## 报告问题
 
