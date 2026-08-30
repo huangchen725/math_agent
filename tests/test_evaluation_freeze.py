@@ -47,6 +47,8 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert manifest["runner"] == {"repetitions": 3, "local_max_concurrency": 1}
     assert "math_agent/task_router.py" in RUNTIME_FILES
     assert "math_agent/deterministic_verifier.py" in RUNTIME_FILES
+    assert "math_agent/context.py" in RUNTIME_FILES
+    assert "math_agent/model_gateway.py" in RUNTIME_FILES
     assert "agent_types.py" not in RUNTIME_FILES
 
 

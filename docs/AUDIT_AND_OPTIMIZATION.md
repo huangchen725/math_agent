@@ -101,7 +101,7 @@
 | RUN-001 | 只有单次 HTTP 超时，没有单题统一 deadline | 多分支可持续累积 | 单题预算在每次模型/工具调用前检查 600 秒 deadline；在途 HTTP 仍只能依赖客户端超时 |
 | RUN-002 | Runner 无成功/失败/跳过/耗时汇总 | 运行结果难核查 | 输出 `_run/run_summary.json`，记录输入文件名/SHA-256、模型、耗时、并发与计数，不记录题面 |
 | RUN-003 | `未解出` 在 runner 转换为异常时丢弃 Agent trace | 无法区分数学失败、预算耗尽和 API 节流 | 保存为 error checkpoint并保留原始 trace；已加回归测试 |
-| CLIENT-001 | 响应 usage 与结束原因未采集 | 无法核对 token 或定位截断 | 保持原返回契约，通过 `get_last_response_meta()` 暴露 usage、模型、request id、`finish_reason`、耗时和尝试次数；预算统一累计并按阶段统计 |
+| CLIENT-001 | 响应 usage 与结束原因未采集 | 无法核对 token 或定位截断 | `chat()` 保持原返回契约；`chat_with_metadata()` 与 `ModelGateway` 原子绑定响应、usage、模型、request id、`finish_reason`、耗时和尝试次数，预算统一累计并按阶段统计 |
 | EVAL-005 | 36 题 A/B 原始分数从 33/36 降至 32/36 | 表面上像工程重构造成能力回退 | 已知 wrong 来自 Unicode/LaTeX 格式漏判，但旧判分器同时存在文字包含假阳性，原始分数整体作废；运行时与离线判分现共享安全归一化，并加入格式正反例测试 |
 | CLIENT-003 | 平台把“请求过于频繁”作为 HTTP 400 + `invalid_request_error` 返回 | 客户端把临时限流当永久参数错误，正式评测可能直接丢题 | 仅当 400 响应的 code/type 或 message 明确表示限流时重试；普通 400、401 不重试；已加正反测试 |
 | EVAL-006 | 旧判分器用双向子串包含判定 | `1`/`10`、肯定/否定文字可能出现假阳性 | 新增四态保守离线判分；无法证明等价时返回 `unknown`，符号验证受子进程硬超时保护 |
@@ -505,4 +505,12 @@ S0 新增 scripted fake client 契约测试，冻结候选与 verifier 两次请
 
 最终离线门禁为 132 项测试通过，全仓语句覆盖率 80%，Ruff、compileall、`pip check` 和 `git diff --check` 通过；`main.py --help`、21 个 few-shot dry-run、样例数据审计和运行时指纹均通过。整个过程未调用真实 API，也未改变模型、候选数、温度、thinking mode、token、截断恢复或聚合规则。
 
-本阶段没有实施发布打包、CI 或依赖锁定，`pyproject.toml` 仍只承担测试和静态检查配置；这些内容保留给后续交付阶段。`math_agent/agent.py` 仍是集中式编排器，预算与响应元数据仍使用隐式上下文，工具解析、实现和 tool-calling 循环仍在同一模块，属于后续 S2/S3 的明确范围。
+本阶段没有实施发布打包、CI 或依赖锁定，`pyproject.toml` 仍只承担测试和静态检查配置；这些内容保留给后续交付阶段。S2 已移除预算与响应元数据的隐式上下文；`math_agent/agent.py` 仍是集中式编排器，工具解析、实现和 tool-calling 循环仍在同一模块，属于后续 S3 的明确范围。
+
+## 19. S2 显式求解上下文与统一模型网关
+
+2026-08-30 完成第二批纯结构改造。每次 `ReasoningAgent.solve()` 现在创建独立 `SolveContext`，显式持有题目、metadata、trace、`ExecutionBudget` 和 `ModelGateway`；候选生成、工具循环、验证、批评、反思、截断恢复、紧急答案、聚合和全局 fallback 均通过参数取得单题状态，不再读取 Agent 级隐式变量。
+
+`InternChatClient.chat()` 继续返回原有文本或 tool-call message，保证调用方兼容；新增 `chat_with_metadata()` 在同一返回值中提供响应与无敏感元数据。`ModelGateway` 是 Agent 和工具循环的唯一模型请求入口，负责请求预算、原子元数据绑定、usage/截断记账和 `ModelCallResult` 构造。旧 `_ACTIVE_BUDGET`、`_LAST_RESPONSE_META` 和 `get_last_response_meta()` 已删除，工具循环中重复的请求与记账逻辑也已移除。
+
+新增网关测试覆盖原子元数据、纯 `chat()` 客户端兼容、非法协议、原始 tool-call 响应和共享客户端并发隔离；原有截断并发测试改为无 ContextVar 的原子返回模型，并强化为同一个 `ReasoningAgent` 实例并发解题。最终离线门禁为 138 项测试通过，全仓语句覆盖率 81%，Ruff、compileall、`pip check`、CLI 帮助、few-shot dry-run、样例审计、运行时指纹和 `git diff --check` 均通过。此次改造未改变请求顺序、请求参数、模型、候选数、温度、thinking mode、token、恢复或聚合规则，也没有调用真实 API。

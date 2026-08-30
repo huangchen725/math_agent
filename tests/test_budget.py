@@ -9,15 +9,17 @@ class TextClient:
         self.calls = 0
 
     def chat(self, **kwargs):
+        response, _ = self.chat_with_metadata(**kwargs)
+        return response
+
+    def chat_with_metadata(self, **kwargs):
         self.calls += 1
         system = kwargs["messages"][0].get("content", "")
         if "验证器" in system:
-            return "VERDICT: A"
-        return "推理\n最终答案：2"
-
-    @staticmethod
-    def get_last_response_meta():
-        return {
+            response = "VERDICT: A"
+        else:
+            response = "推理\n最终答案：2"
+        return response, {
             "usage": {
                 "prompt_tokens": 10,
                 "completion_tokens": 5,

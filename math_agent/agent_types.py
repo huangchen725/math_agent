@@ -19,6 +19,7 @@ class ModelCallResult:
     usage: Mapping[str, Any] = field(default_factory=dict)
     candidate_id: int | None = None
     request_id: int | None = None
+    raw_response: Any = None
 
     @property
     def truncated(self) -> bool:

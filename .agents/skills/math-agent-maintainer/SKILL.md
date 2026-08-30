@@ -20,6 +20,7 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
 - Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
+- Pass per-problem budget, trace, and model access through `SolveContext`; keep response metadata atomically bound by `ModelGateway` and never restore a last-response side channel.
 
 ## Make changes from evidence
 

@@ -148,6 +148,8 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 │   ├── agent.py               # ReasoningAgent 流水线编排
 │   ├── agent_types.py         # 调用、候选、答案与验证类型
 │   ├── answer_equivalence.py  # 保守答案归一化与等价判断
+│   ├── context.py             # 单题显式 SolveContext
+│   ├── model_gateway.py       # 统一模型调用、元数据与预算记账
 │   ├── task_router.py         # 零调用题型识别与严格验证计划
 │   ├── budget.py              # 单题请求、token、工具与时间预算
 │   ├── math_tools.py          # 11 个受限 SymPy 工具及工具循环

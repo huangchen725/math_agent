@@ -30,13 +30,15 @@ ReasoningAgent(client).solve(problem, metadata)
 flowchart LR
     I[JSONL / Demo / 调用方] --> F[user_agent.py<br/>兼容入口]
     F --> A[math_agent.agent<br/>ReasoningAgent]
-    I --> C[InternChatClient]
-    C --> A
+    A --> X[SolveContext<br/>单题显式状态]
+    X --> G[ModelGateway<br/>调用与元数据原子绑定]
+    G --> C[注入客户端 / InternChatClient]
     D[math_agent/domain_prompts.py<br/>18 领域提示] --> A
     I --> Q[math_agent/task_router.py<br/>题型与严格验证计划]
     Q --> A
-    B[ExecutionBudget] --> A
+    X --> B[ExecutionBudget]
     A --> T[math_agent/math_tools.py<br/>11 个受限 SymPy 工具]
+    T --> G
     T --> P[math_agent/tool_executor.py<br/>可终止子进程]
     T --> A
     A --> V[math_agent/deterministic_verifier.py<br/>受限确定性验证]
@@ -50,17 +52,19 @@ flowchart LR
 | 组件 | 职责 |
 | --- | --- |
 | `user_agent.py` | 竞赛兼容入口，只重新导出 `math_agent` 中的公开类型；不得增加运行时实现 |
-| `math_agent/__init__.py` | 唯一包级公开 API，导出 `ReasoningAgent`、`AgentConfig`、`InternChatClient` 和核心数据类型 |
+| `math_agent/__init__.py` | 唯一包级公开 API，导出 Agent、客户端、网关、求解上下文和核心数据类型 |
 | `math_agent/agent.py` | 维护固定策略候选生成、验证、反思和聚合，并协调单题预算 |
 | `math_agent/agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
 | `math_agent/answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
+| `math_agent/context.py` | 定义每次 `solve()` 独占的 `SolveContext`，显式持有题目、metadata、trace、预算和网关 |
+| `math_agent/model_gateway.py` | 统一普通、工具、验证、反思和恢复请求；将原始响应、文本、finish reason、usage 和预算请求编号原子绑定为 `ModelCallResult` |
 | `math_agent/task_router.py` | 零模型调用识别一个或多个题型；仅对结构明确的直接计算题生成至多一个可执行验证计划，证明、数域不明或复合任务只保留标签 |
 | `math_agent/budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
 | `math_agent/domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
 | `math_agent/math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
 | `math_agent/tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
 | `math_agent/deterministic_verifier.py` | 在可终止子进程中执行封闭数值表达式、有限方程解集、导数、积分、极限、留数、行列式、模幂、组合数及符号等价验证；结果为 `pass/fail/unknown` |
-| `math_agent/llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试 |
+| `math_agent/llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试；`chat()` 保持原返回契约，`chat_with_metadata()` 原子返回响应及元数据 |
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
@@ -142,7 +146,7 @@ P1 只改变“严格计划存在且获得一致确定性通过证据”时的�
 | `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
 | `INTERN_MODEL` | `intern-s2-preview` |
 
-客户端拒绝 `stream=True` 和 `n != 1`，当前不发送未经平台兼容验证的 `stop` 或流式参数。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保持原有文本/tool-call返回契约，并通过 `get_last_response_meta()` 暴露最近一次响应的 request id、模型、`finish_reason`、usage、耗时和尝试次数，供单题预算累计。
+客户端拒绝 `stream=True` 和 `n != 1`，当前不发送未经平台兼容验证的 `stop` 或流式参数。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。`chat()` 保持原有文本/tool-call 返回契约；运行时由 `ModelGateway` 优先调用 `chat_with_metadata()`，在同一返回值中取得 request id、模型、`finish_reason`、usage、耗时和尝试次数。项目不再保存“最近一次响应”全局或上下文变量，也不再在请求后另取元数据。
 
 `main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。`未解出` 保存为 error checkpoint，并保留 Agent trace 供区分数学失败、预算和平台错误。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数；正式评测可在 manifest 中冻结为更低值以规避端点节流。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
 
@@ -167,7 +171,7 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
-测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 

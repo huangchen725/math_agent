@@ -13,6 +13,7 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Do not change candidate counts, temperatures, thinking mode, or token budgets without an evaluation plan that isolates one variable and records the dataset/commit/config.
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
 - Treat JSONL records and `idx` as untrusted input. Output paths must stay inside the requested output directory.
+- Keep per-problem state in `SolveContext`. Model response text and metadata must return atomically through `ModelGateway`; do not reintroduce process/thread/context-local "last response" side channels.
 
 ## Start of work
 

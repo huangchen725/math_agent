@@ -2,7 +2,9 @@
 
 from .agent import AgentConfig, ReasoningAgent
 from .agent_types import Answer, Candidate, ModelCallResult, Verification
+from .context import SolveContext
 from .llm_client import InternChatClient
+from .model_gateway import ModelGateway
 
 __all__ = [
     "AgentConfig",
@@ -10,6 +12,8 @@ __all__ = [
     "Candidate",
     "InternChatClient",
     "ModelCallResult",
+    "ModelGateway",
     "ReasoningAgent",
+    "SolveContext",
     "Verification",
 ]

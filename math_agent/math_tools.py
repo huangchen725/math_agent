@@ -18,6 +18,7 @@ from sympy.parsing.sympy_parser import (
 )
 
 from .agent_types import ModelCallResult
+from .model_gateway import ModelGateway
 from .tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
 
 _transformations = standard_transformations + (implicit_multiplication, convert_xor)
@@ -526,33 +527,20 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
     """
     trace: List[Dict] = []
     current_messages = list(messages)
+    if isinstance(client, ModelGateway):
+        gateway = client
+        if budget is not None and gateway.budget is not budget:
+            raise ValueError("gateway and explicit budget must reference the same object")
+    else:
+        gateway = ModelGateway(client, budget)
 
     def call_model(*, stage: str, **kwargs):
-        request_id = None
-        if budget is not None:
-            request_id = budget.consume_model_request(
-                stage=stage,
-                candidate_id=candidate_id,
-            )
-        response = client.chat(**kwargs)
-        metadata = {}
-        if budget is not None and hasattr(client, "get_last_response_meta"):
-            metadata = client.get_last_response_meta()
-            metadata = metadata if isinstance(metadata, dict) else {}
-            budget.record_response_meta(metadata, request_id)
-        elif hasattr(client, "get_last_response_meta"):
-            metadata = client.get_last_response_meta()
-            metadata = metadata if isinstance(metadata, dict) else {}
-        text = response if isinstance(response, str) else str(response.get("content", ""))
-        result = ModelCallResult(
-            text=text,
+        result = gateway.chat(
             stage=stage,
-            finish_reason=str(metadata.get("finish_reason", "")),
-            usage=metadata.get("usage", {}) if isinstance(metadata, dict) else {},
             candidate_id=candidate_id,
-            request_id=request_id,
+            **kwargs,
         )
-        return response, result
+        return result.raw_response, result
 
     def finish(text: str, result: ModelCallResult):
         if return_call_result:
