@@ -17,9 +17,11 @@ from answer_equivalence import (
     numeric_value,
 )
 from budget import BudgetExceeded, ExecutionBudget
+from deterministic_verifier import verify_task_plan
 from llm_client import InternChatClient
 from math_tools import run_tool_loop
 from domain_prompts import get_domain_prompt
+from task_router import TaskAnalysis, analyze_task
 
 
 _ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
@@ -104,6 +106,7 @@ class AgentConfig:
     enable_critic: bool = True
     enable_reflection: bool = True
     enable_fallback: bool = True
+    enable_deterministic_verification: bool = True
     max_tool_rounds: int = 3
     tool_timeout_seconds: float = 5.0
     max_model_requests: int = 16
@@ -280,6 +283,21 @@ class ReasoningAgent:
         if domain_name:
             trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
+        task_analysis = analyze_task(problem)
+        trace.append({
+            "step": "task_route",
+            "content": {
+                "task_types": list(task_analysis.task_types),
+                "confidence": task_analysis.confidence,
+                "deterministic_verifier": (
+                    task_analysis.verification_plan.kind
+                    if task_analysis.verification_plan is not None
+                    else ""
+                ),
+                "reason": task_analysis.reason,
+            },
+        })
+
         # 阶段2：多候选生成。API 上限保持 8192，prompt 按题型约束目标长度。
         reasoning_target = self._reasoning_target_tokens(problem)
         trace.append({
@@ -320,6 +338,7 @@ class ReasoningAgent:
                 problem,
                 result.text,
                 candidate_id,
+                task_analysis=task_analysis,
             )
             answer = build_answer(self._extract_answer(result.text))
             strategy = "tool" if result.stage in {"policy_tool", "tool_final"} else "plain"
@@ -365,7 +384,10 @@ class ReasoningAgent:
                         emergency_hints.append(hint)
                     if refined:
                         rc, rv, verifications = self._verify(
-                            problem, refined.text, reflection_cid
+                            problem,
+                            refined.text,
+                            reflection_cid,
+                            task_analysis=task_analysis,
                         )
                         ra = build_answer(self._extract_answer(refined.text))
                         scored.append(Candidate(
@@ -564,9 +586,40 @@ class ReasoningAgent:
         problem: str,
         candidate: str,
         cid: int,
+        *,
+        task_analysis: TaskAnalysis | None = None,
     ) -> Tuple[float, List[Dict], List[Verification]]:
         votes: List[bool] = []
         trace, verifications = [], []
+        task_analysis = task_analysis or analyze_task(problem)
+        candidate_answer = self._extract_answer(candidate)
+        plan = task_analysis.verification_plan
+        if self.config.enable_deterministic_verification and plan and candidate_answer:
+            budget = _ACTIVE_BUDGET.get()
+            try:
+                if budget is not None:
+                    budget.consume_tool_call()
+                evidence = verify_task_plan(
+                    plan,
+                    candidate_answer,
+                    timeout_seconds=self.config.tool_timeout_seconds,
+                )
+            except BudgetExceeded as exc:
+                evidence = Verification(
+                    source=f"deterministic:{plan.kind}",
+                    status="unknown",
+                    confidence=0.0,
+                    detail=f"budget unavailable: {str(exc)[:160]}",
+                )
+            verifications.append(evidence)
+            trace.append({
+                "step": f"deterministic_verify_{cid}",
+                "content": {
+                    "source": evidence.source,
+                    "status": evidence.status,
+                    "detail": evidence.detail[:200],
+                },
+            })
         review_text = self._review_excerpt(candidate)
         for vid in range(self.config.verifier_voting_times):
             try:
@@ -966,7 +1019,7 @@ class ReasoningAgent:
                 )
 
     def _aggregate(self, scored: List[Candidate], trace: List[Dict]) -> Tuple[str, str]:
-        """v17：回退v13——简单多数投票。"""
+        """Prefer consistent deterministic passes, otherwise retain majority fallback."""
         if not scored:
             return "", ""
         with_ans = [
@@ -976,6 +1029,48 @@ class ReasoningAgent:
         ]
         if not with_ans:
             return "", ""
+        deterministic_passes = [
+            candidate
+            for candidate in with_ans
+            if any(
+                evidence.source.startswith("deterministic:")
+                and evidence.status == "pass"
+                for evidence in candidate.verifications
+            )
+        ]
+        if deterministic_passes:
+            passed_keys = {candidate.answer.canonical for candidate in deterministic_passes}
+            if len(passed_keys) == 1:
+                selected = max(deterministic_passes, key=lambda item: item.confidence)
+                trace.append({
+                    "step": "deterministic_selection",
+                    "content": {
+                        "status": "selected",
+                        "candidate_ids": [
+                            candidate.metadata.get("candidate_id")
+                            for candidate in deterministic_passes
+                        ],
+                        "evidence_sources": sorted({
+                            evidence.source
+                            for candidate in deterministic_passes
+                            for evidence in candidate.verifications
+                            if evidence.source.startswith("deterministic:")
+                            and evidence.status == "pass"
+                        }),
+                    },
+                })
+                self._record_final_source(selected, trace)
+                return selected.answer.normalized, selected.content
+            trace.append({
+                "step": "deterministic_selection",
+                "content": {
+                    "status": "conflict_fallback",
+                    "candidate_ids": [
+                        candidate.metadata.get("candidate_id")
+                        for candidate in deterministic_passes
+                    ],
+                },
+            })
         groups = {}
         for candidate in with_ans:
             groups.setdefault(candidate.answer.canonical, []).append(candidate)

@@ -1,6 +1,6 @@
 # XH-202627 数学推理智能体
 
-本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
+本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域/题型路由 → 多候选生成 → 工具计算 → 确定性与模型验证 → 反思 → 证据优先聚合** 的单一流水线。
 
 ## 核心接口
 
@@ -11,7 +11,7 @@ ReasoningAgent(client).solve(problem, metadata)
 
 - `client` 由调用方注入，代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
-- `trace` 记录领域判断、题型长度目标、候选生成、工具调用、验证、截断恢复、反思、最终答案来源和单题预算摘要；截断事件只保存阶段、token 与处理状态，不保存残缺回复。
+- `trace` 记录领域/题型判断、确定性验证状态、题型长度目标、候选生成、工具调用、模型验证、截断恢复、反思、最终答案来源和单题预算摘要；截断事件只保存阶段、token 与处理状态，不保存残缺回复。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 
 ## 环境与安装
@@ -110,6 +110,8 @@ python evaluation/score_run.py outputs/ability/benchmark.jsonl outputs/ability/o
 
 `paired_compare.py` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。冻结旧版真实基线已完成 120 题 × 3 次，共 3,173 个模型请求；可靠性门禁通过，数学正确率仍等待候选版本完成后的匿名 A/B 盲审。匿名汇总见 [P0 公开能力基线结果](docs/evaluations/ABILITY_BASELINE_RESULTS_V1.md)。候选版本运行前必须重新确认费用与额度，单版本硬上限仍为 7,200 次请求。
 
+P1 已接入严格题型验证层：封闭数值表达式、明确数域的有限方程解集、导数、不定积分、极限、留数、数值矩阵行列式、模幂和组合数可在隔离子进程中生成 `pass/fail/unknown` 证据。只有相互一致的 `pass` 会优先于旧聚合；无计划、失败、未知或证据冲突全部回退原多数票/置信度规则。该层可通过 `AgentConfig(enable_deterministic_verification=False)` 关闭。此处只说明实现与离线回归已经完成，不代表真实正确率已经提高。
+
 截断专项压力集固定在 `evaluation/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `score_run.py` 报告交给门禁：
 
 ```bash
@@ -142,10 +144,11 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── user_agent.py              # 竞赛接口与推理编排
 ├── agent_types.py             # 调用结果与 Candidate/Answer/Verification 内部类型
 ├── answer_equivalence.py      # 保守答案归一化与等价判断
+├── task_router.py             # 零调用题型识别与严格验证计划
 ├── budget.py                  # 单题请求、token、工具与时间预算
 ├── math_tools.py              # 11 个受限 SymPy 工具
 ├── tool_executor.py           # 可终止子进程与工具硬超时
-├── deterministic_verifier.py # 确定性验证原语（尚未接入选择器）
+├── deterministic_verifier.py # 隔离执行的确定性验证与候选证据
 ├── domain_prompts.py          # 18 个数学领域提示
 ├── llm_client.py              # OpenAI 兼容 HTTP 客户端
 ├── main.py                    # JSONL 批处理与断点续跑

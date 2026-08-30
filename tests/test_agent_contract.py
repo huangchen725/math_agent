@@ -1,6 +1,6 @@
-from agent_types import Candidate
+from agent_types import Candidate, Verification
 from answer_equivalence import build_answer, equivalent_answers, format_answer_for_output
-from user_agent import POLICY_PROMPT, ReasoningAgent
+from user_agent import AgentConfig, POLICY_PROMPT, ReasoningAgent
 
 
 def test_active_response_keeps_reasoning_and_final_marker():
@@ -112,6 +112,77 @@ def test_aggregate_never_selects_candidate_marked_as_truncated():
 
     assert answer == "2"
     assert "截断残句" not in content
+
+
+def test_deterministic_pass_overrides_a_wrong_model_majority_for_direct_task():
+    class SequenceClient:
+        def __init__(self):
+            self.responses = [
+                "最终答案：5\n错误候选一",
+                "最终答案：5\n错误候选二",
+                "最终答案：4\n正确候选",
+            ]
+
+        def chat(self, **kwargs):
+            return self.responses.pop(0)
+
+    config = AgentConfig(
+        tool_candidates=0,
+        plain_candidates=3,
+        verifier_voting_times=0,
+        enable_critic=False,
+        enable_reflection=False,
+    )
+    result = ReasoningAgent(SequenceClient(), config).solve("计算 3^100 除以 7 的余数", {})
+
+    assert result["final_response"].endswith("最终答案：4")
+    assert any(event["step"] == "deterministic_selection" for event in result["trace"])
+    summary = next(
+        event["content"] for event in result["trace"] if event["step"] == "budget_summary"
+    )
+    assert summary["tool_calls"] == 3
+
+
+def test_deterministic_verification_has_a_full_rollback_switch():
+    class SequenceClient:
+        def __init__(self):
+            self.responses = ["最终答案：5", "最终答案：5", "最终答案：4"]
+
+        def chat(self, **kwargs):
+            return self.responses.pop(0)
+
+    config = AgentConfig(
+        tool_candidates=0,
+        plain_candidates=3,
+        verifier_voting_times=0,
+        enable_critic=False,
+        enable_reflection=False,
+        enable_deterministic_verification=False,
+    )
+    result = ReasoningAgent(SequenceClient(), config).solve("计算 3^100 除以 7 的余数", {})
+
+    assert result["final_response"].endswith("最终答案：5")
+    assert not any(event["step"] == "deterministic_selection" for event in result["trace"])
+
+
+def test_conflicting_deterministic_passes_fall_back_to_original_selector():
+    evidence = [Verification("deterministic:test", "pass", 1.0)]
+    candidates = [
+        Candidate("候选 A", "plain", build_answer("1"), 0.8, 0.8, evidence),
+        Candidate("候选 B", "plain", build_answer("2"), 0.7, 0.7, evidence),
+        Candidate("候选 C", "plain", build_answer("2"), 0.6, 0.6),
+    ]
+    trace = []
+
+    answer, content = ReasoningAgent(client=object())._aggregate(candidates, trace)
+
+    assert answer == "2"
+    assert content == "候选 B"
+    assert any(
+        event["step"] == "deterministic_selection"
+        and event["content"]["status"] == "conflict_fallback"
+        for event in trace
+    )
 
 
 def test_review_excerpt_keeps_final_answer_at_tail():

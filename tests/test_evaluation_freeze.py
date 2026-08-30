@@ -1,6 +1,6 @@
 import json
 
-from evaluation.freeze_experiment import build_manifest, file_sha256
+from evaluation.freeze_experiment import RUNTIME_FILES, build_manifest, file_sha256
 
 
 def _record(idx: str, problem: str, *, split: str = "test") -> dict:
@@ -45,6 +45,8 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert len(manifest["code"]["runtime_sha256"]) == 64
     assert manifest["agent_config_sha256"]
     assert manifest["runner"] == {"repetitions": 3, "local_max_concurrency": 1}
+    assert "task_router.py" in RUNTIME_FILES
+    assert "deterministic_verifier.py" in RUNTIME_FILES
 
 
 def test_test_manifest_detects_cross_dataset_template_leakage(tmp_path):
@@ -67,4 +69,3 @@ def test_test_manifest_detects_cross_dataset_template_leakage(tmp_path):
 
     assert manifest["dataset"]["overlap_counts"]["template"] >= 1
     assert any("overlaps" in error for error in manifest["errors"])
-

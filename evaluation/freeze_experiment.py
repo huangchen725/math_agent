@@ -45,6 +45,8 @@ RUNTIME_FILES = (
     "user_agent.py",
     "agent_types.py",
     "answer_equivalence.py",
+    "task_router.py",
+    "deterministic_verifier.py",
     "budget.py",
     "domain_prompts.py",
     "math_tools.py",
