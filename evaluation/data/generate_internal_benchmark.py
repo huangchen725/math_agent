@@ -18,6 +18,7 @@ from typing import Callable
 import sympy as sp
 from sympy.ntheory.modular import crt
 
+from ..io_utils import atomic_write_text, configure_utf8_stdout, write_json
 
 Builder = Callable[[int], tuple[str, str, str]]
 LEVELS = ("intermediate",) * 8 + ("competition",) * 10 + ("challenge",) * 4
@@ -692,10 +693,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    configure_utf8_stdout()
     records = generate_records()
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8", newline="\n") as file:
-        file.write(serialize_records(records))
+    atomic_write_text(args.output, serialize_records(records))
     digest = dataset_sha256(records)
     if args.manifest:
         manifest = {
@@ -711,8 +711,7 @@ def main() -> None:
             "license": LICENSE,
             "split": "test",
         }
-        args.manifest.parent.mkdir(parents=True, exist_ok=True)
-        args.manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_json(args.manifest, manifest)
     print(json.dumps({"items": len(records), "sha256": digest}, ensure_ascii=False))
 
 

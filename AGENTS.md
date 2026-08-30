@@ -14,6 +14,9 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
 - Treat JSONL records and `idx` as untrusted input. Output paths must stay inside the requested output directory.
 - Keep per-problem state in `SolveContext`. Model response text and metadata must return atomically through `ModelGateway`; do not reintroduce process/thread/context-local "last response" side channels.
+- Keep `math_agent/agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class.
+- Keep `math_agent/math_tools.py` as an import-compatibility facade. Restricted parsing belongs in `math_parsing.py`, implementations in `tool_implementations.py`, schemas/dispatch in `tool_registry.py`, and the model loop in `tool_loop.py`.
+- Keep offline evaluation grouped under `evaluation/data`, `evaluation/scoring`, and `evaluation/experiments`. Use `evaluation/io_utils.py` for JSON/JSONL, hashing, and atomic writes; do not add `sys.path` mutation to evaluation modules.
 
 ## Start of work
 
@@ -23,10 +26,10 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 
 ## Relevant files
 
-- Runtime pipeline: compatibility facade `user_agent.py`, implementation package `math_agent/`, and adapters `main.py`/`demo.py`.
+- Runtime pipeline: compatibility facade `user_agent.py`, lifecycle `math_agent/agent.py`, orchestration `math_agent/solver.py`, focused candidate/response modules, and adapters `main.py`/`demo.py`.
 - Offline checks: `tests/`.
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
-- Offline evaluation: `evaluation/audit_dataset.py` audits provenance and prompt/sample overlap; `evaluation/judge.py` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
+- Offline evaluation: `python -m evaluation.data.audit_dataset` audits provenance and prompt/sample overlap; `evaluation.scoring.judge` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
 - Generated outputs: `outputs/`; never use them as committed source.
 
 ## Verification

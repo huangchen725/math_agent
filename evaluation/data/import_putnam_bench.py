@@ -9,12 +9,12 @@ import re
 import shutil
 # Git is invoked with a resolved executable, a fixed argument shape, and no shell.
 import subprocess  # nosec B404
-import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..io_utils import configure_utf8_stdout, file_sha256, write_json, write_jsonl
 
 _PROBLEM_ID = re.compile(r"^putnam_(\d{4})_([ab])(\d)$")
 _NONE_SOLUTIONS = {"", "none", "none."}
@@ -29,14 +29,6 @@ _SUBJECT_NAMES = {
     "probability": "概率论",
     "set_theory": "集合论",
 }
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _source_commit(source_path: Path) -> str | None:
@@ -305,17 +297,10 @@ def write_benchmark(
     output_path: Path,
     manifest_path: Path,
 ) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as file:
-        for record in records:
-            file.write(json.dumps(record, ensure_ascii=False) + "\n")
+    write_jsonl(output_path, records)
     manifest["dataset_sha256"] = file_sha256(output_path)
     manifest["dataset_bytes"] = output_path.stat().st_size
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json(manifest_path, manifest)
 
 
 def parse_args() -> argparse.Namespace:
@@ -334,8 +319,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     records, manifest = build_benchmark(
         args.source,
         source_commit=args.source_commit,

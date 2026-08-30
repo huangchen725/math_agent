@@ -8,27 +8,23 @@ import json
 import shutil
 # Git is invoked with a resolved executable, a fixed argument shape, and no shell.
 import subprocess  # nosec B404
-import sys
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from evaluation.audit_dataset import (
+from ..data.audit_dataset import (
     ReferenceProblem,
     audit_dataset,
     default_references,
     load_jsonl,
 )
+from ..io_utils import PROJECT_ROOT, configure_utf8_stdout, file_sha256, write_json
 from math_agent import AgentConfig
 
 
+ROOT = PROJECT_ROOT
 VALID_DATASET_ROLES = {"development", "regression", "public_test", "sealed_test"}
 REQUIRED_FIELDS = (
     "idx",
@@ -45,28 +41,34 @@ RUNTIME_FILES = (
     "user_agent.py",
     "math_agent/__init__.py",
     "math_agent/agent.py",
+    "math_agent/agent_config.py",
+    "math_agent/agent_prompts.py",
     "math_agent/agent_types.py",
     "math_agent/answer_equivalence.py",
+    "math_agent/candidate_evaluation.py",
+    "math_agent/candidate_generation.py",
+    "math_agent/candidate_selection.py",
     "math_agent/context.py",
+    "math_agent/domain_router.py",
+    "math_agent/model_calls.py",
     "math_agent/model_gateway.py",
+    "math_agent/response_processing.py",
+    "math_agent/solver.py",
     "math_agent/task_router.py",
+    "math_agent/truncation.py",
     "math_agent/deterministic_verifier.py",
     "math_agent/budget.py",
     "math_agent/domain_prompts.py",
+    "math_agent/math_parsing.py",
     "math_agent/math_tools.py",
+    "math_agent/tool_implementations.py",
+    "math_agent/tool_loop.py",
+    "math_agent/tool_registry.py",
     "math_agent/tool_executor.py",
     "math_agent/llm_client.py",
     "main.py",
     "demo.py",
 )
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _canonical_sha256(value: object) -> str:
@@ -310,8 +312,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     manifest = build_manifest(
         args.dataset,
         experiment_id=args.experiment_id,
@@ -324,11 +325,7 @@ def main() -> None:
         allow_dirty=args.allow_dirty,
         code_root=args.code_root,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json(args.output, manifest)
     print(json.dumps({
         "status": manifest["status"],
         "experiment_id": manifest["experiment_id"],

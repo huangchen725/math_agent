@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from evaluation.audit_dataset import load_jsonl, wilson_interval
-from evaluation.judge import judge_answer
+from ..data.audit_dataset import load_jsonl, wilson_interval
+from ..io_utils import (
+    configure_utf8_stdout,
+    file_sha256,
+    read_json_object,
+    read_jsonl_objects,
+    write_json,
+    write_jsonl,
+)
+from .judge import judge_answer
 
 
 _FINAL_ANSWER = re.compile(r"^\s*最终答案\s*[:：]\s*(.*?)\s*$", re.MULTILINE)
@@ -30,43 +32,26 @@ def extract_final_answer(final_response: str) -> str:
     return matches[-1].strip() if matches else ""
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def load_adjudications(path: Path) -> dict[str, dict[str, Any]]:
     adjudications: dict[str, dict[str, Any]] = {}
-    with path.open("r", encoding="utf-8-sig") as file:
-        for line_number, line in enumerate(file, start=1):
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid adjudication JSON on line {line_number}") from exc
-            if not isinstance(record, dict):
-                raise ValueError(f"adjudication line {line_number} is not an object")
-            idx = str(record.get("idx", ""))
-            status = str(record.get("status", ""))
-            reviewer_id = str(record.get("reviewer_id", "")).strip()
-            if not idx or idx in adjudications:
-                raise ValueError(f"missing or duplicate adjudication idx on line {line_number}")
-            if status not in ADJUDICATION_STATUSES:
-                raise ValueError(f"invalid adjudication status on line {line_number}: {status!r}")
-            if record.get("blind") is not True or not reviewer_id:
-                raise ValueError(
-                    f"adjudication line {line_number} must have blind=true and reviewer_id"
-                )
-            score = record.get("score")
-            if score is not None and (
-                not isinstance(score, (int, float)) or not 0 <= float(score) <= 10
-            ):
-                raise ValueError(f"invalid adjudication score on line {line_number}")
-            adjudications[idx] = dict(record)
+    for line_number, record in enumerate(read_jsonl_objects(path), start=1):
+        idx = str(record.get("idx", ""))
+        status = str(record.get("status", ""))
+        reviewer_id = str(record.get("reviewer_id", "")).strip()
+        if not idx or idx in adjudications:
+            raise ValueError(f"missing or duplicate adjudication idx on line {line_number}")
+        if status not in ADJUDICATION_STATUSES:
+            raise ValueError(f"invalid adjudication status on line {line_number}: {status!r}")
+        if record.get("blind") is not True or not reviewer_id:
+            raise ValueError(
+                f"adjudication line {line_number} must have blind=true and reviewer_id"
+            )
+        score = record.get("score")
+        if score is not None and (
+            not isinstance(score, (int, float)) or not 0 <= float(score) <= 10
+        ):
+            raise ValueError(f"invalid adjudication score on line {line_number}")
+        adjudications[idx] = dict(record)
     return adjudications
 
 
@@ -314,7 +299,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--adjudications",
         type=Path,
-        help="Optional blind-review JSONL produced by evaluation/blind_review.py.",
+        help="Optional blind-review JSONL produced by evaluation.experiments.blind_review.",
     )
     return parser.parse_args()
 
@@ -326,9 +311,7 @@ def build_provenance(dataset_path: Path, output_dir: Path) -> dict[str, Any]:
     if not summary_path.is_file():
         provenance["run_summary_present"] = False
         return provenance
-    loaded = json.loads(summary_path.read_text(encoding="utf-8-sig"))
-    if not isinstance(loaded, dict):
-        raise ValueError("run summary is not a JSON object")
+    loaded = read_json_object(summary_path)
     recorded_digest = str(loaded.get("input_sha256", ""))
     if recorded_digest and recorded_digest != digest:
         raise ValueError("run summary input_sha256 does not match the scored dataset")
@@ -348,23 +331,19 @@ def build_provenance(dataset_path: Path, output_dir: Path) -> dict[str, Any]:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     adjudications = load_adjudications(args.adjudications) if args.adjudications else None
     scored = score_run(load_jsonl(args.dataset), args.output_dir, adjudications)
     scored["provenance"] = build_provenance(args.dataset, args.output_dir)
-    serialized = json.dumps(scored, ensure_ascii=False, indent=2)
-    args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(serialized + "\n", encoding="utf-8")
+    write_json(args.report, scored)
     if args.review:
-        args.review.parent.mkdir(parents=True, exist_ok=True)
-        with args.review.open("w", encoding="utf-8") as file:
-            by_idx = {str(item.get("idx")): item for item in load_jsonl(args.dataset)}
-            for result in scored["results"]:
-                if result["status"] != "unknown":
-                    continue
-                source = by_idx[str(result["idx"])]
-                file.write(json.dumps({**source, **result}, ensure_ascii=False) + "\n")
+        by_idx = {str(item.get("idx")): item for item in load_jsonl(args.dataset)}
+        review_records = [
+            {**by_idx[str(result["idx"])], **result}
+            for result in scored["results"]
+            if result["status"] == "unknown"
+        ]
+        write_jsonl(args.review, review_records)
     print(json.dumps(scored["summary"], ensure_ascii=False))
 
 

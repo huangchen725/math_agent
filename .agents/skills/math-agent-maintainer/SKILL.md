@@ -21,6 +21,9 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
 - Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
 - Pass per-problem budget, trace, and model access through `SolveContext`; keep response metadata atomically bound by `ModelGateway` and never restore a last-response side channel.
+- Keep `agent.py` limited to lifecycle, validation, error containment, and compatibility delegates. Route, generate, evaluate, recover, select, and format through their focused modules instead of adding stage logic back to the Agent class.
+- Keep `math_tools.py` as a compatibility facade. Put restricted parsing, concrete tools, registry/dispatch, and the tool-calling loop in `math_parsing.py`, `tool_implementations.py`, `tool_registry.py`, and `tool_loop.py` respectively.
+- Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
 
 ## Make changes from evidence
 
@@ -33,6 +36,8 @@ For runner changes, validate JSONL shape and indexes, keep atomic writes, retry 
 For client changes, retry only transient network/service errors and never log authorization headers or keys.
 
 For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
+
+Invoke evaluation CLIs with `python -m evaluation.<group>.<module>` so package imports behave the same in tests and command-line use.
 
 Keep synthetic benchmarks labeled as internal. Freeze their generator version, seed, SHA-256, code commit, model, Agent configuration, concurrency and repetition count before a live run. Store private questions and raw responses only under ignored outputs; commit only aggregate reports without question text.
 

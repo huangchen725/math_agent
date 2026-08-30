@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from evaluation.blind_review import create_review_packet, resolve_review
+from evaluation.experiments.blind_review import create_review_packet, resolve_review
 
 
 def _write_result(directory, idx, answer):

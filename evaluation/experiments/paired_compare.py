@@ -6,20 +6,13 @@ import argparse
 import json
 import math
 import random
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..io_utils import configure_utf8_stdout, read_json_object, write_json
 
 _KNOWN_STATUSES = {"correct", "wrong", "unknown", "no_answer", "error", "missing"}
-
-
-def load_json_object(path: Path) -> dict[str, Any]:
-    loaded = json.loads(path.read_text(encoding="utf-8-sig"))
-    if not isinstance(loaded, dict):
-        raise ValueError(f"{path} is not a JSON object")
-    return loaded
 
 
 def exact_mcnemar(candidate_only: int, baseline_only: int) -> dict[str, float | int]:
@@ -436,22 +429,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     report = compare_reports(
-        [load_json_object(path) for path in args.baseline_report],
-        [load_json_object(path) for path in args.candidate_report],
-        baseline_manifest=load_json_object(args.baseline_manifest),
-        candidate_manifest=load_json_object(args.candidate_manifest),
-        candidate_reliability_gate=load_json_object(args.candidate_reliability_gate),
+        [read_json_object(path) for path in args.baseline_report],
+        [read_json_object(path) for path in args.candidate_report],
+        baseline_manifest=read_json_object(args.baseline_manifest),
+        candidate_manifest=read_json_object(args.candidate_manifest),
+        candidate_reliability_gate=read_json_object(args.candidate_reliability_gate),
         bootstrap_samples=args.bootstrap_samples,
         seed=args.seed,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    write_json(args.output, report)
     print(json.dumps({**report["summary"], **report["decision"]}, ensure_ascii=False))
 
 

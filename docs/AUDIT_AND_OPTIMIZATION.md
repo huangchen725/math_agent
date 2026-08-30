@@ -45,7 +45,7 @@
 | 公开题目 | 3 道 `sample_data/dev.jsonl` 样例，只能做接口 smoke；本地 36 题 A/B 集也已判定不适合作为正确率基准 |
 | few-shot | 18 个领域共 21 个示例；已修复验证脚本只解析 18 个的问题 |
 | 离线测试 | 覆盖运行链路，并新增题集审计、保守四态判分和唯一最终答案行回归测试；以最新 CI/本地测试输出为准 |
-| 语句覆盖率 | 2026-08-30 S0+S1 全仓离线统计为 80%；`math_agent/agent.py` 80%、`budget.py` 92%、`task_router.py` 90%、`answer_equivalence.py` 85%、`llm_client.py` 84%、`math_tools.py` 80%，确定性验证器与在线检查脚本的部分分支仍是主要缺口 |
+| 语句覆盖率 | 2026-08-31 S3+S4 后全仓离线统计为 82%；生命周期入口 `agent.py` 75%、顶层 `solver.py` 93%、工具解析/注册/循环 83%/81%/85%、评测共享 I/O 83%，确定性验证器与在线检查脚本仍是主要缺口 |
 | 静态与安全检查 | Ruff、compileall、Bandit、`pip check`、`pip-audit`、skill 校验通过 |
 | 在线验证 | 本轮未调用真实 API；没有对当前工作树生成新的正确率结论 |
 | 附加 A/B 报告 | 已找到本地 36 题集和旧判分脚本。人工复核两版均为 36/36，但题量、难度、来源、prompt 重合和判分器均存在问题，结果只能说明 smoke 集已饱和 |
@@ -58,7 +58,7 @@
 | 维度 | 当前状态 | 核心缺口 | 优先级 |
 | --- | --- | --- | --- |
 | 产品目标 | 基本明确 | “高正确率”“可接受成本”没有量化门槛 | P0 |
-| 运行架构 | 唯一 `math_agent/` 包 + 根兼容入口 | `agent.py` 仍集中编排、Prompt、恢复、验证和聚合，显式上下文尚未完成 | P1 |
+| 运行架构 | 唯一 `math_agent/` 包 + 根兼容入口；Agent 生命周期、顶层编排、候选阶段与工具子系统均已分层 | 大型题型路由与确定性验证模块仍可按后续证据继续细分 | P2 |
 | 数学策略 | 有领域提示、工具增强、零调用多标签题型识别和严格直接题的确定性证据 | 证明、复合目标和带额外约束的任务仍只能返回无强证据状态 | P1 |
 | Prompt | 18 领域，有 few-shot | 缺少版本化、离线校验和消融记录 | P1 |
 | 领域路由 | 本地零调用、已支持 ASCII 大小写 | 关键词重叠、无置信度、无多标签 | P1 |
@@ -445,10 +445,10 @@ P1 已完成严格题型验证接入：`math_agent/task_router.py` 只为结构�
 
 当前已新增：
 
-- `evaluation/audit_dataset.py`：输出题量、领域分布、题面/答案长度、元数据覆盖、内部重复、prompt/sample 重合、Wilson 区间和零失败上界；
-- `evaluation/benchmark.schema.json`：要求 `source/license/split/level/task_type` 等基本字段；
-- `evaluation/judge.py`：四态保守判分，禁止子串判对；只有规范化完全等价或受硬超时保护的符号证明才自动判为正确；
-- `evaluation/rescore_report.py`：不重新调用模型，按新规则复核已有报告并保留旧 verdict；
+- `evaluation/data/audit_dataset.py`：输出题量、领域分布、题面/答案长度、元数据覆盖、内部重复、prompt/sample 重合、Wilson 区间和零失败上界；
+- `evaluation/data/benchmark.schema.json`：要求 `source/license/split/level/task_type` 等基本字段；
+- `evaluation/scoring/judge.py`：四态保守判分，禁止子串判对；只有规范化完全等价或受硬超时保护的符号证明才自动判为正确；
+- `evaluation/scoring/rescore_report.py`：不重新调用模型，按新规则复核已有报告并保留旧 verdict；
 - 统一最终响应构造：保留获胜推理，删除模型产生的重复答案标签，并在末尾追加唯一、紧凑、稳定的 `最终答案：...`。
 
 ### 13.4 下一轮可信评测设计
@@ -484,8 +484,8 @@ P1 已完成严格题型验证接入：`math_agent/task_router.py` 只为结构�
 - 截断候选及其再次截断的恢复文本全部退出聚合。整题紧急回复即使再次截断，也只允许取第一行显式答案，并以无推理格式返回；
 - verifier 截断时重试一次，仍不可解析则记 `unknown`，不按失败票处理；critic 截断直接丢弃；reflection 截断使用相同候选恢复流程；
 - 最终结构校验强制唯一、非空、末行 `最终答案：...`。离线汇总提供总截断率、候选阶段截断率、各阶段统计、受影响题数、恢复覆盖、截断后有效答案率和残句泄漏计数；
-- `evaluation/truncation_gate.py` 要求总截断点估计与单侧 95% Wilson 上界均低于 5%。约 1082 次请求时最多允许 42 次截断；4% 大样本模拟通过、6% 模拟失败；
-- 固定压力集 `evaluation/truncation_stress.jsonl` 含 18 领域各 2 道项目自建长输出题，SHA-256 为 `8e787dc5027ed1a855ff27d149d7dab0023ac91b98ee8d54051aac488f82382c`。它只用于可靠性压力，不提供独立实际正确率证据。
+- `evaluation/scoring/truncation_gate.py` 要求总截断点估计与单侧 95% Wilson 上界均低于 5%。约 1082 次请求时最多允许 42 次截断；4% 大样本模拟通过、6% 模拟失败；
+- 固定压力集 `evaluation/data/truncation_stress.jsonl` 含 18 领域各 2 道项目自建长输出题，SHA-256 为 `8e787dc5027ed1a855ff27d149d7dab0023ac91b98ee8d54051aac488f82382c`。它只用于可靠性压力，不提供独立实际正确率证据。
 
 提交 `a81fda0` 已在真实 `intern-s2-preview`（平台对应 `Intern-S2-Preview-35B`）上以并发 3 完成 36 题 × 3 次。共 800 次请求、1079850 tokens、164 次工具调用，108/108 个题目运行有效，0 runner 错误、0 invalid、0 截断、0 残句泄漏；候选生成阶段 508 次请求也为 0 截断。请求级单侧 95% Wilson 上界为 0.3371%，正式门禁通过。三轮保守判分为 32/36、31/36、31/36；因为重复的是同一批项目自建题，94/108 不能当作 108 道独立题的实际正确率，也不能与隐藏集直接比较。真实运行没有触发恢复请求，因此恢复后的行为证据仍来自离线 scripted-client 测试。完整报告见 `docs/evaluations/TRUNCATION_STRESS_35B_V1.md`。
 
@@ -505,7 +505,7 @@ S0 新增 scripted fake client 契约测试，冻结候选与 verifier 两次请
 
 最终离线门禁为 132 项测试通过，全仓语句覆盖率 80%，Ruff、compileall、`pip check` 和 `git diff --check` 通过；`main.py --help`、21 个 few-shot dry-run、样例数据审计和运行时指纹均通过。整个过程未调用真实 API，也未改变模型、候选数、温度、thinking mode、token、截断恢复或聚合规则。
 
-本阶段没有实施发布打包、CI 或依赖锁定，`pyproject.toml` 仍只承担测试和静态检查配置；这些内容保留给后续交付阶段。S2 已移除预算与响应元数据的隐式上下文；`math_agent/agent.py` 仍是集中式编排器，工具解析、实现和 tool-calling 循环仍在同一模块，属于后续 S3 的明确范围。
+本阶段没有实施发布打包、CI 或依赖锁定，`pyproject.toml` 仍只承担测试和静态检查配置；这些内容保留给后续交付阶段。S2 已完成单题显式上下文、统一模型网关和 Agent 编排拆分；S3 随后完成工具子系统拆分，见第 20 节。
 
 ## 19. S2 显式求解上下文与统一模型网关
 
@@ -514,3 +514,25 @@ S0 新增 scripted fake client 契约测试，冻结候选与 verifier 两次请
 `InternChatClient.chat()` 继续返回原有文本或 tool-call message，保证调用方兼容；新增 `chat_with_metadata()` 在同一返回值中提供响应与无敏感元数据。`ModelGateway` 是 Agent 和工具循环的唯一模型请求入口，负责请求预算、原子元数据绑定、usage/截断记账和 `ModelCallResult` 构造。旧 `_ACTIVE_BUDGET`、`_LAST_RESPONSE_META` 和 `get_last_response_meta()` 已删除，工具循环中重复的请求与记账逻辑也已移除。
 
 新增网关测试覆盖原子元数据、纯 `chat()` 客户端兼容、非法协议、原始 tool-call 响应和共享客户端并发隔离；原有截断并发测试改为无 ContextVar 的原子返回模型，并强化为同一个 `ReasoningAgent` 实例并发解题。最终离线门禁为 138 项测试通过，全仓语句覆盖率 81%，Ruff、compileall、`pip check`、CLI 帮助、few-shot dry-run、样例审计、运行时指纹和 `git diff --check` 均通过。此次改造未改变请求顺序、请求参数、模型、候选数、温度、thinking mode、token、恢复或聚合规则，也没有调用真实 API。
+
+2026-08-31 补完 S2 的编排拆分目标。`ReasoningAgent` 只保留输入校验、`SolveContext` 创建、异常收敛和既有私有测试所需的兼容转发；`SolveOrchestrator` 负责顶层阶段顺序，候选生成/截断恢复、验证/批评/反思、证据选择、答案格式、领域路由和模型消息适配分别迁入独立模块。各阶段仍只通过显式 `SolveContext` 访问单题状态，未引入 Agent 级可变运行状态。
+
+实验冻结指纹同步纳入所有新运行模块，并增加组合边界、唯一 `AgentConfig` 类型、完整运行模块清单、无隐式上下文旁路和网关绑定工具预算测试。目标复核还发现工具循环在直接接收 `ModelGateway` 时没有从网关取得工具预算，可能漏记 Agent 正常工具调用；现已改为复用网关绑定的同一 `ExecutionBudget`。补完后的离线全量结果为 143 项测试通过、全仓语句覆盖率 81%；Ruff、compileall、`pip check`、CLI 帮助、few-shot dry-run、样例审计、运行时指纹和 `git diff --check` 通过。逐项复核确认 `agent.py` 已从 1275 个物理行缩减为 389 个物理行（342 个非空行），且仅含生命周期与兼容转发；运行阶段分别由 `solver.py`、三个 candidate 模块、`response_processing.py`、`domain_router.py`、`model_calls.py` 和 `truncation.py` 承担，所有可变单题状态仍由 `SolveContext` 显式传递。除恢复既定工具预算记账外，该补完只迁移职责，不调整请求参数、候选数量、温度、thinking mode、token、验证、恢复或聚合算法，也没有调用真实 API。
+
+## 20. S3 数学工具子系统拆分
+
+2026-08-31 完成工具层职责拆分。`math_tools.py` 从同时承载解析、11 个实现、schema、分发和模型循环的集中模块缩减为兼容门面；受限 SymPy 解析迁入 `math_parsing.py`，工具函数迁入 `tool_implementations.py`，schema 与隔离分发迁入 `tool_registry.py`，tool-calling 状态机迁入 `tool_loop.py`。候选生成直接依赖工具循环，确定性验证器只依赖公共解析接口，不再导入工具门面的私有函数。
+
+拆分保留原有安全边界：表达式、整数、矩阵、幂指数、组合数、单轮工具数量和结果长度上限不变，所有工具仍在可终止子进程内执行并受同一 5 秒默认硬超时保护。逐字段对照确认 11 个模型工具 schema 与拆分前完全相同；`math_tools.py` 仍重导出旧公共名称及必要的私有解析兼容别名，避免已有调用方失效。工具请求继续只经过绑定同一 `ExecutionBudget` 的 `ModelGateway`，没有恢复直接调用客户端的旁路。
+
+新增结构测试固定兼容门面对象身份、schema/实现一一对应关系及确定性验证器的公共解析边界；原有工具成功、恶意输入、参数过长、工具超时、轮数、调用数和预算测试继续通过。S3 只迁移职责，没有改变模型、候选数、温度、thinking mode、token、工具轮数或聚合算法。
+
+## 21. S4 离线评测工程集成
+
+2026-08-31 将根部平铺的评测脚本整理为三个可导入包：`evaluation/data/` 负责数据导入、生成、审计、schema 和压力集，`evaluation/scoring/` 负责保守判分、重算、运行汇总和截断门禁，`evaluation/experiments/` 负责冻结、盲审、配对比较和机器可读协议。命令入口统一为 `python -m evaluation.<group>.<module>`，评测源码不再修改 `sys.path`。
+
+新增 `evaluation/io_utils.py` 统一 UTF-8 JSON/JSONL 读取、对象校验、SHA-256、同目录临时文件和原子替换写入，移除了各脚本重复的哈希和普通覆盖写入实现。压力集 manifest、README、唯一架构文档、能力协议、历史报告引用、测试导入和实验运行时指纹均同步到新路径。结构测试要求评测根目录只能保留包入口和共享 I/O，所有分组模块必须可导入，禁止重新加入 `sys.path` 修改。
+
+S3+S4 最终离线诊断为 149 项测试全部通过，全仓语句覆盖率 82%；Ruff、compileall、`pip check`、Bandit、联网 `pip-audit` 和已跟踪文件敏感模式扫描通过。`main.py --help`、9 个评测模块帮助入口、21 个 few-shot dry-run 和样例题集审计通过；实际离线文件流还成功生成并审计 396 条内部基准，再在脏工作树上按预期生成 `draft` 冻结 manifest，数据 SHA-256 仍为 `b879bb1cb9123349c2da5d54d993d3e40266147bf30264d2936592a50291db2a`。本轮没有调用真实模型 API，也没有生成新的正确率结论。
+
+S3/S4 没有加入 CI、许可证、依赖锁文件或发布包；这些仍属于后续交付阶段，不能用本次结构测试替代。

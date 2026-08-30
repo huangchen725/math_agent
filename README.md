@@ -91,33 +91,33 @@ python -m ruff check .
 对本地 JSONL 题集做题量、领域分布、来源字段、内部重复和 prompt/sample 重合审计，同样不会访问 API：
 
 ```bash
-python evaluation/audit_dataset.py path/to/benchmark.jsonl
-python evaluation/audit_dataset.py path/to/benchmark.jsonl --successes 36 --output outputs/benchmark/audit.json
-python evaluation/rescore_report.py path/to/benchmark.jsonl path/to/old_report.json --output outputs/benchmark/rescored.json
-python evaluation/generate_internal_benchmark.py --output outputs/private-eval/benchmark.jsonl --manifest outputs/private-eval/manifest.json
-python evaluation/score_run.py outputs/private-eval/benchmark.jsonl outputs/private-eval/run --report outputs/private-eval/score.json --review outputs/private-eval/review.jsonl
+python -m evaluation.data.audit_dataset path/to/benchmark.jsonl
+python -m evaluation.data.audit_dataset path/to/benchmark.jsonl --successes 36 --output outputs/benchmark/audit.json
+python -m evaluation.scoring.rescore_report path/to/benchmark.jsonl path/to/old_report.json --output outputs/benchmark/rescored.json
+python -m evaluation.data.generate_internal_benchmark --output outputs/private-eval/benchmark.jsonl --manifest outputs/private-eval/manifest.json
+python -m evaluation.scoring.score_run outputs/private-eval/benchmark.jsonl outputs/private-eval/run --report outputs/private-eval/score.json --review outputs/private-eval/review.jsonl
 ```
 
-审计和评分命令不访问模型 API。`generate_internal_benchmark.py` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)。正式题集记录格式见 `evaluation/benchmark.schema.json`。离线判分使用 `evaluation/judge.py` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
+审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
 下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。主要离线入口为：
 
 ```bash
-python evaluation/import_putnam_bench.py path/to/PutnamBench/informal/putnam.json --source-commit COMMIT --output outputs/ability/benchmark.jsonl --manifest outputs/ability/source.json --recent-count 36
-python evaluation/freeze_experiment.py outputs/ability/benchmark.jsonl --output outputs/ability/baseline-manifest.json --experiment-id baseline-v1 --model intern-s2-preview --dataset-role public_test --repetitions 3 --concurrency 1
-python evaluation/blind_review.py create outputs/ability/benchmark.jsonl outputs/ability/old-run outputs/ability/new-run --packet outputs/ability/review.jsonl --key outputs/ability/review-key.json
-python evaluation/blind_review.py resolve outputs/ability/review-completed.jsonl outputs/ability/review-key.json --baseline-adjudications outputs/ability/old-adjudications.jsonl --candidate-adjudications outputs/ability/new-adjudications.jsonl
-python evaluation/score_run.py outputs/ability/benchmark.jsonl outputs/ability/old-run --adjudications outputs/ability/old-adjudications.jsonl --report outputs/ability/old-score.json
+python -m evaluation.data.import_putnam_bench path/to/PutnamBench/informal/putnam.json --source-commit COMMIT --output outputs/ability/benchmark.jsonl --manifest outputs/ability/source.json --recent-count 36
+python -m evaluation.experiments.freeze_experiment outputs/ability/benchmark.jsonl --output outputs/ability/baseline-manifest.json --experiment-id baseline-v1 --model intern-s2-preview --dataset-role public_test --repetitions 3 --concurrency 1
+python -m evaluation.experiments.blind_review create outputs/ability/benchmark.jsonl outputs/ability/old-run outputs/ability/new-run --packet outputs/ability/review.jsonl --key outputs/ability/review-key.json
+python -m evaluation.experiments.blind_review resolve outputs/ability/review-completed.jsonl outputs/ability/review-key.json --baseline-adjudications outputs/ability/old-adjudications.jsonl --candidate-adjudications outputs/ability/new-adjudications.jsonl
+python -m evaluation.scoring.score_run outputs/ability/benchmark.jsonl outputs/ability/old-run --adjudications outputs/ability/old-adjudications.jsonl --report outputs/ability/old-score.json
 ```
 
-`paired_compare.py` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。冻结旧版真实基线已完成 120 题 × 3 次，共 3,173 个模型请求；可靠性门禁通过，数学正确率仍等待候选版本完成后的匿名 A/B 盲审。匿名汇总见 [P0 公开能力基线结果](docs/evaluations/ABILITY_BASELINE_RESULTS_V1.md)。候选版本运行前必须重新确认费用与额度，单版本硬上限仍为 7,200 次请求。
+`evaluation.experiments.paired_compare` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。冻结旧版真实基线已完成 120 题 × 3 次，共 3,173 个模型请求；可靠性门禁通过，数学正确率仍等待候选版本完成后的匿名 A/B 盲审。匿名汇总见 [P0 公开能力基线结果](docs/evaluations/ABILITY_BASELINE_RESULTS_V1.md)。候选版本运行前必须重新确认费用与额度，单版本硬上限仍为 7,200 次请求。
 
 P1 已接入严格题型验证层：封闭数值表达式、明确数域的有限方程解集、导数、不定积分、极限、留数、数值矩阵行列式、模幂和组合数可在隔离子进程中生成 `pass/fail/unknown` 证据。只有相互一致的 `pass` 会优先于旧聚合；无计划、失败、未知或证据冲突全部回退原多数票/置信度规则。该层可通过 `AgentConfig(enable_deterministic_verification=False)` 关闭。此处只说明实现与离线回归已经完成，不代表真实正确率已经提高。
 
-截断专项压力集固定在 `evaluation/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `score_run.py` 报告交给门禁：
+截断专项压力集固定在 `evaluation/data/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `evaluation.scoring.score_run` 报告交给门禁：
 
 ```bash
-python evaluation/truncation_gate.py outputs/truncation/run-1-score.json outputs/truncation/run-2-score.json outputs/truncation/run-3-score.json --output outputs/truncation/gate.json
+python -m evaluation.scoring.truncation_gate outputs/truncation/run-1-score.json outputs/truncation/run-2-score.json outputs/truncation/run-3-score.json --output outputs/truncation/gate.json
 ```
 
 门禁要求请求级截断点估计和单侧 95% Wilson 上界都低于 5%，候选生成自身截断率低于 5%，恢复覆盖率 100%，无截断残句进入最终答案，`invalid=0`，且保守正确率不明显低于 22% 基线。该命令本身不访问 API；生成三个在线运行目录仍会产生真实调用和费用。
@@ -145,14 +145,28 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 .
 ├── user_agent.py              # 竞赛兼容入口，只导出公开接口
 ├── math_agent/                # 唯一运行时实现包
-│   ├── agent.py               # ReasoningAgent 流水线编排
+│   ├── agent.py               # ReasoningAgent 生命周期与兼容层
+│   ├── agent_config.py        # 固定策略与预算配置
+│   ├── agent_prompts.py       # 流水线提示词
 │   ├── agent_types.py         # 调用、候选、答案与验证类型
 │   ├── answer_equivalence.py  # 保守答案归一化与等价判断
+│   ├── solver.py              # 顶层求解编排
+│   ├── candidate_generation.py # 候选生成、恢复与紧急答案
+│   ├── candidate_evaluation.py # 验证、批评与反思
+│   ├── candidate_selection.py # 证据优先选择与多数票回退
+│   ├── response_processing.py # 答案抽取与最终格式校验
 │   ├── context.py             # 单题显式 SolveContext
 │   ├── model_gateway.py       # 统一模型调用、元数据与预算记账
+│   ├── model_calls.py         # 显式模型消息适配
+│   ├── truncation.py          # 截断事件状态记账
 │   ├── task_router.py         # 零调用题型识别与严格验证计划
+│   ├── domain_router.py       # 零调用领域关键词路由
 │   ├── budget.py              # 单题请求、token、工具与时间预算
-│   ├── math_tools.py          # 11 个受限 SymPy 工具及工具循环
+│   ├── math_tools.py          # 旧导入兼容门面，不承载具体工具逻辑
+│   ├── math_parsing.py        # 受限 SymPy 解析与参数边界
+│   ├── tool_implementations.py # 11 个有界数学工具实现
+│   ├── tool_registry.py       # 工具 schema、注册表与隔离分发
+│   ├── tool_loop.py           # 显式上下文的 tool-calling 循环
 │   ├── tool_executor.py       # 可终止子进程与工具硬超时
 │   ├── deterministic_verifier.py # 隔离验证与候选证据
 │   ├── domain_prompts.py      # 18 个数学领域提示
@@ -160,7 +174,11 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证
-├── evaluation/                # 题集、审计、保守判分与截断门禁
+├── evaluation/                # 离线评测包
+│   ├── data/                  # 数据导入、生成、审计、schema 与压力集
+│   ├── scoring/               # 保守判分、重算、汇总与截断门禁
+│   ├── experiments/           # 冻结、盲审、配对比较与协议
+│   └── io_utils.py            # 共享 JSON/JSONL、哈希与原子写入
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
 ├── .agents/skills/            # 仓库级 Codex skill

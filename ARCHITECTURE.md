@@ -1,7 +1,7 @@
 # 数学推理智能体架构
 
 > 状态：当前生效  
-> 更新日期：2026-08-30
+> 更新日期：2026-08-31
 > 本文件是仓库唯一的架构事实源。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时以本文件和当前代码为准。
 
 ## 1. 目标与边界
@@ -29,58 +29,75 @@ ReasoningAgent(client).solve(problem, metadata)
 ```mermaid
 flowchart LR
     I[JSONL / Demo / 调用方] --> F[user_agent.py<br/>兼容入口]
-    F --> A[math_agent.agent<br/>ReasoningAgent]
+    F --> A[math_agent.agent<br/>生命周期与兼容层]
     A --> X[SolveContext<br/>单题显式状态]
+    X --> S[math_agent.solver<br/>顶层阶段编排]
+    S --> N[candidate_generation<br/>生成与截断恢复]
+    S --> V[candidate_evaluation<br/>验证、批评与反思]
+    S --> L[candidate_selection<br/>证据选择]
+    S --> O[response_processing<br/>最终格式]
     X --> G[ModelGateway<br/>调用与元数据原子绑定]
     G --> C[注入客户端 / InternChatClient]
-    D[math_agent/domain_prompts.py<br/>18 领域提示] --> A
+    D[domain_prompts + domain_router<br/>18 领域提示与零调用路由] --> S
     I --> Q[math_agent/task_router.py<br/>题型与严格验证计划]
-    Q --> A
+    Q --> S
     X --> B[ExecutionBudget]
-    A --> T[math_agent/math_tools.py<br/>11 个受限 SymPy 工具]
-    T --> G
-    T --> P[math_agent/tool_executor.py<br/>可终止子进程]
-    T --> A
-    A --> V[math_agent/deterministic_verifier.py<br/>受限确定性验证]
-    V --> P
-    V --> A
-    E[Answer / Candidate / Verification] --> A
-    A --> R[final_response + trace]
-    R --> O[每题 JSON / Demo 展示 / 调用方]
+    N --> TL[tool_loop.py<br/>tool-calling 循环]
+    TL --> G
+    TL --> TR[tool_registry.py<br/>schema 与隔离分发]
+    TR --> TI[tool_implementations.py<br/>11 个有界工具]
+    TI --> MP[math_parsing.py<br/>受限 SymPy 解析]
+    TR --> P[math_agent/tool_executor.py<br/>可终止子进程]
+    TL --> N
+    V --> DV[math_agent/deterministic_verifier.py<br/>受限确定性验证]
+    DV --> P
+    DV --> V
+    E[Answer / Candidate / Verification] --> S
+    O --> R[final_response + trace]
+    R --> OUT[每题 JSON / Demo 展示 / 调用方]
 ```
 
 | 组件 | 职责 |
 | --- | --- |
 | `user_agent.py` | 竞赛兼容入口，只重新导出 `math_agent` 中的公开类型；不得增加运行时实现 |
 | `math_agent/__init__.py` | 唯一包级公开 API，导出 Agent、客户端、网关、求解上下文和核心数据类型 |
-| `math_agent/agent.py` | 维护固定策略候选生成、验证、反思和聚合，并协调单题预算 |
+| `math_agent/agent.py` | 维护公开 Agent 生命周期：输入校验、单题上下文创建、异常收敛和兼容转发；不实现具体求解阶段 |
+| `math_agent/agent_config.py` | 定义固定候选策略、模型参数、恢复开关和单题预算配置 |
+| `math_agent/agent_prompts.py` | 集中保存策略、验证、批评和反思提示词；不持有运行状态 |
 | `math_agent/agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
 | `math_agent/answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
+| `math_agent/solver.py` | 只编排领域/题型路由、候选生成、候选评估、可选反思、选择和输出阶段 |
+| `math_agent/candidate_generation.py` | 生成工具/纯推理候选，执行候选截断恢复、整题紧急答案和全局短回退 |
+| `math_agent/candidate_evaluation.py` | 执行确定性/模型验证、截断 verifier 重试、批评和反思 |
+| `math_agent/candidate_selection.py` | 执行一致确定性证据优先和原多数票/置信度回退，并记录最终来源 |
+| `math_agent/response_processing.py` | 提取显式答案、解析 verdict、裁剪复核文本，并强制唯一非空末行答案 |
 | `math_agent/context.py` | 定义每次 `solve()` 独占的 `SolveContext`，显式持有题目、metadata、trace、预算和网关 |
+| `math_agent/model_calls.py` | 把 system/user 消息显式组装后交给 `ModelGateway`，不保存最近响应 |
 | `math_agent/model_gateway.py` | 统一普通、工具、验证、反思和恢复请求；将原始响应、文本、finish reason、usage 和预算请求编号原子绑定为 `ModelCallResult` |
+| `math_agent/truncation.py` | 统一更新截断事件的恢复/隔离状态，并在返回前封闭待处理事件 |
+| `math_agent/domain_router.py` | 本地关键词计数选择一个领域，不访问模型；领域提示内容仍由 `domain_prompts.py` 提供 |
 | `math_agent/task_router.py` | 零模型调用识别一个或多个题型；仅对结构明确的直接计算题生成至多一个可执行验证计划，证明、数域不明或复合任务只保留标签 |
 | `math_agent/budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
 | `math_agent/domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
-| `math_agent/math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
+| `math_agent/math_tools.py` | 兼容旧导入的薄门面，只重导出工具公共 API；不得新增解析、实现、注册或循环逻辑 |
+| `math_agent/math_parsing.py` | 受限 SymPy 命名空间、表达式/符号/整数/矩阵解析以及输入、结果和复杂度边界 |
+| `math_agent/tool_implementations.py` | 实现 11 个有界数学工具；不声明模型 schema，不发起模型调用 |
+| `math_agent/tool_registry.py` | 保持工具 schema 与实现一一对应，验证 tool-call JSON，并通过可终止子进程限时分发 |
+| `math_agent/tool_loop.py` | 通过同一 `SolveContext` 绑定的 `ModelGateway` 执行 tool-calling 循环、轮数/调用数限制和强制最终回复 |
 | `math_agent/tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
-| `math_agent/deterministic_verifier.py` | 在可终止子进程中执行封闭数值表达式、有限方程解集、导数、积分、极限、留数、行列式、模幂、组合数及符号等价验证；结果为 `pass/fail/unknown` |
+| `math_agent/deterministic_verifier.py` | 只通过 `math_parsing.py` 的公共解析接口，在可终止子进程中执行封闭数值表达式、有限方程解集、导数、积分、极限、留数、行列式、模幂、组合数及符号等价验证；结果为 `pass/fail/unknown` |
 | `math_agent/llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试；`chat()` 保持原返回契约，`chat_with_metadata()` 原子返回响应及元数据 |
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
-| `evaluation/audit_dataset.py` | 离线审计 JSONL 的规模、领域分布、来源字段、内部重复及与 prompt/sample 的重合 |
-| `evaluation/judge.py` | 离线保守判分；只接受可证明等价，输出 `correct/wrong/unknown/no_answer`，不属于运行时选择链路 |
-| `evaluation/rescore_report.py` | 不调用模型，使用保守判分器重新核算已有报告，并保留旧 verdict 供差异追踪 |
-| `evaluation/generate_internal_benchmark.py` | 生成可复现的18领域内部合成基准；它不是生产调用链或官方独立题集 |
-| `evaluation/score_run.py` | 汇总 `main.py` 逐题输出、四态判分、领域/难度/题型、usage、分阶段截断和恢复指标，并导出人工复核队列 |
-| `evaluation/truncation_gate.py` | 合并一次或多次离线评分报告，按请求级截断率、单侧 Wilson 上界、候选阶段、恢复、格式和正确率执行发布门禁 |
-| `evaluation/freeze_experiment.py` | 冻结数据 SHA-256、运行时文件指纹、commit、模型、AgentConfig、并发、重复次数和数据泄漏审计；脏工作树只能生成 draft |
-| `evaluation/import_putnam_bench.py` | 从固定上游 commit 确定性抽样第三方公开大学竞赛题；题面只写入被 Git 忽略的本地输出 |
-| `evaluation/blind_review.py` | 对旧版/新版输出逐题随机交换 A/B 标签，并在人工复核完成后解盲为两份裁决记录 |
-| `evaluation/paired_compare.py` | 对三轮新旧报告进行逐题配对、bootstrap 区间、精确 McNemar 检验、回退清单和证据门禁 |
-| `evaluation/truncation_stress.jsonl` | 18 领域各 2 题的项目自建长输出压力集；只测可靠性，不是官方正确率基准 |
+| `evaluation/io_utils.py` | 评测包共享的 UTF-8 JSON/JSONL 读取、SHA-256、同目录临时文件和原子写入；避免各脚本重复实现 |
+| `evaluation/data/` | 数据边界：题集审计、内部基准生成、PutnamBench 导入、JSON schema 与固定截断压力集 |
+| `evaluation/scoring/` | 评分边界：四态保守判分、旧报告重算、运行汇总与请求级截断门禁 |
+| `evaluation/experiments/` | 实验边界：数据/运行时冻结、匿名 A/B、逐题配对统计与机器可读能力协议 |
 
 ## 4. 求解流程
+
+`ReasoningAgent` 只创建 `SolveContext` 并调用 `SolveOrchestrator`。后者只决定下列阶段顺序；候选生命周期、评估、选择和输出规则分别由对应模块实现。任何阶段需要题目、trace、预算或模型访问时都必须显式接收同一个 `SolveContext`，不得从 Agent 属性或“最近响应”方法读取单题状态。
 
 1. **领域与题型路由**：`_detect_domain()` 对 18 个领域的关键词做不区分 ASCII 大小写的计数，选择最高分领域；未匹配时使用通用提示。`analyze_task()` 可返回多题型标签和置信度，但只有无证明指令、无复合目标且语法严格匹配的直接计算题才产生验证计划。方程必须明确实数域或复数域；整数、正根等约束以及数域不明时不执行强验证。
 2. **候选生成**：默认生成 2 个工具增强候选和 1 个纯推理候选，策略温度 `0.6`、`thinking_mode=False`、API 单次上限仍为 `8192` tokens。关键词在本地把证明/推导/分类讨论题的推理目标设为 3500 输出 token，其余计算题设为 1800；这只约束 prompt，不压低 API 安全余量。所有候选第一行先写显式答案，只保留决定结论的推导。
@@ -171,7 +188,7 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
-测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O，不允许通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 

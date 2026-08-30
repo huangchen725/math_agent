@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from ..io_utils import read_json_object, write_json
 
 ONE_SIDED_95_Z = 1.6448536269514722
 DEFAULT_TARGET_RATE = 0.05
@@ -210,7 +211,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    reports = [json.loads(path.read_text(encoding="utf-8-sig")) for path in args.reports]
+    reports = [read_json_object(path) for path in args.reports]
     combined = combine_summaries(reports)
     result = evaluate_truncation_gate(
         combined,
@@ -220,8 +221,7 @@ def main() -> None:
     )
     serialized = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(serialized, encoding="utf-8")
+        write_json(args.output, result)
     print(serialized, end="")
     raise SystemExit(0 if result["passed"] else 1)
 

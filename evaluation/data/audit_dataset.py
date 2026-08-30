@@ -7,7 +7,6 @@ import json
 import math
 import re
 import statistics
-import sys
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
@@ -15,10 +14,13 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..io_utils import (
+    PROJECT_ROOT,
+    configure_utf8_stdout,
+    read_jsonl_objects,
+    write_json,
+)
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 REQUIRED_PROVENANCE_FIELDS = ("source", "license", "split", "level")
 
 
@@ -44,19 +46,7 @@ def normalize_template(text: str) -> str:
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    records = []
-    with path.open("r", encoding="utf-8-sig") as file:
-        for line_number, line in enumerate(file, start=1):
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            if not isinstance(record, dict):
-                raise ValueError(f"line {line_number} is not a JSON object")
-            problem = record.get("problem")
-            if not isinstance(problem, str) or not problem.strip():
-                raise ValueError(f"line {line_number} has no non-empty problem")
-            records.append(record)
-    return records
+    return read_jsonl_objects(path, required_nonempty_strings=("problem",))
 
 
 def default_references() -> list[ReferenceProblem]:
@@ -66,7 +56,7 @@ def default_references() -> list[ReferenceProblem]:
         ReferenceProblem("prompt_fewshot", item["domain"], item["problem"])
         for item in parse_fewshot_examples()
     ]
-    sample_path = ROOT / "sample_data" / "dev.jsonl"
+    sample_path = PROJECT_ROOT / "sample_data" / "dev.jsonl"
     if sample_path.is_file():
         references.extend(
             ReferenceProblem(
@@ -237,8 +227,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     records = load_jsonl(args.dataset)
     references = default_references()
     for reference_path in args.reference_dataset:
@@ -253,8 +242,7 @@ def main() -> None:
     if not args.quiet:
         print(serialized)
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(serialized + "\n", encoding="utf-8")
+        write_json(args.output, report)
 
 
 if __name__ == "__main__":

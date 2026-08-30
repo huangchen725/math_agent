@@ -15,7 +15,7 @@ import sympy as sp
 
 from .agent_types import Verification
 from .answer_equivalence import equivalent_answers, normalize_answer
-from .math_tools import _parse_matrix, _parse_symbol, _safe_parse
+from .math_parsing import parse_matrix, parse_symbol, safe_parse
 from .task_router import VerificationPlan
 from .tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
 
@@ -24,23 +24,23 @@ DEFAULT_VERIFY_TIMEOUT_SECONDS = 5.0
 
 
 def _symbolic_equal_worker(left: str, right: str) -> bool:
-    return sp.simplify(_safe_parse(left) - _safe_parse(right)) == 0
+    return sp.simplify(safe_parse(left) - safe_parse(right)) == 0
 
 
 def _expression_value_worker(expression: str, candidate: str) -> bool:
-    expected = sp.simplify(_safe_parse(expression))
-    supplied = sp.simplify(_safe_parse(candidate))
+    expected = sp.simplify(safe_parse(expression))
+    supplied = sp.simplify(safe_parse(candidate))
     return expected == supplied or sp.simplify(expected - supplied) == 0
 
 
 def _equation_worker(equation: str, variable: str, candidate: str) -> bool:
-    symbol = _parse_symbol(variable)
-    candidate_value = _safe_parse(candidate)
+    symbol = parse_symbol(variable)
+    candidate_value = safe_parse(candidate)
     if "=" in equation and "==" not in equation:
         left, right = equation.split("=", 1)
-        residual = _safe_parse(left) - _safe_parse(right)
+        residual = safe_parse(left) - safe_parse(right)
     else:
-        residual = _safe_parse(equation)
+        residual = safe_parse(equation)
     return sp.simplify(residual.subs(symbol, candidate_value)) == 0
 
 
@@ -77,12 +77,12 @@ def _equation_solutions_worker(
     candidate: str,
     domain: str,
 ) -> bool:
-    symbol = _parse_symbol(variable)
+    symbol = parse_symbol(variable)
     if "=" in equation and "==" not in equation:
         left, right = equation.split("=", 1)
-        residual = _safe_parse(left) - _safe_parse(right)
+        residual = safe_parse(left) - safe_parse(right)
     else:
-        residual = _safe_parse(equation)
+        residual = safe_parse(equation)
     domain_set = {"real": sp.S.Reals, "complex": sp.S.Complexes}.get(domain)
     if domain_set is None:
         raise ValueError("equation domain must be real or complex")
@@ -105,7 +105,7 @@ def _equation_solutions_worker(
     raw = raw.replace("，", ",").replace("；", ";").replace("或", ",")
     raw = re.sub(r"\bor\b", ",", raw, flags=re.IGNORECASE)
     raw = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(variable)}\s*=\s*", "", raw)
-    supplied = [_safe_parse(part) for part in _split_solution_values(raw)]
+    supplied = [safe_parse(part) for part in _split_solution_values(raw)]
     if len(supplied) != len(expected):
         return False
 
@@ -121,46 +121,46 @@ def _equation_solutions_worker(
 
 
 def _derivative_worker(expression: str, variable: str, candidate: str) -> bool:
-    symbol = _parse_symbol(variable)
-    expected = sp.diff(_safe_parse(expression), symbol)
-    return sp.simplify(expected - _safe_parse(candidate)) == 0
+    symbol = parse_symbol(variable)
+    expected = sp.diff(safe_parse(expression), symbol)
+    return sp.simplify(expected - safe_parse(candidate)) == 0
 
 
 def _integral_worker(integrand: str, variable: str, candidate: str) -> bool:
-    symbol = _parse_symbol(variable)
-    derivative = sp.diff(_safe_parse(candidate), symbol)
-    return sp.simplify(derivative - _safe_parse(integrand)) == 0
+    symbol = parse_symbol(variable)
+    derivative = sp.diff(safe_parse(candidate), symbol)
+    return sp.simplify(derivative - safe_parse(integrand)) == 0
 
 
 def _limit_worker(expression: str, variable: str, point: str, candidate: str) -> bool:
-    symbol = _parse_symbol(variable)
-    expected = sp.limit(_safe_parse(expression), symbol, _safe_parse(point))
-    supplied = _safe_parse(candidate)
+    symbol = parse_symbol(variable)
+    expected = sp.limit(safe_parse(expression), symbol, safe_parse(point))
+    supplied = safe_parse(candidate)
     return expected == supplied or sp.simplify(expected - supplied) == 0
 
 
 def _residue_worker(expression: str, variable: str, pole: str, candidate: str) -> bool:
-    symbol = _parse_symbol(variable)
-    expected = sp.residue(_safe_parse(expression), symbol, _safe_parse(pole))
-    supplied = _safe_parse(candidate)
+    symbol = parse_symbol(variable)
+    expected = sp.residue(safe_parse(expression), symbol, safe_parse(pole))
+    supplied = safe_parse(candidate)
     return expected == supplied or sp.simplify(expected - supplied) == 0
 
 
 def _matrix_determinant_worker(matrix: str, candidate: str) -> bool:
-    determinant = _parse_matrix(matrix).det()
-    return sp.simplify(determinant - _safe_parse(candidate)) == 0
+    determinant = parse_matrix(matrix).det()
+    return sp.simplify(determinant - safe_parse(candidate)) == 0
 
 
 def _mod_pow_worker(base: int, exponent: int, modulus: int, candidate: str) -> bool:
     if exponent < 0 or modulus <= 0:
         raise ValueError("modular exponent requires exponent >= 0 and modulus > 0")
-    return sp.Integer(pow(base, exponent, modulus)) == _safe_parse(candidate)
+    return sp.Integer(pow(base, exponent, modulus)) == safe_parse(candidate)
 
 
 def _binomial_worker(n: int, k: int, candidate: str) -> bool:
     if not 0 <= k <= n:
         raise ValueError("binomial requires 0 <= k <= n")
-    return sp.binomial(n, k) == _safe_parse(candidate)
+    return sp.binomial(n, k) == safe_parse(candidate)
 
 
 def _run_verifier(

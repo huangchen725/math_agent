@@ -1,6 +1,7 @@
 """Public package for the XH-202627 competition math agent."""
 
-from .agent import AgentConfig, ReasoningAgent
+from .agent import ReasoningAgent
+from .agent_config import AgentConfig
 from .agent_types import Answer, Candidate, ModelCallResult, Verification
 from .context import SolveContext
 from .llm_client import InternChatClient

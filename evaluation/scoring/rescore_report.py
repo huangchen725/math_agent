@@ -4,18 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from evaluation.audit_dataset import load_jsonl
-from evaluation.judge import judge_answer
+from ..data.audit_dataset import load_jsonl
+from ..io_utils import configure_utf8_stdout, read_json_object, write_json
+from .judge import judge_answer
 
 
 def rescore_report(
@@ -94,16 +89,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-    report = json.loads(args.report.read_text(encoding="utf-8-sig"))
+    configure_utf8_stdout()
+    report = read_json_object(args.report)
     rescored = rescore_report(load_jsonl(args.dataset), report)
     serialized = json.dumps(rescored, ensure_ascii=False, indent=2)
     if not args.quiet:
         print(serialized)
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(serialized + "\n", encoding="utf-8")
+        write_json(args.output, rescored)
 
 
 if __name__ == "__main__":

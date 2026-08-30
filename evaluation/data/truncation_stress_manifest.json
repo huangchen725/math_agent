@@ -1,7 +1,7 @@
 {
   "name": "math-agent truncation stress set v1",
   "purpose": "Long-output reliability and truncation recovery testing; not an official accuracy benchmark",
-  "dataset": "evaluation/truncation_stress.jsonl",
+  "dataset": "evaluation/data/truncation_stress.jsonl",
   "sha256": "8e787dc5027ed1a855ff27d149d7dab0023ac91b98ee8d54051aac488f82382c",
   "items": 36,
   "subjects": 18,

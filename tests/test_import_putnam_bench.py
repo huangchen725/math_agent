@@ -1,6 +1,6 @@
 import json
 
-from evaluation.import_putnam_bench import build_benchmark, write_benchmark
+from evaluation.data.import_putnam_bench import build_benchmark, write_benchmark
 
 
 def _source_item(year: int, section: str, number: int, *, target: bool, tag: str) -> dict:

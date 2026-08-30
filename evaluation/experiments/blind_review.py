@@ -8,29 +8,23 @@ import hmac
 import json
 import re
 import secrets
-import sys
 from pathlib import Path
 from typing import Any
 
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from evaluation.audit_dataset import load_jsonl
+from ..data.audit_dataset import load_jsonl
+from ..io_utils import (
+    configure_utf8_stdout,
+    file_sha256,
+    read_json_object,
+    read_jsonl_objects,
+    write_json,
+    write_jsonl,
+)
 
 
 _SAFE_INDEX = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _REVIEW_STATUSES = {"correct", "wrong", "unknown", "no_answer"}
 _MAX_RESPONSE_CHARS = 50_000
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _safe_idx(value: object) -> str:
@@ -117,19 +111,7 @@ def create_review_packet(
 
 
 def _load_completed_review(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8-sig") as file:
-        for line_number, line in enumerate(file, start=1):
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid review JSON on line {line_number}") from exc
-            if not isinstance(row, dict):
-                raise ValueError(f"review line {line_number} is not an object")
-            rows.append(row)
-    return rows
+    return read_jsonl_objects(path)
 
 
 def resolve_review(
@@ -187,13 +169,6 @@ def resolve_review(
     return baseline, candidate
 
 
-def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        for record in records:
-            file.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
 def _create(args: argparse.Namespace) -> None:
     dataset = load_jsonl(args.dataset)
     packet, key = create_review_packet(
@@ -202,20 +177,17 @@ def _create(args: argparse.Namespace) -> None:
         args.candidate_output_dir,
     )
     key["dataset_sha256"] = file_sha256(args.dataset)
-    _write_jsonl(args.packet, packet)
-    args.key.parent.mkdir(parents=True, exist_ok=True)
-    args.key.write_text(json.dumps(key, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_jsonl(args.packet, packet)
+    write_json(args.key, key)
     print(json.dumps({"items": len(packet), "packet": str(args.packet)}, ensure_ascii=False))
 
 
 def _resolve(args: argparse.Namespace) -> None:
     completed = _load_completed_review(args.completed)
-    key = json.loads(args.key.read_text(encoding="utf-8-sig"))
-    if not isinstance(key, dict):
-        raise ValueError("review key is not an object")
+    key = read_json_object(args.key)
     baseline, candidate = resolve_review(completed, key)
-    _write_jsonl(args.baseline_adjudications, baseline)
-    _write_jsonl(args.candidate_adjudications, candidate)
+    write_jsonl(args.baseline_adjudications, baseline)
+    write_jsonl(args.candidate_adjudications, candidate)
     print(json.dumps({"items": len(baseline), "status": "resolved"}, ensure_ascii=False))
 
 
@@ -242,8 +214,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_utf8_stdout()
     args.handler(args)
 
 
