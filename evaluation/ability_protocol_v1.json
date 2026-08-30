@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "prepared_not_executed",
+  "status": "baseline_executed_pending_candidate_blind_review",
   "protocol_id": "ability-baseline-v1",
   "baseline_runtime_commit": "831b94f1f0e2e57a4cf93e5c4b3f588c89f0d5cb",
   "primary_public_benchmark": {
@@ -32,6 +32,34 @@
     "hard_request_cap_per_problem": 20,
     "estimated_requests_per_version": 3240,
     "hard_request_cap_per_version": 7200
+  },
+  "baseline_execution": {
+    "completed_on": "2026-08-30",
+    "runtime_commit": "831b94f1f0e2e57a4cf93e5c4b3f588c89f0d5cb",
+    "repetitions_completed": 3,
+    "item_runs": 360,
+    "success": 360,
+    "error": 0,
+    "missing": 0,
+    "configured_model": "intern-s2-preview",
+    "api_response_model_persisted": false,
+    "request_count": 3173,
+    "total_tokens": 7176832,
+    "truncated_count": 81,
+    "truncation_rate": 0.0255278916,
+    "one_sided_wilson_95_upper": 0.0305534495,
+    "candidate_request_count": 1904,
+    "candidate_truncated_count": 73,
+    "candidate_truncation_rate": 0.0383403361,
+    "candidate_one_sided_wilson_95_upper": 0.0462581112,
+    "recovery_required": 81,
+    "recovery_handled": 81,
+    "truncated_problem_runs": 64,
+    "truncated_problem_runs_with_valid_answer": 64,
+    "invalid": 0,
+    "truncated_fragments_in_final": 0,
+    "reliability_gate_passed": true,
+    "correctness_status": "pending_candidate_paired_blind_review"
   },
   "comparison": {
     "paired_by_idx": true,

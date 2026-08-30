@@ -108,7 +108,7 @@ python evaluation/blind_review.py resolve outputs/ability/review-completed.jsonl
 python evaluation/score_run.py outputs/ability/benchmark.jsonl outputs/ability/old-run --adjudications outputs/ability/old-adjudications.jsonl --report outputs/ability/old-score.json
 ```
 
-`paired_compare.py` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。真实基线尚未执行；单版本 120 题 × 3 次预计约 3,240 个模型请求，硬上限 7,200，运行前必须重新确认费用与额度。
+`paired_compare.py` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。冻结旧版真实基线已完成 120 题 × 3 次，共 3,173 个模型请求；可靠性门禁通过，数学正确率仍等待候选版本完成后的匿名 A/B 盲审。匿名汇总见 [P0 公开能力基线结果](docs/evaluations/ABILITY_BASELINE_RESULTS_V1.md)。候选版本运行前必须重新确认费用与额度，单版本硬上限仍为 7,200 次请求。
 
 截断专项压力集固定在 `evaluation/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `score_run.py` 报告交给门禁：
 
