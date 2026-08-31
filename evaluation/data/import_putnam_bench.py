@@ -35,15 +35,45 @@ def _source_commit(source_path: Path) -> str | None:
     git_executable = shutil.which("git")
     if not git_executable:
         return None
-    result = subprocess.run(
-        [git_executable, "-C", str(source_path.parent), "rev-parse", "HEAD"],
+    top_level = subprocess.run(
+        [git_executable, "-C", str(source_path.parent), "rev-parse", "--show-toplevel"],
         check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
     )  # nosec B603
-    return result.stdout.strip() if result.returncode == 0 else None
+    if top_level.returncode != 0:
+        return None
+    repository = Path(top_level.stdout.strip()).resolve()
+    try:
+        relative = source_path.resolve().relative_to(repository).as_posix()
+    except ValueError:
+        return None
+    tracked = subprocess.run(
+        [
+            git_executable,
+            "-C",
+            str(repository),
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            relative,
+        ],
+        check=False,
+        capture_output=True,
+    )  # nosec B603
+    if tracked.returncode != 0:
+        return None
+    commit = subprocess.run(
+        [git_executable, "-C", str(repository), "rev-parse", "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )  # nosec B603
+    return commit.stdout.strip() if commit.returncode == 0 else None
 
 
 def _has_target_solution(record: dict[str, Any]) -> bool:

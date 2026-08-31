@@ -94,6 +94,10 @@ flowchart LR
 | `evaluation/data/` | 数据边界：题集审计、内部基准生成、PutnamBench 导入、JSON schema 与固定截断压力集 |
 | `evaluation/scoring/` | 评分边界：四态保守判分、旧报告重算、运行汇总与请求级截断门禁 |
 | `evaluation/experiments/` | 实验边界：数据/运行时冻结、匿名 A/B、逐题配对统计与机器可读能力协议 |
+| `scripts/run_quality_gates.py` | 顺序执行完整非模型质量门禁，并生成绑定 Git 快照的机器可读报告；失败后继续收集其余诊断 |
+| `scripts/check_secrets.py` / `check_markdown_links.py` | 检查已跟踪及非忽略的未跟踪文件中的常见凭据模式，以及仓库内 Markdown 链接 |
+| `scripts/build_release.py` | 从受限文件白名单生成带来源、配置、锁哈希、质量摘要和文件哈希的确定性 ZIP；正式包只读取 Git blob |
+| `.github/workflows/offline-quality.yml` | 在 Python 3.10/3.12 上以哈希锁安装开发依赖，运行质量门禁并验证正式打包；不调用模型端点 |
 
 ## 4. 求解流程
 
@@ -180,16 +184,26 @@ P1 只改变“严格计划存在且获得一致确定性通过证据”时的�
 
 ## 8. 验证边界
 
-默认离线检查：
+默认完整检查：
 
 ```bash
-python -m pytest -q
-python -m compileall -q .
-python -m ruff check .
+python -m scripts.run_quality_gates
 ```
 
-测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O，不允许通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。完整门禁还执行 70% 语句覆盖率阈值、Ruff、compileall、Bandit、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run 和所有正式 CLI 的帮助入口。漏洞审计会访问公开漏洞数据库，但不会访问模型端点；跳过它生成的报告不能授权正式包。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O，不允许通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 
 以下变化必须同时更新本文件、README 和相应测试：外部接口、候选/验证流程、工具注册与安全界限、环境变量、运行入口、checkpoint 格式或目录布局。实验数据与演进历史写入 `技术报告.md`，待办与风险写入 `docs/AUDIT_AND_OPTIMIZATION.md`，不要另建第二份架构文档。
+
+## 10. 质量、供应链与交付边界
+
+`requirements.txt`、`requirements-dev.txt` 和 `requirements-demo.txt` 只描述维护者选择的直接依赖范围；与之对应的三个 `.lock` 文件记录完整传递依赖、精确版本和允许制品的 SHA-256。核心运行时和开发工具支持 Python 3.10+；可选 Demo 使用 Python 3.12+，因为修复已知漏洞的 Pillow 版本不再支持 3.10/3.11，不能为扩大可选界面兼容范围而锁回已知脆弱版本。运行安装、CI 和交付验证必须使用 `pip install --require-hashes`，变更任一输入规格后必须重新生成并验证受影响的锁，不能手工删减哈希来绕过解析冲突。
+
+`scripts.run_quality_gates` 是唯一完整质量入口。它按固定清单执行各项检查，即使某项失败也继续诊断，并把命令参数、返回码、耗时和有界输出尾部写入 `.quality/quality-report.json`；报告同时保存检查前后的 commit、tree、分支和工作树状态。报告不保存 API key、题面或完整模型响应。CI 只授予 `contents: read`，第三方 Action 固定到完整提交 SHA，关闭 checkout 凭据持久化，并在 Python 3.10 与 3.12 上验证。CI 与默认测试均不允许 `--execute`、`main.py` 求解或启动 Demo。
+
+正式发布必须同时满足：工作树干净；质量报告状态为通过且包含依赖审计；报告前后 commit/tree 与当前 HEAD 完全一致；所有必需检查均有通过记录。发布器只选择 Git 已跟踪或非忽略的未跟踪文件，再施加根文件白名单和受限目录/后缀；符号链接、路径逃逸、含 NUL 的伪装二进制、超过 5 MiB 扫描/单文件上限或总输入超过 50 MiB 均被拒绝，嵌入的质量报告也必须通过同一敏感信息扫描。正式包从 Git blob 读取源字节，按固定名称顺序、提交时间、Unix 文件模式和压缩级别写 ZIP；同一提交、同一质量报告、同一模型标识应得到相同 SHA-256。包内 manifest 记录提交/tree、模型、默认 `AgentConfig`、依赖锁哈希和逐文件哈希，旁路 `.sha256` 用于传输校验。
+
+脏工作树只能通过 `--allow-dirty` 生成 `draft`，内容来自当前工作区且 manifest 明确保留脏文件清单；它不能升级为正式包。`.env`、`.quality/`、`dist/`、`outputs/`、虚拟环境及未在白名单中的文件不会进入交付包。
+
+根 `LICENSE` 当前明确项目代码未授予开源许可；这是一项保守边界，不代表对第三方软件或数据取得再授权。Python 依赖、压力集和本地导入题集分别遵守其自身许可及来源记录，具体说明见 `THIRD_PARTY_NOTICES.md`。更换项目许可证属于所有者决策，不能由维护脚本自动放宽。

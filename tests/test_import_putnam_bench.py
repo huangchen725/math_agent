@@ -1,6 +1,7 @@
 import json
+import subprocess
 
-from evaluation.data.import_putnam_bench import build_benchmark, write_benchmark
+from evaluation.data.import_putnam_bench import _source_commit, build_benchmark, write_benchmark
 
 
 def _source_item(year: int, section: str, number: int, *, target: bool, tag: str) -> dict:
@@ -69,3 +70,36 @@ def test_putnam_import_is_deterministic_and_keeps_questions_out_of_manifest(tmp_
     )
     assert sum(item["source_year"] >= 2002 for item in recent) == 4
     assert recent_manifest["selection"]["recent_items"] == 4
+
+
+def test_source_commit_ignores_untracked_file_inside_parent_repository(tmp_path):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Source Test"], cwd=repository, check=True
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "source@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    tracked = repository / "tracked.txt"
+    tracked.write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "fixture"], cwd=repository, check=True)
+    source = repository / "putnam.json"
+    source.write_text("[]", encoding="utf-8")
+
+    assert _source_commit(source) is None
+
+    subprocess.run(["git", "add", "putnam.json"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "add source"], cwd=repository, check=True)
+    expected = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert _source_commit(source) == expected

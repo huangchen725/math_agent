@@ -36,16 +36,31 @@
 | user_agent.py | 竞赛兼容入口，重新导出公开接口 |
 | math_agent/ | 唯一运行时实现包，包含编排、路由、工具、验证、预算和客户端 |
 | main.py | 本地 runner（断点续跑、3 并发） |
-| pyproject.toml | 测试与静态检查配置 |
-| requirements.txt | 依赖列表 |
+| pyproject.toml | 测试、覆盖率门槛与静态检查配置 |
+| requirements*.txt | 直接依赖输入规格 |
+| requirements*.lock | 精确版本和制品 SHA-256 锁 |
+| scripts/ | 完整质量门禁、敏感信息/链接检查与确定性打包 |
+| .github/ | Python 3.10/3.12 CI 与依赖更新配置 |
+| LICENSE / THIRD_PARTY_NOTICES.md | 项目与第三方许可边界 |
 | ARCHITECTURE.md | 唯一架构规范 |
 
 ## 本地运行
 ```bash
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock
 export INTERN_API_KEY="你的token"
 python main.py --input_file sample_data/dev.jsonl --output_dir outputs
 ```
+
+## 交付生成
+
+最终 commit hash、文件清单、默认模型/配置、锁文件哈希和质量检查摘要由正式包内的 `release/release-manifest.json` 自动记录，不应把工作中的 HEAD 手工固化到本文。生成前确保工作树干净，并运行：
+
+```bash
+python -m scripts.run_quality_gates
+python -m scripts.build_release --output-dir dist
+```
+
+输出 ZIP 旁的 `.sha256` 用于传输校验。脏工作树使用 `--allow-dirty` 时只会得到 `draft`，不得作为最终竞赛交付物。
 
 ## 样例测试边界
 - 3 道公开样例只用于接口和流程冒烟，不用于估计实际正确率。

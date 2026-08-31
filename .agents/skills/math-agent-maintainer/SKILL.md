@@ -24,6 +24,8 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Keep `agent.py` limited to lifecycle, validation, error containment, and compatibility delegates. Route, generate, evaluate, recover, select, and format through their focused modules instead of adding stage logic back to the Agent class.
 - Keep `math_tools.py` as a compatibility facade. Put restricted parsing, concrete tools, registry/dispatch, and the tool-calling loop in `math_parsing.py`, `tool_implementations.py`, `tool_registry.py`, and `tool_loop.py` respectively.
 - Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
+- Treat `requirements*.txt` as dependency inputs and `requirements*.lock` as installation artifacts. Regenerate exact versions and SHA-256 hashes together, and never relax `--require-hashes` to hide a resolution problem.
+- Preserve the complete quality-check list, coverage floor, secret/link checks, SHA-pinned CI actions, release path/size allowlists, and clean-commit provenance checks.
 
 ## Make changes from evidence
 
@@ -46,12 +48,12 @@ Keep synthetic benchmarks labeled as internal. Freeze their generator version, s
 Use the smallest focused offline test during iteration, then run:
 
 ```bash
-python -m pytest -q
-python -m compileall -q .
-python -m ruff check .
+python -m scripts.run_quality_gates
 ```
 
-`python verify_math.py` is a safe dry-run. Do not pass `--execute`, or run `main.py`/`demo.py` against the real endpoint, unless the user authorizes quota/cost. State the planned request budget before a live run.
+The complete gate never calls the model endpoint. Its dependency audit may query a public vulnerability service; a report produced with `--skip-dependency-audit` is diagnostic only and cannot authorize a formal release. `python verify_math.py` is a safe dry-run. Do not pass `--execute`, or run `main.py`/`demo.py` against the real endpoint, unless the user authorizes quota/cost. State the planned request budget before a live run.
+
+For delivery, run the complete gate on a clean commit and then `python -m scripts.build_release`. A dirty workspace may use `--allow-dirty` only for a draft. Never convert a draft to formal status or expand the archive allowlist to include `.env`, outputs, private datasets, caches, or virtual environments.
 
 ## Keep documentation aligned
 

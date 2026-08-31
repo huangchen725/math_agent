@@ -2,6 +2,19 @@
 addopts = "-ra"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+relative_files = true
+omit = [
+    ".venv/*",
+    "*/.venv/*",
+    "tests/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100

@@ -18,7 +18,7 @@ ReasoningAgent(client).solve(problem, metadata)
 
 ## 环境与安装
 
-要求 Python 3.10+。先创建虚拟环境：
+核心 Agent 与开发工具要求 Python 3.10+；可选 Gradio Demo 要求 Python 3.12+，以使用已修复已知漏洞的界面依赖。先创建虚拟环境：
 
 ```bash
 python -m venv .venv
@@ -28,22 +28,24 @@ Linux/macOS：
 
 ```bash
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
 Windows PowerShell：
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 ```
 
-开发检查和 Gradio 演示分别使用：
+开发检查和 Gradio 演示分别使用各自的哈希锁；安装 Demo 锁时请确认解释器为 3.12+：
 
 ```bash
-python -m pip install -r requirements-dev.txt
-python -m pip install -r requirements-demo.txt
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install --require-hashes -r requirements-demo.lock
 ```
+
+`requirements*.txt` 是维护者调整直接依赖时使用的输入规格；日常安装、CI 和正式交付均使用精确版本与 SHA-256 齐全的 `requirements*.lock`。
 
 ## 配置
 
@@ -80,12 +82,22 @@ python demo.py
 
 ## 验证
 
-默认检查不访问外部 API：
+完整质量门禁不会调用模型 API：
+
+```bash
+python -m scripts.run_quality_gates
+```
+
+该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
+
+迭代时仍可单独运行：
 
 ```bash
 python -m pytest -q
-python -m compileall -q .
+python -m compileall -q math_agent evaluation scripts tests main.py demo.py user_agent.py verify_math.py
 python -m ruff check .
+python -m scripts.check_secrets --include-untracked
+python -m scripts.check_markdown_links
 ```
 
 对本地 JSONL 题集做题量、领域分布、来源字段、内部重复和 prompt/sample 重合审计，同样不会访问 API：
@@ -139,6 +151,25 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 
 在线模式会产生真实调用、费用和限流影响。
 
+## 可复现交付
+
+正式交付包只能从干净 Git 提交生成，并要求同一提交已经通过含依赖审计的完整质量门禁：
+
+```bash
+python -m scripts.run_quality_gates
+python -m scripts.build_release --output-dir dist
+```
+
+正式包直接读取当前提交中的 Git blob，固定 ZIP 条目顺序、时间戳和权限，并附带 `release-manifest.json`、精简质量报告、全部文件 SHA-256 和压缩包 `.sha256`。路径白名单、Git 忽略规则、单文件/总大小限制和二次敏感信息扫描会阻止本地密钥、运行输出、二进制伪装、无法完整扫描或意外过大的文件进入包；嵌入的质量报告也单独扫描。
+
+开发中的脏工作树只能显式生成标记为 `draft` 的预览包，不能冒充正式产物：
+
+```bash
+python -m scripts.build_release --allow-dirty --output-dir dist
+```
+
+项目代码当前采用保守的“保留所有权利”声明，不等同于开源授权；第三方依赖和数据仍服从各自许可，边界见 [LICENSE](LICENSE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## 目录
 
 ```text
@@ -181,14 +212,20 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 │   └── io_utils.py            # 共享 JSON/JSONL、哈希与原子写入
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
+├── scripts/                   # 质量门禁、密钥/链接检查和确定性打包
+├── .github/                   # SHA 固定的 CI 与依赖更新配置
 ├── .agents/skills/            # 仓库级 Codex skill
 ├── docs/                      # 审计与优化路线
+├── requirements*.lock         # 精确版本与制品哈希锁
+├── LICENSE                    # 项目代码许可边界
+├── THIRD_PARTY_NOTICES.md     # 第三方依赖与数据边界
 └── ARCHITECTURE.md            # 唯一架构文档
 ```
 
 ## 安全与协作
 
 - 不提交 `.env`、token、私有题集或包含敏感题面的运行输出。
+- 提交前运行包含未跟踪且未忽略文件的敏感信息扫描；正式交付包会再次扫描自身白名单内容。
 - 模型产生的工具参数始终按不可信输入处理，必须保留解析白名单和资源边界。
 - 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
 - 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
