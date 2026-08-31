@@ -12,4 +12,4 @@ exceptiongroup>=1
 importlib-metadata>=4.6
 
 # Bandit dependency: 5.9+ requires Python 3.11, while this project supports 3.10.
-stevedore<5.9
+stevedore<5.10
