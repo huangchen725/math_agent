@@ -7,5 +7,9 @@ bandit>=1.8.0
 pip-audit>=2.7.0
 pip-tools>=7.4.0
 
+# Python 3.10-only dependency branches omitted when the shared lock is compiled on 3.12.
+exceptiongroup>=1
+importlib-metadata>=4.6
+
 # Bandit dependency: 5.9+ requires Python 3.11, while this project supports 3.10.
 stevedore<5.9

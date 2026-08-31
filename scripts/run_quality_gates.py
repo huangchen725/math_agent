@@ -81,6 +81,20 @@ def build_checks(
                 "verify_math.py",
             ],
         ),
+        (
+            "dev_lock_py310_closure",
+            [
+                python,
+                "-m",
+                "scripts.check_lock_closure",
+                "--lock",
+                "requirements-dev.lock",
+                "--python-version",
+                "3.10",
+                "--platform",
+                "linux",
+            ],
+        ),
         ("pip_check", [python, "-m", "pip", "check"]),
         (
             "secret_scan",

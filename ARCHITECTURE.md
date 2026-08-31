@@ -190,7 +190,7 @@ P1 只改变“严格计划存在且获得一致确定性通过证据”时的�
 python -m scripts.run_quality_gates
 ```
 
-测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。完整门禁还执行 70% 语句覆盖率阈值、Ruff、compileall、Bandit、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run 和所有正式 CLI 的帮助入口。漏洞审计会访问公开漏洞数据库，但不会访问模型端点；跳过它生成的报告不能授权正式包。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O，不允许通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、预算、工具、客户端、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。完整门禁还执行 70% 语句覆盖率阈值、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run 和所有正式 CLI 的帮助入口。漏洞审计会访问公开漏洞数据库，但不会访问模型端点；跳过它生成的报告不能授权正式包。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O，不允许通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 
@@ -198,7 +198,7 @@ python -m scripts.run_quality_gates
 
 ## 10. 质量、供应链与交付边界
 
-`requirements.txt`、`requirements-dev.txt` 和 `requirements-demo.txt` 只描述维护者选择的直接依赖范围；与之对应的三个 `.lock` 文件记录完整传递依赖、精确版本和允许制品的 SHA-256。核心运行时和开发工具支持 Python 3.10+；可选 Demo 使用 Python 3.12+，因为修复已知漏洞的 Pillow 版本不再支持 3.10/3.11，不能为扩大可选界面兼容范围而锁回已知脆弱版本。运行安装、CI 和交付验证必须使用 `pip install --require-hashes`，变更任一输入规格后必须重新生成并验证受影响的锁，不能手工删减哈希来绕过解析冲突。
+`requirements.txt`、`requirements-dev.txt` 和 `requirements-demo.txt` 只描述维护者选择的直接依赖范围；与之对应的三个 `.lock` 文件记录完整传递依赖、精确版本和允许制品的 SHA-256。核心运行时和开发工具支持 Python 3.10+；共享开发锁在 Python 3.12 生成时必须显式纳入只在 3.10 生效的条件依赖，并由最低版本真实安装和目标环境元数据闭包共同验证。可选 Demo 使用 Python 3.12+，因为修复已知漏洞的 Pillow 版本不再支持 3.10/3.11，不能为扩大可选界面兼容范围而锁回已知脆弱版本。运行安装、CI 和交付验证必须使用 `pip install --require-hashes`，变更任一输入规格后必须重新生成并验证受影响的锁，不能手工删减哈希来绕过解析冲突。
 
 `scripts.run_quality_gates` 是唯一完整质量入口。它按固定清单执行各项检查，即使某项失败也继续诊断，并把命令参数、返回码、耗时和有界输出尾部写入 `.quality/quality-report.json`；报告同时保存检查前后的 commit、tree、分支和工作树状态。报告不保存 API key、题面或完整模型响应。CI 只授予 `contents: read`，第三方 Action 固定到完整提交 SHA，关闭 checkout 凭据持久化，并在 Python 3.10 与 3.12 上验证。CI 与默认测试均不允许 `--execute`、`main.py` 求解或启动 Demo。
 

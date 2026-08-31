@@ -540,15 +540,17 @@ S3/S4 没有加入 CI、许可证、依赖锁文件或发布包；这些仍属�
 
 ## 22. S5 质量门禁、CI 与供应链
 
-2026-08-31 完成 S5。运行、开发和可选 Gradio Demo 分别保留可读的 `requirements*.txt` 输入规格，并新增包含完整传递依赖、精确版本和 SHA-256 制品哈希的 `requirements*.lock`。三套锁均已在全新 Python 3.12 隔离环境中使用 `pip install --require-hashes` 成功安装；运行时与 Demo 核心导入通过，三个环境 `pip check` 无冲突。另以 CPython 3.10、manylinux2014 x86-64 为目标对运行/开发锁执行哈希干运行，均完整解析通过。诊断发现开发锁的 stevedore 5.9 已取消 Python 3.10 支持，现约束为 5.8；同时确认 Demo 若为兼容 Python 3.10/3.11 而降级 Pillow，会重新引入已知漏洞，因此明确把可选 Demo 最低版本设为 Python 3.12，而不是保留脆弱依赖。CI 使用开发锁，不再根据最低版本范围临时解析不同依赖图。
+2026-08-31 完成 S5。运行、开发和可选 Gradio Demo 分别保留可读的 `requirements*.txt` 输入规格，并新增包含完整传递依赖、精确版本和 SHA-256 制品哈希的 `requirements*.lock`。三套锁均已在全新 Python 3.12 隔离环境中使用 `pip install --require-hashes` 成功安装；运行时与 Demo 核心导入通过，三个环境 `pip check` 无冲突。诊断发现开发锁的 stevedore 5.9 已取消 Python 3.10 支持，现约束为 5.8；同时确认 Demo 若为兼容 Python 3.10/3.11 而降级 Pillow，会重新引入已知漏洞，因此明确把可选 Demo 最低版本设为 Python 3.12，而不是保留脆弱依赖。CI 使用开发锁，不再根据最低版本范围临时解析不同依赖图。
 
-新增 `scripts.run_quality_gates` 作为唯一完整质量入口，顺序执行 pytest/coverage、Ruff、compileall、Bandit、`pip check`、三套依赖锁的 `pip-audit`、敏感信息扫描、Markdown 本地链接、few-shot dry-run、runner 帮助和 9 个评测模块帮助入口。某一检查失败后其余诊断仍继续，最终生成 schema version 1 的 `.quality/quality-report.json`，记录 Git 前后快照、返回码、耗时和脱敏后的有界输出。敏感信息检查覆盖 Git 已跟踪及非忽略的未跟踪文件，只报告位置与类型，不回显命中的值。
+首次远程矩阵运行进一步暴露了跨解释器锁生成缺陷：开发锁在 Python 3.12 生成，遗漏了 pytest 只在 Python `<3.11` 激活的 `exceptiongroup`，因此 Python 3.10 在 `--require-hashes` 安装阶段正确拒绝了未固定依赖，而 Python 3.12 全流程成功。此前以 `pip --python-version 3.10` 执行的交叉干运行只验证制品标签与 `Requires-Python`，没有可靠替代真实解释器上的 marker 求值。修复后把 exceptiongroup 和 Python 3.10.0/3.10.1 所需的 importlib-metadata 显式纳入开发输入及哈希锁，并新增 `scripts.check_lock_closure`，用已安装发行版元数据针对 Python 3.10/Linux 重新求值所有活动依赖及版本约束；最终又在官方 Python 3.10.11 隔离环境完成真实哈希安装、`pip check` 和专项测试。
+
+新增 `scripts.run_quality_gates` 作为唯一完整质量入口，顺序执行 pytest/coverage、Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包、`pip check`、三套依赖锁的 `pip-audit`、敏感信息扫描、Markdown 本地链接、few-shot dry-run、runner 帮助和 9 个评测模块帮助入口。某一检查失败后其余诊断仍继续，最终生成 schema version 1 的 `.quality/quality-report.json`，记录 Git 前后快照、返回码、耗时和脱敏后的有界输出。敏感信息检查覆盖 Git 已跟踪及非忽略的未跟踪文件，只报告位置与类型，不回显命中的值。
 
 `.github/workflows/offline-quality.yml` 在 Python 3.10/3.12 上安装哈希锁并运行完整门禁与正式打包验证；全局权限限制为 `contents: read`，checkout 不保留凭据，`actions/checkout` 与 `actions/setup-python` 固定到完整提交 SHA。Dependabot 每月检查 pip 与 GitHub Actions 更新。CI 不运行 `--execute`、真实 runner 或 Demo；`pip-audit` 查询公开漏洞数据库是唯一网络型检查。
 
-本地完整门禁最终结果为 19/19 检查通过：171 项测试全部通过，语句覆盖率 77.30%，高于 70% 门槛；Ruff、compileall、Bandit、`pip check` 通过；运行、开发和 Demo 三套锁均未发现已知漏洞；114 个已跟踪/非忽略未跟踪文件的严格敏感模式扫描和 17 份 Markdown 本地链接检查通过；所有非模型入口通过。门禁诊断过程中发现并修复两个集成问题：跨权限执行使用系统临时目录导致测试不可写，现统一进入忽略的 `.quality/tmp`；PutnamBench 源文件位于其他 Git 工作树内部但未被跟踪时曾错误继承父仓库 commit，现只有 `git ls-files` 确认源文件已被该仓库跟踪才采信 commit。
+修复后的 Python 3.10 与 3.12 本地完整门禁均为 20/20 检查通过：173 项测试全部通过，语句覆盖率 76.56%，高于 70% 门槛；Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包和 `pip check` 通过；运行、开发和 Demo 三套锁均未发现已知漏洞；115 个已跟踪/非忽略未跟踪文件的严格敏感模式扫描和 17 份 Markdown 本地链接检查通过；所有非模型入口通过。门禁诊断过程中还发现并修复两个集成问题：跨权限执行使用系统临时目录导致测试不可写，现统一进入忽略的 `.quality/tmp`；PutnamBench 源文件位于其他 Git 工作树内部但未被跟踪时曾错误继承父仓库 commit，现只有 `git ls-files` 确认源文件已被该仓库跟踪才采信 commit。
 
-这些结果证明非模型工程门禁、依赖可安装性和当前已知漏洞查询通过，不构成线上 API、数学正确率或远程 CI 已运行的证据。本工作树尚未提交，因此远程 CI 只能在后续提交/推送后确认。
+这些结果证明非模型工程门禁、依赖可安装性和当前已知漏洞查询通过，不构成线上 API 或数学正确率证据。远程 CI 必须在每次提交/推送后单独确认；首轮矩阵结果已经作为上述 Python 3.10 锁缺陷的发现证据，修复后仍须以新的远程运行收口。
 
 ## 23. S6 许可证、质量证据与可复现交付
 
@@ -558,4 +560,4 @@ S3/S4 没有加入 CI、许可证、依赖锁文件或发布包；这些仍属�
 
 脏工作树只能用 `--allow-dirty` 生成 `draft`，manifest 保留脏文件清单且不会被标成 formal。当前未提交工作树上的验收符合该规则：普通正式命令按预期拒绝；草稿包成功包含 114 个源文件和 2 个 release 元数据条目，三套锁均被记录，`.env`、`outputs/`、`.quality/`、`dist/` 和虚拟环境均未入包。以不同文件名连续构建两次得到相同 ZIP SHA-256。临时干净 Git 仓库测试另外验证了 formal 模式、Git blob 字节、质量证据拒绝、路径逃逸、secret 阻断和确定性。
 
-S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工具轮数、截断恢复、验证或聚合规则，也没有调用真实模型 API。要得到正式交付物仍需先提交本工作树，在该干净提交上重新运行完整门禁；这属于来源真实性约束，不应通过降低为 draft 绕过。
+S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工具轮数、截断恢复、验证或聚合规则，也没有调用真实模型 API。要得到正式交付物，必须在目标干净提交上重新运行完整门禁；这属于来源真实性约束，不应通过降低为 draft 绕过。

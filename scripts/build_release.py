@@ -92,6 +92,7 @@ REQUIRED_RELEASE_FILES = {
 REQUIRED_QUALITY_CHECKS = {
     "bandit",
     "compileall",
+    "dev_lock_py310_closure",
     "fewshot_dry_run",
     "markdown_links",
     "pip_audit",

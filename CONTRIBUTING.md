@@ -16,7 +16,7 @@ python -m pip install --require-hashes -r requirements-dev.lock
 - 每次改动解决一个可说明、可验证的问题。
 - 不把 API key、`.env`、私有数据集、运行输出或个人信息加入提交。
 - 不在同一次实验中同时修改候选数、温度、token 预算与 prompt。
-- 新增或升级依赖时先更新对应 `requirements*.txt`，再用 `pip-compile --generate-hashes --strip-extras` 重新生成受影响的 `.lock`，并在全新环境用 `--require-hashes` 验证安装；不要手工编辑锁内版本或哈希。
+- 新增或升级依赖时先更新对应 `requirements*.txt`，再用 `pip-compile --generate-hashes --strip-extras` 重新生成受影响的 `.lock`，并在全新环境用 `--require-hashes` 验证安装；共享锁必须在最低支持 Python 上真实安装，不能只依赖另一解释器的 `--python-version` 干运行。不要手工编辑锁内版本或哈希。
 - 修复缺陷时优先在现有测试文件中补回归测试；只有没有自然归属时才新建测试文件。
 - 不把真实 API 调用放进默认测试。
 

@@ -24,7 +24,7 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Keep `agent.py` limited to lifecycle, validation, error containment, and compatibility delegates. Route, generate, evaluate, recover, select, and format through their focused modules instead of adding stage logic back to the Agent class.
 - Keep `math_tools.py` as a compatibility facade. Put restricted parsing, concrete tools, registry/dispatch, and the tool-calling loop in `math_parsing.py`, `tool_implementations.py`, `tool_registry.py`, and `tool_loop.py` respectively.
 - Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
-- Treat `requirements*.txt` as dependency inputs and `requirements*.lock` as installation artifacts. Regenerate exact versions and SHA-256 hashes together, and never relax `--require-hashes` to hide a resolution problem.
+- Treat `requirements*.txt` as dependency inputs and `requirements*.lock` as installation artifacts. Regenerate exact versions and SHA-256 hashes together, explicitly retain dependencies conditional on another supported Python minor, and verify shared locks with the lowest supported real interpreter plus `scripts.check_lock_closure`. Never relax `--require-hashes` to hide a resolution problem.
 - Preserve the complete quality-check list, coverage floor, secret/link checks, SHA-pinned CI actions, release path/size allowlists, and clean-commit provenance checks.
 
 ## Make changes from evidence

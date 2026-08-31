@@ -88,7 +88,7 @@ python demo.py
 python -m scripts.run_quality_gates
 ```
 
-该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
+该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
 
 迭代时仍可单独运行：
 

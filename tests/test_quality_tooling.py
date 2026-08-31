@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from scripts.check_markdown_links import check_markdown_links
+from scripts.check_lock_closure import check_requirement_closure, target_environment
 from scripts.check_secrets import MAX_SCANNED_FILE_BYTES, candidate_files, scan_paths
 from scripts.run_quality_gates import build_checks, execute_check
 
@@ -122,7 +123,15 @@ def test_all_dependency_locks_are_exact_and_hashed() -> None:
     development_packages = _locked_packages(development)
     demo_packages = _locked_packages(demo)
     assert {"requests", "python-dotenv", "sympy"} <= runtime_packages
-    assert {"pytest", "pytest-cov", "ruff", "bandit", "pip-audit", "pip-tools"} <= development_packages
+    assert {
+        "pytest",
+        "pytest-cov",
+        "ruff",
+        "bandit",
+        "pip-audit",
+        "pip-tools",
+        "exceptiongroup",
+    } <= development_packages
     assert {"gradio", "requests", "python-dotenv", "sympy"} <= demo_packages
     assert _locked_versions(development)["stevedore"] == "5.8.0"
     for path in (runtime, development, demo):
@@ -149,6 +158,13 @@ def test_ci_actions_are_sha_pinned_and_read_only() -> None:
     assert "scripts.build_release" in workflow
 
 
+def test_coverage_ignores_local_quality_environments() -> None:
+    configuration = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '".quality/*"' in configuration
+    assert '"*/.quality/*"' in configuration
+
+
 def test_quality_gate_covers_required_offline_checks_without_live_api(tmp_path: Path) -> None:
     checks = build_checks(sys.executable, quality_dir=tmp_path)
     names = {name for name, _ in checks}
@@ -159,6 +175,7 @@ def test_quality_gate_covers_required_offline_checks_without_live_api(tmp_path: 
         "ruff",
         "compileall",
         "bandit",
+        "dev_lock_py310_closure",
         "pip_check",
         "pip_audit",
         "secret_scan",
@@ -181,6 +198,31 @@ def test_quality_gate_covers_required_offline_checks_without_live_api(tmp_path: 
         quality_dir=tmp_path,
         include_dependency_audit=False,
     ) if name == "pip_audit"] == []
+
+
+def test_lock_closure_evaluates_dependencies_for_target_python() -> None:
+    requirements = {
+        "pytest": [
+            'exceptiongroup>=1; python_version < "3.11"',
+            'tomli>=1; python_version < "3.11"',
+        ]
+    }
+
+    missing_on_310 = check_requirement_closure(
+        {"pytest": "9.1.1", "tomli": "2.4.1"},
+        requirements,
+        target_environment("3.10", "linux"),
+    )
+    missing_on_312 = check_requirement_closure(
+        {"pytest": "9.1.1", "tomli": "2.4.1"},
+        requirements,
+        target_environment("3.12", "linux"),
+    )
+
+    assert missing_on_310 == [
+        "pytest: active dependency exceptiongroup is missing from lock"
+    ]
+    assert missing_on_312 == []
 
 
 def test_execute_check_records_failure_without_shell(tmp_path: Path) -> None:
