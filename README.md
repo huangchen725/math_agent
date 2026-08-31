@@ -59,8 +59,11 @@ Copy-Item .env.example .env
 | --- | --- | --- | --- |
 | `INTERN_API_KEY` | 是 | 无 | Intern API token |
 | `INTERN_API_BASE` | 否 | 官方 Chat Completions 地址 | OpenAI 兼容端点 |
-| `INTERN_MODEL` | 否 | `intern-s2-preview` | 模型名 |
+| `INTERN_MODEL` | 否 | `intern-s1` | 正式参赛模型 |
+| `COMPETITION_MODE` | 否 | `1` | 参赛合规模式；拒绝非 S1 模型 |
 | `LOCAL_MAX_CONCURRENCY` | 否 | `3` | 本地并发，必须为正整数 |
+
+自有 HTTP 客户端只接受赛事官方 Intern API 地址。`COMPETITION_MODE=0` 仅用于明确标记的本地非提交实验，不能放宽端点限制，也不能让非 S1 模型进入 formal 交付包。赛事红线、手册哈希和正式操作清单见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
 ## 运行
 
@@ -88,7 +91,7 @@ python demo.py
 python -m scripts.run_quality_gates
 ```
 
-该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
+该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规门禁、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。合规门禁验证正式模型和端点、运行时网络入口、参考答案字段隔离、JSON 输出契约与发布排除项，不调用模型 API。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
 
 迭代时仍可单独运行：
 
@@ -110,9 +113,9 @@ python -m evaluation.data.generate_internal_benchmark --output outputs/private-e
 python -m evaluation.scoring.score_run outputs/private-eval/benchmark.jsonl outputs/private-eval/run --report outputs/private-eval/score.json --review outputs/private-eval/review.jsonl
 ```
 
-审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
+审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [2026-08-29 隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)，后续 112/112 请求前失败见 [2026-08-31 运行时故障复盘](docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
-下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。主要离线入口为：
+下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。下方冻结命令中的 `intern-s2-preview` 只复现既有历史实验，不得作为正式参赛配置：
 
 ```bash
 python -m evaluation.data.import_putnam_bench path/to/PutnamBench/informal/putnam.json --source-commit COMMIT --output outputs/ability/benchmark.jsonl --manifest outputs/ability/source.json --recent-count 36
@@ -160,7 +163,7 @@ python -m scripts.run_quality_gates
 python -m scripts.build_release --output-dir dist
 ```
 
-正式包直接读取当前提交中的 Git blob，固定 ZIP 条目顺序、时间戳和权限，并附带 `release-manifest.json`、精简质量报告、全部文件 SHA-256 和压缩包 `.sha256`。路径白名单、Git 忽略规则、单文件/总大小限制和二次敏感信息扫描会阻止本地密钥、运行输出、二进制伪装、无法完整扫描或意外过大的文件进入包；嵌入的质量报告也单独扫描。
+正式包直接读取当前提交中的 Git blob，固定 ZIP 条目顺序、时间戳和权限，并附带 `release-manifest.json`、精简质量报告、手册哈希、正式模型匹配状态、全部文件 SHA-256 和压缩包 `.sha256`。formal 包只接受 `intern-s1`；非 S1 只能生成明确标记的 draft 实验包。路径白名单、Git 忽略规则、单文件/总大小限制和二次敏感信息扫描会阻止本地密钥、运行输出、二进制伪装、无法完整扫描或意外过大的文件进入包；嵌入的质量报告也单独扫描。
 
 开发中的脏工作树只能显式生成标记为 `draft` 的预览包，不能冒充正式产物：
 
@@ -178,6 +181,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 ├── math_agent/                # 唯一运行时实现包
 │   ├── agent.py               # ReasoningAgent 生命周期与兼容层
 │   ├── agent_config.py        # 固定策略与预算配置
+│   ├── competition_policy.py  # 正式模型、官方端点与参赛模式校验
 │   ├── agent_prompts.py       # 流水线提示词
 │   ├── agent_types.py         # 调用、候选、答案与验证类型
 │   ├── answer_equivalence.py  # 保守答案归一化与等价判断
@@ -212,7 +216,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 │   └── io_utils.py            # 共享 JSON/JSONL、哈希与原子写入
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
-├── scripts/                   # 质量门禁、密钥/链接检查和确定性打包
+├── scripts/                   # 质量/合规门禁、密钥/链接检查和确定性打包
 ├── .github/                   # SHA 固定的 CI 与依赖更新配置
 ├── .agents/skills/            # 仓库级 Codex skill
 ├── docs/                      # 审计与优化路线

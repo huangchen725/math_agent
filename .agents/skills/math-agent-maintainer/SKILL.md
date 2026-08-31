@@ -26,6 +26,7 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
 - Treat `requirements*.txt` as dependency inputs and `requirements*.lock` as installation artifacts. Regenerate exact versions and SHA-256 hashes together, explicitly retain dependencies conditional on another supported Python minor, and verify shared locks with the lowest supported real interpreter plus `scripts.check_lock_closure`. Never relax `--require-hashes` to hide a resolution problem.
 - Preserve the complete quality-check list, coverage floor, secret/link checks, SHA-pinned CI actions, release path/size allowlists, and clean-commit provenance checks.
+- Read `docs/COMPETITION_COMPLIANCE.md` for competition-facing work. Formal runs and packages use `intern-s1`, the official injected client or official Intern endpoint, and local bounded tools. Never add per-question answer overrides, forward dataset answer/reference fields to the Agent, treat manually filled checkpoints as model output, rewrite source logs, or add an unauthorized external solving service. Non-S1 work must be explicitly marked as a non-submission experiment and may produce only draft artifacts.
 
 ## Make changes from evidence
 

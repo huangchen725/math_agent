@@ -15,6 +15,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from math_agent import AgentConfig
+from math_agent.competition_policy import (
+    COMPETITION_MANUAL_SHA256,
+    FORMAL_COMPETITION_MODEL,
+)
 
 from .check_secrets import scan_paths
 from .project_utils import (
@@ -84,14 +88,18 @@ REQUIRED_RELEASE_FILES = {
     "ARCHITECTURE.md",
     "LICENSE",
     "README.md",
+    "docs/COMPETITION_COMPLIANCE.md",
     "math_agent/__init__.py",
+    "math_agent/competition_policy.py",
     "requirements-dev.lock",
     "requirements.lock",
+    "scripts/check_competition_compliance.py",
     "user_agent.py",
 }
 REQUIRED_QUALITY_CHECKS = {
     "bandit",
     "compileall",
+    "competition_compliance",
     "dev_lock_py310_closure",
     "fewshot_dry_run",
     "markdown_links",
@@ -258,6 +266,11 @@ def build_release_manifest(
         "status": "formal" if formal else "draft",
         "project": "XH-202627 math agent",
         "model": model,
+        "competition": {
+            "manual_sha256": COMPETITION_MANUAL_SHA256,
+            "formal_model_required": FORMAL_COMPETITION_MODEL,
+            "formal_model_match": model == FORMAL_COMPETITION_MODEL,
+        },
         "source": snapshot,
         "source_date_epoch": snapshot["commit_timestamp"],
         "agent_config": config,
@@ -344,6 +357,10 @@ def build_release(
     formal = snapshot["worktree_clean"] and not allow_dirty
     if not snapshot["worktree_clean"] and not allow_dirty:
         raise ReleaseError("formal release requires a clean Git worktree")
+    if formal and model != FORMAL_COMPETITION_MODEL:
+        raise ReleaseError(
+            f"formal competition release requires model {FORMAL_COMPETITION_MODEL}"
+        )
     files = collect_release_files(root, include_untracked=allow_dirty)
     secret_findings = scan_paths(root, files.values(), fail_unscannable=True)
     if secret_findings:
@@ -387,7 +404,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=PROJECT_ROOT / ".quality" / "quality-report.json",
     )
-    parser.add_argument("--model", default="intern-s2-preview")
+    parser.add_argument("--model", default=FORMAL_COMPETITION_MODEL)
     parser.add_argument("--name")
     parser.add_argument(
         "--allow-dirty",

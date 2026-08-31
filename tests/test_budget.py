@@ -5,6 +5,8 @@ from user_agent import AgentConfig, ReasoningAgent
 
 
 class TextClient:
+    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
     def __init__(self):
         self.calls = 0
 

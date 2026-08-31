@@ -561,3 +561,21 @@ S3/S4 没有加入 CI、许可证、依赖锁文件或发布包；这些仍属�
 脏工作树只能用 `--allow-dirty` 生成 `draft`，manifest 保留脏文件清单且不会被标成 formal。当前未提交工作树上的验收符合该规则：普通正式命令按预期拒绝；草稿包成功包含 114 个源文件和 2 个 release 元数据条目，三套锁均被记录，`.env`、`outputs/`、`.quality/`、`dist/` 和虚拟环境均未入包。以不同文件名连续构建两次得到相同 ZIP SHA-256。临时干净 Git 仓库测试另外验证了 formal 模式、Git blob 字节、质量证据拒绝、路径逃逸、secret 阻断和确定性。
 
 S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工具轮数、截断恢复、验证或聚合规则，也没有调用真实模型 API。要得到正式交付物，必须在目标干净提交上重新运行完整门禁；这属于来源真实性约束，不应通过降低为 draft 绕过。
+
+## 24. 2026-08-31 隐藏集运行时故障与客户端兼容修复
+
+隐藏集评测实际拉取 `70ac53f` 后得到 0 success、112 error、112 invalid，官方 client 同时记录 0 request、0 attempt、0 token。该轮不是数学正确率 0%，而是全部题目在模型请求前失败；runner completed 和 0 infrastructure error 仅表示失败记录被完整收集。
+
+回归定位到 S2 `ModelGateway` 对注入客户端私有能力的结构探测：竞赛只公开保证 `client.chat(...)`，旧版也只调用该接口；S2 却会优先调用任何同名 `chat_with_metadata()` 并强制项目自定义返回结构。当前修复改为协议显式 opt-in：只有自有 `InternChatClient` 声明 `math-agent.atomic-metadata.v1` 才走原子元数据接口，平台注入客户端无条件保持公开 `chat()` 路径。没有恢复 ContextVar、最近响应 getter 或模型调用旁路。
+
+专项 fake client 已复现修复前请求前 `TypeError`，修复后同一形态正常完成公开 `chat()`；网关级和完整 `ReasoningAgent.solve()` 回归均要求同名未声明私有方法不得被调用。验证期间还修复了跨 Windows 权限主体遗留的共享 pytest 临时目录污染，以及漏洞审计默认用户缓存不可写：每个检查现在使用独立项目内临时子目录，审计缓存固定在忽略的 `.quality/`。最终完整门禁 20/20 通过，175 项测试通过、语句覆盖率 76.57%，三套锁未发现已知漏洞。完整证据、边界和下次门禁见 `docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md`。本次修复只恢复平台兼容性，不构成数学能力提升证据，也不调用真实 API。
+
+## 25. 赛事手册合规复核与失败关闭门禁
+
+2026-08-31 对用户提供的 13 页 XH-202627 赛事手册完成逐页文字与版面核验，源文件 SHA-256 为 `ece081cd4a0c4f496943b3e3c7d79716d8ffd1d9a6249e11bb3ed5c4a39902d7`。手册明确禁止人工逐题干预、赛后补填、伪造日志和未经允许的外部闭源服务代答，并要求可解析 JSON；同时题目和资源说明均指向 Intern-S1。此前项目默认、`.env.example`、提交说明和正式打包默认值仍为 `intern-s2-preview`，虽然它来自既有开发实验和官方 baseline 的模型选择说明，但没有主办方书面答复足以覆盖本手册要求，因此按 P0 合规阻断处理。
+
+当前修复把正式/默认模型改为 `intern-s1`，新增默认开启的 `COMPETITION_MODE`。参赛模式拒绝非 S1；关闭模式只允许明确标记的本地非提交实验。自有 HTTP 客户端无论模式都只接受官方 Intern HTTPS Chat Completions 地址。formal 发布器再次校验模型必须为 S1，并在 manifest 中保存手册哈希、要求模型和匹配状态；非 S1 只能得到 draft。历史 S2 报告不改写，只补充“开发实验、不能替代正式授权”的边界。
+
+新增 `scripts.check_competition_compliance` 离线门禁，扫描运行时网络依赖和 URL，以含参考答案哨兵的记录验证 runner 只向 Agent 传 `problem` 与 `idx`，验证输出 JSON 与唯一末行答案，并确认 `.env`、运行结果、质量缓存和发布产物不会回流源码包。该检查加入完整质量报告和 formal 发布必需检查。详细红线、工程映射、正式运行步骤和提交前四眼核对见 `docs/COMPETITION_COMPLIANCE.md`。
+
+代码可以阻止常见误配置并留下哈希证据，但不能证明操作者从未在代码外逐题干预，也不能自行授权 S2 或第三方服务。正式流程仍必须使用全新输出目录、保存平台原始日志、禁止原地修改结果，并归档任何主办方书面许可；没有可验证许可时继续使用最保守配置。

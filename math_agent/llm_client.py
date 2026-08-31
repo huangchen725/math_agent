@@ -5,9 +5,17 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 
 import requests
 
+from .competition_policy import (
+    FORMAL_COMPETITION_MODEL,
+    OFFICIAL_API_BASE,
+    competition_mode_enabled,
+    validate_official_api_base,
+    validate_runtime_model,
+)
 
-DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
-DEFAULT_MODEL = "intern-s2-preview"
+
+DEFAULT_API_BASE = OFFICIAL_API_BASE
+DEFAULT_MODEL = FORMAL_COMPETITION_MODEL
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 4096
 _RATE_LIMIT_CODES = {"rate_limit_error", "rate_limit_exceeded", "too_many_requests"}
@@ -27,6 +35,10 @@ ChatResponse = Union[str, ChatMessage]
 class InternChatClient:
     """Small OpenAI-compatible chat client for the competition sample."""
 
+    # Opt in to ModelGateway's project-private atomic metadata protocol.
+    # Injected competition clients remain on their guaranteed ``chat`` API.
+    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
     def __init__(
         self,
         timeout: int = 120,
@@ -44,8 +56,14 @@ class InternChatClient:
         self.authorization = (
             raw_api_key if raw_api_key.startswith("Bearer ") else f"Bearer {raw_api_key}"
         )
-        self.api_base = os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
-        self.model = os.environ.get("INTERN_MODEL", DEFAULT_MODEL)
+        self.competition_mode = competition_mode_enabled()
+        self.api_base = validate_official_api_base(
+            os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
+        )
+        self.model = validate_runtime_model(
+            os.environ.get("INTERN_MODEL", DEFAULT_MODEL),
+            competition_mode=self.competition_mode,
+        )
         self.timeout = timeout
         self.retry = retry
         self.default_args = dict(default_args or {})

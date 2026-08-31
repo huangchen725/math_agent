@@ -111,6 +111,10 @@ def build_checks(
             "markdown_links",
             [python, "-m", "scripts.check_markdown_links", "--root", "."],
         ),
+        (
+            "competition_compliance",
+            [python, "-m", "scripts.check_competition_compliance", "--root", "."],
+        ),
         ("fewshot_dry_run", [python, "verify_math.py"]),
         ("runner_help", [python, "main.py", "--help"]),
     ]
@@ -129,6 +133,8 @@ def build_checks(
                     "pip_audit",
                     "--disable-pip",
                     "--no-deps",
+                    "--cache-dir",
+                    str(quality_dir / "pip-audit-cache"),
                     "--progress-spinner",
                     "off",
                     "-r",
@@ -173,7 +179,15 @@ def _reported_command(command: list[str], root: Path) -> list[str]:
 
 def execute_check(name: str, command: list[str], root: Path) -> dict[str, Any]:
     started = time.monotonic()
-    temporary_root = root / ".quality" / "tmp"
+    safe_name = "".join(
+        character if character.isalnum() or character in "-_" else "_"
+        for character in name
+    )[:64] or "check"
+    # A previous run may have been created by a different Windows security
+    # principal (for example CI/sandbox elevation). Keep each process/check in
+    # a fresh subtree so an inaccessible stale pytest base cannot poison later
+    # offline runs.
+    temporary_root = root / ".quality" / "tmp" / f"{os.getpid()}-{safe_name}"
     temporary_root.mkdir(parents=True, exist_ok=True)
     environment = {
         **os.environ,

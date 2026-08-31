@@ -42,6 +42,7 @@ RUNTIME_FILES = (
     "math_agent/__init__.py",
     "math_agent/agent.py",
     "math_agent/agent_config.py",
+    "math_agent/competition_policy.py",
     "math_agent/agent_prompts.py",
     "math_agent/agent_types.py",
     "math_agent/answer_equivalence.py",

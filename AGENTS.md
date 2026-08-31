@@ -20,12 +20,16 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Keep dependency inputs and locks paired: edit `requirements*.txt`, regenerate the affected `requirements*.lock` with exact versions and SHA-256 hashes, then validate installation with `--require-hashes`. A lock shared across Python minors must include target-only dependency markers and be installed by the lowest supported real interpreter; cross-target pip dry-runs alone are insufficient.
 - Do not remove required checks from `scripts/run_quality_gates.py`, weaken the coverage floor, broaden release file allowlists, or bypass the clean-commit/quality-report rules merely to make CI or packaging pass.
 - Formal release archives must come from Git blobs of a clean commit. Dirty workspaces may produce only explicitly marked draft archives.
+- Treat `docs/COMPETITION_COMPLIANCE.md` as the repository's competition-policy record. Formal competition runs use `intern-s1`, the official injected client or official Intern endpoint, and local bounded tools only.
+- Never add per-question human answer overrides, accept post-evaluation filled results as model output, fabricate or rewrite source logs, forward reference-answer fields to the Agent, or route solving through an unauthorized external closed service.
+- A non-S1 run must set `COMPETITION_MODE=0`, be labelled as a non-submission experiment, and remain in a draft artifact. Do not weaken the formal S1 or `competition_compliance` gates without archived written organizer authorization.
 
 ## Start of work
 
 1. Inspect `git status` and preserve unrelated user changes. In particular, submission documents and generated report artifacts may be under active editing.
 2. Read `README.md`. For architecture changes, also read `ARCHITECTURE.md` and the relevant current source files.
 3. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
+4. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and preserve its fail-closed model, endpoint, answer-isolation, logging, and release controls.
 
 ## Relevant files
 

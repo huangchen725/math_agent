@@ -10,6 +10,8 @@ from user_agent import AgentConfig, ReasoningAgent
 
 
 class SequenceClient:
+    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
@@ -234,6 +236,8 @@ def test_recovery_requests_obey_their_own_limit_and_shared_token_budget():
 
 
 class ConcurrentClient:
+    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
     def chat(self, **kwargs):
         response, _ = self.chat_with_metadata(**kwargs)
         return response

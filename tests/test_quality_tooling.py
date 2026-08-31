@@ -180,6 +180,7 @@ def test_quality_gate_covers_required_offline_checks_without_live_api(tmp_path: 
         "pip_audit",
         "secret_scan",
         "markdown_links",
+        "competition_compliance",
         "fewshot_dry_run",
         "runner_help",
     } <= names
@@ -193,6 +194,8 @@ def test_quality_gate_covers_required_offline_checks_without_live_api(tmp_path: 
         "requirements-dev.lock",
         "requirements-demo.lock",
     } <= set(audit_command)
+    cache_index = audit_command.index("--cache-dir") + 1
+    assert Path(audit_command[cache_index]) == tmp_path / "pip-audit-cache"
     assert [name for name, _ in build_checks(
         sys.executable,
         quality_dir=tmp_path,

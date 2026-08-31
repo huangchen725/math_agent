@@ -9,6 +9,9 @@ from .agent_types import ModelCallResult
 from .budget import ExecutionBudget
 
 
+_ATOMIC_METADATA_PROTOCOL = "math-agent.atomic-metadata.v1"
+
+
 class ModelGateway:
     """Bind an injected client to one optional per-problem execution budget."""
 
@@ -65,8 +68,17 @@ class ModelGateway:
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> tuple[Any, Mapping[str, Any]]:
-        chat_with_metadata = getattr(self.client, "chat_with_metadata", None)
-        if callable(chat_with_metadata):
+        metadata_protocol = getattr(
+            self.client,
+            "_math_agent_metadata_protocol",
+            None,
+        )
+        if metadata_protocol == _ATOMIC_METADATA_PROTOCOL:
+            chat_with_metadata = getattr(self.client, "chat_with_metadata", None)
+            if not callable(chat_with_metadata):
+                raise TypeError(
+                    "atomic metadata clients must provide chat_with_metadata"
+                )
             completed = chat_with_metadata(messages=messages, **kwargs)
             if not isinstance(completed, tuple) or len(completed) != 2:
                 raise TypeError("chat_with_metadata must return (response, metadata)")
@@ -76,4 +88,8 @@ class ModelGateway:
             if not isinstance(metadata, Mapping):
                 raise TypeError("chat_with_metadata metadata must be a mapping")
             return response, metadata
+
+        # The competition contract guarantees only ``client.chat``. Do not
+        # probe similarly named private methods on an injected platform client:
+        # their signature and return value are outside the public protocol.
         return self.client.chat(messages=messages, **kwargs), {}

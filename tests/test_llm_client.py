@@ -2,7 +2,15 @@ import pytest
 import requests
 
 from math_agent import llm_client
+from math_agent.competition_policy import FORMAL_COMPETITION_MODEL, OFFICIAL_API_BASE
 from math_agent.llm_client import InternChatClient
+
+
+@pytest.fixture(autouse=True)
+def _formal_client_environment(monkeypatch):
+    monkeypatch.setenv("COMPETITION_MODE", "1")
+    monkeypatch.setenv("INTERN_MODEL", FORMAL_COMPETITION_MODEL)
+    monkeypatch.setenv("INTERN_API_BASE", OFFICIAL_API_BASE)
 
 
 def _http_response(status: int, payload=None) -> requests.Response:
@@ -125,3 +133,31 @@ def test_client_rejects_competition_incompatible_options(monkeypatch, kwargs):
     client = InternChatClient(retry=1)
     with pytest.raises(ValueError):
         client.chat([{"role": "user", "content": "hello"}], **kwargs)
+
+
+def test_client_rejects_non_s1_model_in_default_competition_mode(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    monkeypatch.setenv("INTERN_MODEL", "intern-s2-preview")
+
+    with pytest.raises(RuntimeError, match="Competition mode permits only intern-s1"):
+        InternChatClient(retry=1)
+
+
+def test_client_allows_explicit_non_submission_model_experiment(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    monkeypatch.setenv("COMPETITION_MODE", "0")
+    monkeypatch.setenv("INTERN_MODEL", "intern-s2-preview")
+
+    client = InternChatClient(retry=1)
+
+    assert client.model == "intern-s2-preview"
+    assert client.competition_mode is False
+
+
+def test_client_rejects_non_official_api_base_even_for_experiments(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    monkeypatch.setenv("COMPETITION_MODE", "0")
+    monkeypatch.setenv("INTERN_API_BASE", "https://example.invalid/chat")
+
+    with pytest.raises(RuntimeError, match="official Intern API endpoint"):
+        InternChatClient(retry=1)

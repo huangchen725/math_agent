@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from math_agent.competition_policy import FORMAL_COMPETITION_MODEL
 from scripts.build_release import (
     REQUIRED_QUALITY_CHECKS,
     ReleaseError,
@@ -39,11 +40,14 @@ def _repository(tmp_path: Path) -> Path:
     files = {
         ".gitignore": ".quality/\ndist/\n",
         "ARCHITECTURE.md": "# Architecture\n",
+        "docs/COMPETITION_COMPLIANCE.md": "# Compliance\n",
         "LICENSE": "All rights reserved.\n",
         "README.md": "# Project\n",
         "math_agent/__init__.py": "class AgentConfig:\n    pass\n",
+        "math_agent/competition_policy.py": "FORMAL_COMPETITION_MODEL = 'intern-s1'\n",
         "requirements.lock": "sample==1.0 --hash=sha256:" + "a" * 64 + "\n",
         "requirements-dev.lock": "sample-dev==1.0 --hash=sha256:" + "b" * 64 + "\n",
+        "scripts/check_competition_compliance.py": "VALUE = 1\n",
         "user_agent.py": "VALUE = 1\n",
     }
     for relative, content in files.items():
@@ -84,14 +88,14 @@ def test_formal_release_is_deterministic_and_contains_provenance(tmp_path: Path)
         root,
         root / "dist",
         quality,
-        model="test-model",
+        model=FORMAL_COMPETITION_MODEL,
         name="first",
     )
     second, _, second_manifest = build_release(
         root,
         root / "dist",
         quality,
-        model="test-model",
+        model=FORMAL_COMPETITION_MODEL,
         name="second",
     )
 
@@ -119,13 +123,13 @@ def test_formal_release_refuses_dirty_tree_and_draft_is_marked(tmp_path: Path) -
     (root / "README.md").write_text("changed\n", encoding="utf-8")
 
     with pytest.raises(ReleaseError, match="clean Git worktree"):
-        build_release(root, root / "dist", quality, model="test-model")
+        build_release(root, root / "dist", quality, model=FORMAL_COMPETITION_MODEL)
 
     archive, _, manifest = build_release(
         root,
         root / "dist",
         quality,
-        model="test-model",
+        model=FORMAL_COMPETITION_MODEL,
         allow_dirty=True,
     )
     assert archive.is_file()
@@ -150,7 +154,7 @@ def test_formal_release_requires_complete_quality_evidence(tmp_path: Path) -> No
     )
 
     with pytest.raises(ReleaseError, match="dependency audit"):
-        build_release(root, root / "dist", quality, model="test-model")
+        build_release(root, root / "dist", quality, model=FORMAL_COMPETITION_MODEL)
 
 
 def test_draft_release_scans_untracked_source_for_secrets(tmp_path: Path) -> None:
@@ -167,7 +171,7 @@ def test_draft_release_scans_untracked_source_for_secrets(tmp_path: Path) -> Non
             root,
             root / "dist",
             quality,
-            model="test-model",
+            model=FORMAL_COMPETITION_MODEL,
             allow_dirty=True,
         )
     assert token not in str(error.value)
@@ -183,7 +187,7 @@ def test_draft_release_rejects_unscannable_source(tmp_path: Path) -> None:
             root,
             root / "dist",
             quality,
-            model="test-model",
+            model=FORMAL_COMPETITION_MODEL,
             allow_dirty=True,
         )
 
@@ -201,7 +205,7 @@ def test_draft_release_scans_embedded_quality_report(tmp_path: Path) -> None:
             root,
             root / "dist",
             quality,
-            model="test-model",
+            model=FORMAL_COMPETITION_MODEL,
             allow_dirty=True,
         )
     assert token not in str(error.value)
@@ -219,7 +223,7 @@ def test_draft_release_excludes_gitignored_source(tmp_path: Path) -> None:
         root,
         root / "dist",
         quality,
-        model="test-model",
+        model=FORMAL_COMPETITION_MODEL,
         allow_dirty=True,
     )
 
@@ -237,7 +241,7 @@ def test_release_rejects_external_quality_report(tmp_path: Path) -> None:
             root,
             root / "dist",
             external,
-            model="test-model",
+            model=FORMAL_COMPETITION_MODEL,
             allow_dirty=True,
         )
 
@@ -251,6 +255,24 @@ def test_release_name_cannot_escape_output_directory(tmp_path: Path) -> None:
             root,
             root / "dist",
             quality,
-            model="test-model",
+            model=FORMAL_COMPETITION_MODEL,
             name="../escape",
         )
+
+
+def test_formal_release_rejects_non_s1_model_but_draft_records_it(tmp_path: Path) -> None:
+    root = _repository(tmp_path)
+    quality = _quality_report(root)
+
+    with pytest.raises(ReleaseError, match="requires model intern-s1"):
+        build_release(root, root / "dist", quality, model="intern-s2-preview")
+
+    _, _, manifest = build_release(
+        root,
+        root / "dist",
+        quality,
+        model="intern-s2-preview",
+        allow_dirty=True,
+    )
+    assert manifest["status"] == "draft"
+    assert manifest["competition"]["formal_model_match"] is False

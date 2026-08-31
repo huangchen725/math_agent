@@ -73,3 +73,16 @@ def test_frozen_request_sequence_output_and_trace_contract() -> None:
     summary = result["trace"][-1]["content"]
     assert summary["model_requests"] == 2
     assert summary["recovery_requests"] == 0
+
+
+def test_agent_uses_only_the_injected_clients_public_chat_contract() -> None:
+    class OfficialLikeClient(RecordingClient):
+        def chat_with_metadata(self, **kwargs):
+            raise AssertionError("private platform extension must not be called")
+
+    client = OfficialLikeClient()
+
+    result = ReasoningAgent(client, _frozen_config()).solve("计算 2+2", {})
+
+    assert result["final_response"].splitlines()[-1] == "最终答案：4"
+    assert len(client.calls) == 2

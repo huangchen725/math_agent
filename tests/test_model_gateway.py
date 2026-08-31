@@ -8,6 +8,8 @@ from math_agent.model_gateway import ModelGateway
 
 
 class AtomicClient:
+    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
     def chat(self, **kwargs):
         response, _ = self.chat_with_metadata(**kwargs)
         return response
@@ -55,9 +57,33 @@ def test_gateway_supports_plain_chat_clients_without_metadata() -> None:
     assert result.finish_reason == ""
 
 
+def test_gateway_ignores_unadvertised_private_metadata_method() -> None:
+    class OfficialLikeClient:
+        def __init__(self) -> None:
+            self.chat_calls = 0
+
+        def chat(self, **kwargs):
+            self.chat_calls += 1
+            return "ok"
+
+        def chat_with_metadata(self, **kwargs):
+            raise AssertionError("private platform extension must not be called")
+
+    client = OfficialLikeClient()
+    result = ModelGateway(client).chat(
+        [{"role": "user", "content": "hello"}],
+        stage="policy_plain",
+    )
+
+    assert result.text == "ok"
+    assert client.chat_calls == 1
+
+
 @pytest.mark.parametrize("completed", ["bad", ("ok", []), ("ok", {}, "extra")])
 def test_gateway_rejects_invalid_atomic_client_contract(completed) -> None:
     class InvalidClient:
+        _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+
         def chat(self, **kwargs):
             return "unused"
 

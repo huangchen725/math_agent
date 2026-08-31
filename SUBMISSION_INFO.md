@@ -17,8 +17,8 @@
 - 最终 commit hash：（提交前运行 `git rev-parse HEAD` 后填写）
 
 ## 选用模型
-- 模型名称：intern-s2-preview（书生 Intern-S2 预览版）
-- 备选模型：intern-s1、intern-s1-pro
+- 正式模型：intern-s1
+- 合规状态：赛事手册明确要求基于 Intern-S1；`intern-s2-preview` 仅保留为历史开发实验记录，不得用于正式提交，除非已取得并归档主办方书面许可
 
 ## 系统简介
 本智能体基于官方 baseline（InternLM/Challenge-Cup-2026）增强，采用“领域路由-生成-验证-反思-聚合”流水线。完整且唯一的当前架构说明见 `ARCHITECTURE.md`：
@@ -43,6 +43,7 @@
 | .github/ | Python 3.10/3.12 CI 与依赖更新配置 |
 | LICENSE / THIRD_PARTY_NOTICES.md | 项目与第三方许可边界 |
 | ARCHITECTURE.md | 唯一架构规范 |
+| docs/COMPETITION_COMPLIANCE.md | 赛事红线、手册哈希、工程控制和提交操作清单 |
 
 ## 本地运行
 ```bash
@@ -53,7 +54,7 @@ python main.py --input_file sample_data/dev.jsonl --output_dir outputs
 
 ## 交付生成
 
-最终 commit hash、文件清单、默认模型/配置、锁文件哈希和质量检查摘要由正式包内的 `release/release-manifest.json` 自动记录，不应把工作中的 HEAD 手工固化到本文。生成前确保工作树干净，并运行：
+最终 commit hash、文件清单、默认模型/配置、赛事手册哈希、正式模型匹配状态、锁文件哈希和质量检查摘要由正式包内的 `release/release-manifest.json` 自动记录，不应把工作中的 HEAD 手工固化到本文。生成前确保工作树干净，并运行：
 
 ```bash
 python -m scripts.run_quality_gates
@@ -61,6 +62,8 @@ python -m scripts.build_release --output-dir dist
 ```
 
 输出 ZIP 旁的 `.sha256` 用于传输校验。脏工作树使用 `--allow-dirty` 时只会得到 `draft`，不得作为最终竞赛交付物。
+
+formal 包只接受 `intern-s1`，并要求质量报告中的 `competition_compliance` 通过。提交日志与结果不得人工逐题修改或赛后补填；应保留平台原始文件并按 `docs/COMPETITION_COMPLIANCE.md` 生成 SHA-256 留证。
 
 ## 样例测试边界
 - 3 道公开样例只用于接口和流程冒烟，不用于估计实际正确率。
