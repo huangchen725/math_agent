@@ -35,10 +35,6 @@ ChatResponse = Union[str, ChatMessage]
 class InternChatClient:
     """Small OpenAI-compatible chat client for the competition sample."""
 
-    # Opt in to ModelGateway's project-private atomic metadata protocol.
-    # Injected competition clients remain on their guaranteed ``chat`` API.
-    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
-
     def __init__(
         self,
         timeout: int = 120,

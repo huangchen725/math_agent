@@ -129,6 +129,23 @@ class CandidateGenerator:
         domain_prompt: str,
         target_tokens: int,
     ) -> tuple[ModelCallResult, list[dict]]:
+        if not context.gateway.supports_tool_calls:
+            result = self.solve_plain_result(
+                context,
+                domain_prompt,
+                target_tokens,
+                candidate_id=candidate_id,
+            )
+            return result, [
+                {
+                    "step": "tool_capability_fallback",
+                    "content": {
+                        "candidate_id": candidate_id,
+                        "status": "fallback",
+                    },
+                },
+                *model_result_trace(result, f"policy_tool_{candidate_id}"),
+            ]
         try:
             length_instruction = reasoning_instruction(target_tokens)
             messages = [

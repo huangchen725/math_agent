@@ -36,7 +36,7 @@
 | S4 | `70ac53f` | 把评测整理为 `data`、`scoring`、`experiments` 三包，引入共享原子 I/O 和统一模块入口 | 不得恢复平铺重复脚本、普通覆盖写入或 `sys.path` 修补；数据、判分和实验职责必须隔离 |
 | S5 | `3cbd587`、`366f270` | 建立三套带哈希依赖锁、Python 3.10/3.12 CI、覆盖率/静态/安全/漏洞/CLI 完整门禁 | 不得只更新输入规格而遗漏锁，不得用跨版本 dry-run 替代最低 Python 真实安装，不得移除失败检查来换取绿色状态 |
 | S6 | `3cbd587` | 建立许可证边界、第三方声明、正式/草稿发布状态机、Git blob 确定性打包和来源/质量/文件哈希 | 脏树只能生成 `draft`；formal 必须来自干净提交和同提交完整质量报告；不得扩大白名单或降低扫描/大小/来源限制绕过失败 |
-| 兼容与合规收口 | `c088a84` | 修复官方 client 私有方法误探测；增加 Intern-S1/官方端点失败关闭、赛事合规门禁及手册哈希 | 注入 client 只依赖公开 `chat()`；私有原子元数据仅项目自有 client 显式 opt-in；非 S1 只能作为非提交实验且不能生成 formal 包 |
+| 兼容与合规收口 | `c088a84` | 完成第一阶段同名私有方法隔离；增加 Intern-S1/官方端点失败关闭、赛事合规门禁及手册哈希 | 该提交未完成三参数投影且官方复测仍为 0 request；后续不得把阶段性 fake 通过写成平台兼容已恢复 |
 
 结构阶段的完成不等于数学能力提高。P1 的收益、S2～S6 的工程收益和真实正确率必须分别陈述，不能互相替代。
 
@@ -46,16 +46,16 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 候选 | 2 个工具候选 + 1 个纯推理候选 |
+| 候选 | 配置为 2 个工具候选 + 1 个纯推理候选；未知注入 client 不保证扩展参数时，两个工具槽显式降级为纯文本候选 |
 | 模型 verifier | 每候选 1 次 |
 | 温度 | policy `0.6`；verifier `0.0`；critic/reflection `0.3` |
-| thinking mode | policy/verifier/critic 均为 `False` |
+| thinking mode | policy/verifier/critic 内部配置均为 `False`；仅项目自有客户端接收该扩展参数，未知注入 client 使用平台默认行为 |
 | API 单请求上限 | `8192` tokens |
 | 本地推理目标 | 计算题 `1800`；证明/推导/分类题 `3500` 输出 tokens |
 | 恢复 | 每候选最多 1 次；恢复请求总额 4；单次恢复上限 `2048` |
 | 普通模型请求 | 每题最多 16；加恢复后绝对上限 20 |
 | 其他单题预算 | 总 token `200000`；工具 48 次；deadline 600 秒 |
-| 工具 | 最多 3 轮；单工具默认硬超时 5 秒 |
+| 工具 | 项目自有客户端最多 3 轮、单工具默认硬超时 5 秒；未知注入 client 不发送 tool schema |
 | 输入 | 题面和 metadata 各最多 20000 字符 |
 | 本地 runner 并发 | 默认 3 |
 
@@ -76,8 +76,8 @@
 
 ### 4.2 客户端、模型调用与密钥
 
-- **API-001**：`client` 由调用方注入，外部最低契约只有 `chat(messages=..., **kwargs)`；不得结构探测或调用注入 client 的同名私有扩展。
-- **API-002**：只有项目自有 `InternChatClient` 声明 `math-agent.atomic-metadata.v1` 后，`ModelGateway` 才可调用 `chat_with_metadata()`。
+- **API-001**：`client` 由调用方注入。未知实现只能收到 `chat(messages=..., temperature=..., max_tokens=...)` 三个参数；不得向其传递 `thinking_mode`、`tools`、`tool_choice`、`stream`、`n`、`stop`、`model` 或未来扩展，也不得读取协议 marker、私有字段或调用同名扩展。
+- **API-002**：只有项目 `InternChatClient` 的名义类型边界可启用 `chat_with_metadata()` 并接收 `thinking_mode/tools/tool_choice`；不得通过注入对象自己声明的字段或签名探测取得信任。
 - **API-003**：所有普通、工具、验证、批评、反思、恢复和紧急请求必须经过同一 `ModelGateway` 与同一题 `ExecutionBudget`。
 - **API-004**：响应文本、tool-call message、`finish_reason`、usage、阶段和请求编号必须在一次返回中原子绑定，不得通过全局、线程局部、ContextVar 或“最近响应”方法拼接。
 - **API-005**：赛事端点固定 `stream=False`、`n=1`；不得启用 `stream=True`、`n != 1`，也不得加入未验证兼容性的 `stop` 参数。
@@ -93,6 +93,7 @@
 - **OUT-004**：只接受显式答案标记或受控裸答案路径；不得恢复“取最后一个非空行”作为答案的旧逻辑。
 - **OUT-005**：空答案和 `未解出` 必须作为失败记录，不能伪装为 success；失败 trace 必须保留到 runner 记录。
 - **OUT-006**：答案归一化只能处理可证明安全的表示差异；语义句、无法证明等价的符号式和歧义多解保持 `unknown`，不能为提高分数做激进重写。
+- **OUT-007**：公开 `trace` 只能包含步骤、状态、编号、长度、截断和预算等结构化元数据；题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案和异常消息必须在返回前删除，未知字段失败关闭。
 
 ### 4.4 截断与预算
 
@@ -116,13 +117,14 @@
 
 ### 4.6 架构与状态
 
-- **ARC-001**：`math_agent/` 是唯一运行实现；根 `user_agent.py` 只做官方兼容导出，`main.py`、`demo.py`、`verify_math.py` 只做适配。
+- **ARC-001**：`math_agent/` 是唯一运行实现；根 `user_agent.py` 只做官方兼容导出和基于自身 `__file__` 的包导入引导，必须能从任意当前目录按绝对路径加载；`main.py`、`demo.py`、`verify_math.py` 只做适配。
 - **ARC-002**：每次 `solve()` 创建独占 `SolveContext`，显式持有 problem、metadata、trace、budget 和 gateway；单题状态不得写回 Agent 实例。
 - **ARC-003**：`agent.py` 只负责输入校验、上下文创建、异常收敛和兼容转发；阶段逻辑必须留在 `solver.py` 及聚焦模块。
 - **ARC-004**：候选生成/恢复、评估/反思、选择、格式化、路由和模型消息适配保持职责分离；不得重建集中式巨型 Agent。
 - **ARC-005**：新增、删除或移动运行模块时必须同步实验 `RUNTIME_FILES` 指纹与结构测试，避免实验冻结漏算实际代码。
 - **ARC-006**：公开类型只保留一个对象来源；兼容门面重导出必须通过对象身份测试。
 - **ARC-007**：架构变化必须同步 `ARCHITECTURE.md`、README、工程规范、相关测试和审计记录；不得新建第二份架构事实源。
+- **ARC-008**：公开异常收敛必须覆盖 gateway/`SolveContext` 构造、流水线和 fallback；fallback 再失败不得逃出 `solve()`，且公开 trace 只记录异常类型。
 
 ### 4.7 数学工具与执行安全
 
@@ -183,7 +185,8 @@
 | ARCH-001 | 根实现与包实现曾重复，入口/依赖容易漂移 | 缺少唯一运行包和公开契约测试 | S1 已修复 | 结构测试必须阻止第二份实现 |
 | STATE-001 | 旧预算和最近响应依赖 ContextVar/隐式侧信道 | 并发题目可能串 metadata，工具循环重复记账 | S2 已修复 | 同 Agent/共享 client 并发隔离回归必须保留 |
 | STATE-002 | S2 拆分后工具循环一度未从 gateway 取得共享工具预算 | 组件拆分时只迁移模型入口，遗漏预算绑定 | 已修复 | 网关、上下文和工具必须引用同一预算对象 |
-| CLIENT-001 | `70ac53f` 官方评测 112/112 error、0 request、0 token | 网关误探测官方 client 同名私有 `chat_with_metadata` | `c088a84` 已修复；**官方重跑待完成** | 官方形态 fake client 必须只调用公开 `chat()`；先过请求门禁再看能力 |
+| CLIENT-001 | `70ac53f` 与 `c088a84` 官方评测均为 112/112 error、0 request、0 token；`c088a84` 在无 `**kwargs` 的三参数 fake 下可复现 `unexpected keyword argument 'thinking_mode'`、0 次进入 `chat()`、返回 `未解出`，允许 `thinking_mode` 时为 6 请求并正常作答；`350a267` 同样复现 | 网关未在未知注入边界投影公开最小参数；私有 marker 与绝对路径导入是另外两个已确认的同型请求前缺陷。官方日志无逐题异常/client 版本，不能证明线上唯一根因或平台变更日期 | 已实现三参数投影、显式工具槽文本降级、私有读取移除和严格 fake；**官方重跑待完成** | 先确认新提交的 `request_count>0`、`success>0`；fake 的 `chat` 必须显式只收三参数且无 `**kwargs`，每次调用键集合必须严格相等 |
+| ENTRY-001 | S1 后根入口改为包门面；在仓库根不在 `sys.path` 的官方式绝对路径加载中可复现 `ModuleNotFoundError: math_agent` | 入口测试继承了仓库当前目录，未覆盖 path-based 独立 worker | 已按 `__file__` 引导且加入隔离解释器门禁；**线上关联待验证** | 每次正式发布用 `python -I` 从仓库外动态加载根入口，不得依赖 cwd/PYTHONPATH |
 | DATA-001 | 位于其他 Git 工作树内但未跟踪的 Putnam 源文件曾继承错误 commit | 仅检查父目录是 Git 仓库，没有确认文件被跟踪 | 已修复 | 只有 `git ls-files` 确认跟踪才采信 source commit |
 | EVAL-IO-001 | 平铺脚本重复 JSON/哈希/普通覆盖写入，并依赖 `sys.path` | 缺少包边界和共享 I/O | S4 已修复 | 结构测试要求分组包、原子 I/O、无 `sys.path` |
 | DEP-001 | Offline Quality 的 Python 3.10 安装约 8 秒失败，3.12 成功 | 3.12 生成的锁遗漏 `<3.11` 才激活的 `exceptiongroup` | `366f270` 已修复 | 真实 3.10 安装与 marker 闭包缺一不可 |
@@ -193,7 +196,7 @@
 | RELEASE-001 | 旧交付依赖手填 commit/清单，脏树也可能被打包 | 无来源状态机和确定性构建 | S6 已修复 | formal 必须匹配干净提交与质量报告 |
 | LICENSE-001 | 仓库曾没有明确项目许可与第三方边界 | 发布前治理缺失 | S6 已采用保留所有权利与 notices | 未授权前不得自行改成开源许可证 |
 | COMP-001 | 项目默认 S2 与 13 页赛事手册的 Intern-S1 要求冲突 | 把 baseline/实验模型选择当成正式授权 | `c088a84` 已失败关闭 | 无书面许可时 formal 只接受 S1 |
-| TRACE-001 | debug trace 仍可能含题面衍生候选和工具结果，事件 schema 仍不完全统一 | 当前 trace 兼顾诊断与提交 | **未解决** | 私有输出隔离；后续实现 minimal/debug 分级与稳定 schema |
+| TRACE-001 | 旧公开 trace 含候选、verifier、critic、工具结果、答案和异常片段，不符合官方 baseline 的元数据限定 | 内部诊断事件未经公开边界投影 | 已增加失败关闭的元数据白名单、幂等/JSON/秘密不泄漏性质测试和合规哨兵；原始实验正文只留忽略目录 | 新事件字段必须先加入明确白名单；正式 trace 中出现题面/模型正文立即失败 |
 | RESOURCE-001 | SymPy 子进程有时间限制但没有 OS 级内存上限 | Python 子进程边界未提供内存配额 | **未解决** | 复杂表达式继续限长；正式扩展工具前评估内存隔离 |
 | HTTP-001 | 单题 deadline 无法取消已经发出的阻塞 HTTP 请求 | 同步 requests 调用只能依靠单请求 timeout | **未解决** | 不得声称 deadline 可强制中断在途请求 |
 | TOKEN-001 | token 预算依赖响应 usage 后记账 | 响应完成前无法得知最终 token | **未解决** | 超额后停止后续请求；不得声称可撤销已产生 token |
@@ -201,11 +204,14 @@
 
 “已修复”只说明已关闭对应工程缺陷；它不自动证明数学正确率、赛事最终合规或线上平台行为。官方/真实环境待验证项必须保留原状态，直到产生绑定 commit、配置、数据和原始日志的有效证据。
 
+官方固定 baseline 的核心示例使用三参数，但其项目自带 `InternChatClient` 同时公开支持 `thinking_mode`、`tools` 和额外请求参数。因此本项目把三参数定义为未知注入实现的保守兼容面，而不是声称官方公开仓库已删除扩展。没有逐题 `TypeError`、线上 client 版本或主办方变更记录时，不得写“8 月 29～31 日平台收紧实锤”或“唯一根因闭环”。
+
 ## 6. 变更验收矩阵
 
 | 变更类型 | 最低验证 | 额外证据/停止条件 |
 | --- | --- | --- |
-| 公开接口、客户端、gateway | fake public client、同名不兼容私有方法、tool-call message、并发原子 metadata、预算测试 | 公开 `chat()` 未被调用则停止；不得靠平台私有接口修复 |
+| 公开接口、客户端、gateway | 无 `**kwargs` 的三参数 fake、同名不兼容私有方法、私有字段访问抛错 fake、项目扩展 client、工具槽文本降级、隔离入口、tool-call message、并发原子 metadata、预算测试 | 未知 client 每次只收三参数且至少实际进入一次 `chat()`；不得靠签名探测、失败后重试、平台私有接口或 judge cwd 修复 |
+| 公开 trace | 固定泄漏哨兵、JSON 序列化、白名单字段、投影幂等性、未知字段失败关闭 | 题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案或异常消息任一出现即停止 |
 | 候选、prompt、温度、thinking、token | 现有契约/格式/截断/预算测试 | 固定 A/B，只改一个变量；真实 API 前先获请求额度授权 |
 | P1 题型或 verifier | 正反例、漏根/增根、数域、证明阻断、复合目标、冲突、超时 | 无法证明安全时保持 `unknown`，不得扩大 pass 范围 |
 | 截断恢复 | 各阶段 `finish_reason=length`、恢复成功/再截断/缺答案/预算耗尽/全候选失败 | 模拟 4% 必须通过、6% 必须失败；残句泄漏立即失败 |

@@ -11,9 +11,10 @@ ReasoningAgent(client).solve(problem, metadata)
 # -> {"final_response": str, "trace": list[dict]}
 ```
 
-- `client` 由调用方注入，代码中不保存 API key。
+- `client` 由调用方注入。未知注入客户端只接收公开最小参数 `messages/temperature/max_tokens`；`thinking_mode/tools/tool_choice` 和原子 metadata 仅用于项目自有 `InternChatClient`。代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
-- `trace` 记录领域/题型判断、确定性验证状态、题型长度目标、候选生成、工具调用、模型验证、截断恢复、反思、最终答案来源和单题预算摘要；截断事件只保存阶段、token 与处理状态，不保存残缺回复。
+- 对外 `trace` 只保留步骤、状态、候选/请求编号、长度和预算等结构化元数据；题面、prompt、候选/工具/验证正文、最终答案与异常消息会在返回前删除。截断事件只保存阶段、token 与处理状态。
+- 根 `user_agent.py` 可被平台从任意工作目录按绝对路径加载，不依赖 judge 当前目录或预置 `PYTHONPATH`。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 - P1、S1～S6 的不可回退工程规则、历史故障和验收矩阵见 [工程规范](docs/ENGINEERING_SPECIFICATION.md)；赛事手册事实与资格红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
@@ -92,7 +93,7 @@ python demo.py
 python -m scripts.run_quality_gates
 ```
 
-该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规门禁、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。合规门禁验证正式模型和端点、运行时网络入口、参考答案字段隔离、JSON 输出契约与发布排除项，不调用模型 API。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
+该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规门禁、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。合规门禁验证正式模型和端点、运行时网络入口、隔离解释器中的根入口加载、三参数注入 client、参考答案字段隔离、公开 trace 脱敏、JSON 输出契约与发布排除项，不调用模型 API。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
 
 迭代时仍可单独运行：
 
@@ -178,7 +179,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 
 ```text
 .
-├── user_agent.py              # 竞赛兼容入口，只导出公开接口
+├── user_agent.py              # 可按绝对路径加载的竞赛兼容入口
 ├── math_agent/                # 唯一运行时实现包
 │   ├── agent.py               # ReasoningAgent 生命周期与兼容层
 │   ├── agent_config.py        # 固定策略与预算配置
@@ -191,6 +192,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 │   ├── candidate_evaluation.py # 验证、批评与反思
 │   ├── candidate_selection.py # 证据优先选择与多数票回退
 │   ├── response_processing.py # 答案抽取与最终格式校验
+│   ├── trace_sanitizer.py     # 对外 trace 元数据白名单投影
 │   ├── context.py             # 单题显式 SolveContext
 │   ├── model_gateway.py       # 统一模型调用、元数据与预算记账
 │   ├── model_calls.py         # 显式模型消息适配

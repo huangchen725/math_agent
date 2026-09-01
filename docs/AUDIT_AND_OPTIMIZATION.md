@@ -40,7 +40,7 @@
 | Git 基线 | `main` 分支；具体实验必须记录当次完整 commit，不在文档中固定易过期的 HEAD |
 | 外部接口 | `ReasoningAgent.solve(problem, metadata) -> {final_response, trace}` |
 | 领域与工具 | 18 个领域提示，11 个受限 SymPy 工具 |
-| 候选策略 | 2 个工具候选 + 1 个纯推理候选；每个候选默认验证 1 次 |
+| 候选策略 | 配置为 2 个可工具增强槽 + 1 个纯推理候选；未知注入 client 下工具槽显式降级为纯文本；每个候选默认验证 1 次 |
 | 常规最低模型调用 | 约 6 次/题；工具循环、反思与回退会继续增加 |
 | 公开题目 | 3 道 `sample_data/dev.jsonl` 样例，只能做接口 smoke；本地 36 题 A/B 集也已判定不适合作为正确率基准 |
 | few-shot | 18 个领域共 21 个示例；已修复验证脚本只解析 18 个的问题 |
@@ -69,8 +69,8 @@
 | 评测体系 | 已有题集审计器、保守四态判分器、固定 PutnamBench 120 题 × 3 冻结基线、盲审和配对统计入口 | 仍缺候选版本匿名配对盲审，以及 100～200 题独立密封验收集 | P0 |
 | 客户端 | 有超时、选择性重试和响应 usage/模型/id/耗时元数据 | 无 Retry-After、抖动和统一错误码 | P1 |
 | Runner | 有 JSONL 校验、原子 checkpoint、并发、单题预算和脱敏运行摘要 | deadline 不能取消在途 HTTP；尚未流式读取 | P1 |
-| 可观测性 | 有 trace | 无统一事件 schema、调用量、耗时、脱敏级别 | P1 |
-| 安全隐私 | 密钥忽略、工具白名单、路径安全；公开提交文档已移除手机号；本地/CI 与发布包均有不回显凭据的扫描 | trace 仍可能泄露题面；启发式 secret scan 不能替代凭据轮换和托管平台 push protection | P1 |
+| 可观测性 | 内部事件经公开元数据白名单投影；保留阶段、状态、编号、长度、调用量、耗时和预算摘要 | 内部事件生产格式仍可继续收敛，但自由正文不再进入公开 trace | P2 |
+| 安全隐私 | 密钥忽略、工具白名单、路径安全、公开 trace 脱敏；公开提交文档已移除手机号；本地/CI 与发布包均有不回显凭据的扫描 | 启发式 secret scan 不能替代凭据轮换和托管平台 push protection | P2 |
 | 测试 | 已补答案等价、题型路由、数域/漏根、证据冲突回退、预算、工具超时、dry-run 和汇总测试 | Demo、在线 Agent 评测和部分编排分支覆盖不足 | P1 |
 | Demo | 本地监听，展示 trace | 无调用确认、预算提示、取消、排队和结果反馈 | P1 |
 | 依赖供应链 | 运行、开发、Demo 均有精确版本和制品哈希锁；CI 自动执行依赖审计，直接依赖与第三方边界已记录 | 仍需持续处理 Dependabot/审计告警；新增依赖的许可证兼容性需要人工决策 | P1 |
@@ -123,8 +123,8 @@
 | DATA-001 | 已建立固定 PutnamBench 公开大学竞赛对照、数据哈希、盲审和配对统计；仍缺独立命题或私有第三方的密封验收集 | 公开集可比较版本，但预训练污染未知，不能单独估计陌生题实际正确率 | 公开 120 题用于同题 A/B；另建 100～200 题一次性密封验收集，记录来源/许可/split/难度并隔离 prompt |
 | TOOL-003 | `factorial`、`gamma`、`simplify`、精确特征值等可在短输入上产生高复杂度 | 字符长度不能限制计算复杂度 | 函数级参数边界、复杂度计数、超时和降级数值计算 |
 | CLIENT-002 | 重试未尊重 `Retry-After`，无随机抖动 | 限流时可能同步重试 | 优先服务端等待值，再用有上限指数退避与 jitter |
-| OBS-001 | trace 是无 schema 的 `dict` 列表 | 事件名漂移，统计和脱敏困难 | 定义稳定事件字段：阶段、状态、耗时、调用数、摘要、错误码 |
-| PRIV-001 | trace 保存候选片段和工具结果 | 私有题目或模型输出可能泄露 | 增加 `minimal/debug` 两级 trace，默认截断并支持哈希 |
+| OBS-001 | 内部 trace 生产者仍使用松散 `dict`，但公开边界已投影为封闭元数据 schema | 内部事件名漂移仍影响诊断统计，不再直接造成公开正文泄漏 | 后续把生产者逐步改为 typed event；不得绕过公开投影 |
+| PRIV-001 | 旧 trace 保存候选、verifier、critic、工具结果、答案和异常片段 | 私有题目或模型输出可能泄露 | 已以失败关闭白名单修复，并加入题面/模型/答案哨兵、幂等与 JSON 性质门禁；原始实验输出继续隔离 |
 | PRIV-002 | `SUBMISSION_INFO.md` 含真实手机号 | 公开仓库产生个人隐私风险 | 公共仓库改占位符，私人提交包在生成时注入 |
 | TEST-001 | `math_agent/agent.py` 80%、`verify_math.py` 38%，部分在线和异常分支仍未覆盖 | 关键分支仍有回归风险 | 用 scripted fake client 继续覆盖反思、超时、冲突和错误响应；在线 smoke 保持显式执行 |
 | DEMO-001 | 点击即调用真实 API，无确认、预算展示、取消或队列限制 | 误触费用、重复请求和体验不稳定 | 增加确认、预计调用上限、禁用重复提交、取消和反馈导出 |
@@ -566,9 +566,9 @@ S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工�
 
 隐藏集评测实际拉取 `70ac53f` 后得到 0 success、112 error、112 invalid，官方 client 同时记录 0 request、0 attempt、0 token。该轮不是数学正确率 0%，而是全部题目在模型请求前失败；runner completed 和 0 infrastructure error 仅表示失败记录被完整收集。
 
-回归定位到 S2 `ModelGateway` 对注入客户端私有能力的结构探测：竞赛只公开保证 `client.chat(...)`，旧版也只调用该接口；S2 却会优先调用任何同名 `chat_with_metadata()` 并强制项目自定义返回结构。当前修复改为协议显式 opt-in：只有自有 `InternChatClient` 声明 `math-agent.atomic-metadata.v1` 才走原子元数据接口，平台注入客户端无条件保持公开 `chat()` 路径。没有恢复 ContextVar、最近响应 getter 或模型调用旁路。
+首次复盘把最高置信原因定位到 S2 `ModelGateway` 对注入客户端同名 `chat_with_metadata()` 的结构探测。该行为确实可导致请求前失败；`c088a84` 改为读取私有协议 marker 后才走原子元数据接口，没有恢复 ContextVar、最近响应 getter 或模型调用旁路。但后续复现证明旧版和 S2 版都会把 `thinking_mode` 等扩展 kwargs 传给未知 client，因此“旧版只调用最低公开契约”及“私有方法探测就是线上根因”的结论已撤回。
 
-专项 fake client 已复现修复前请求前 `TypeError`，修复后同一形态正常完成公开 `chat()`；网关级和完整 `ReasoningAgent.solve()` 回归均要求同名未声明私有方法不得被调用。验证期间还修复了跨 Windows 权限主体遗留的共享 pytest 临时目录污染，以及漏洞审计默认用户缓存不可写：每个检查现在使用独立项目内临时子目录，审计缓存固定在忽略的 `.quality/`。最终完整门禁 20/20 通过，175 项测试通过、语句覆盖率 76.57%，三套锁未发现已知漏洞。完整证据、边界和下次门禁见 `docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md`。本次修复只恢复平台兼容性，不构成数学能力提升证据，也不调用真实 API。
+专项 fake client 已复现同名扩展误调用并通过离线回归；但 2026-09-01 平台实际拉取 `c088a84` 后仍为 112 error、0 request，证明该轮离线门禁不足以支持“恢复平台兼容性”的结论。首次证据保留在 `docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md`，更正和后续修复见 `docs/evaluations/OFFICIAL_112_20260901_RUNTIME_FAILURE.md`。
 
 ## 25. 赛事手册合规复核与失败关闭门禁
 
@@ -599,3 +599,15 @@ S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工�
 路由采用三层闭环：上游 `SKILL.md` 的窄触发描述负责 Codex 隐式发现，`AGENTS.md` 明确项目内适用模块，项目维护 Skill 与贡献指南要求相关修改同时应用属性测试方法。工程规则 `QUAL-005` 进一步规定第三方 Skill 的固定提交、许可证、归属、逐文件哈希、依赖审批和 formal 发布隔离。当前安装不包含 `scripts/`，没有增加 Hypothesis 或其他 Python 依赖；若未来确有可验证性质需要新库，仍按 S5 锁文件流程单独审批。
 
 上游 CC BY-SA 4.0 许可证全文保存在 Skill 子目录，`UPSTREAM.json` 记录来源路径和每个导入文件的 SHA-256，`THIRD_PARTY_NOTICES.md` 明确该子树的独立许可。供应链回归测试会拒绝未更新 manifest 的增删改，并确认该 Skill 不在 formal 竞赛发布白名单中。完整离线门禁为 21/21 检查通过，188 项测试通过，总语句覆盖率 76.87%；未调用真实模型 API。
+
+## 28. 2026-09-01 第二次 112 题请求前故障与入口加固
+
+平台本轮实际拉取 `c088a84`，仍得到 0 success、112 error、112 invalid，并且官方 client 的 request、attempt、retry 和 token 全为 0。Agent 阶段约 41.5 秒，runner completed、退出码 0、infrastructure error 0。该轮仍是模型请求前的批量运行时故障，不能解释为数学正确率 0%，也不能用于判断截断率或 P1 能力变化。原始日志 SHA-256、平台环境和完整证据边界见 `docs/evaluations/OFFICIAL_112_20260901_RUNTIME_FAILURE.md`。
+
+进一步从 Git 归档隔离运行 `c088a84f` 和历史有效提交 `350a267f`。在固定的 3 个纯文本候选、每候选 1 次 verifier 配置下，无 `**kwargs` 的 `chat(messages, temperature, max_tokens)` fake 使两版都 0 次进入方法体并返回 `未解出`；只增加 `thinking_mode=None` 后，两版均为 6 次请求并输出 `最终答案：4`。`c088a84f` trace 直接保留 `unexpected keyword argument 'thinking_mode'`。这证明扩展参数未在未知注入边界投影是可产生完整同型症状的真实缺陷，也说明原样重提 v17 不适合在三参数假设下定锚。
+
+这仍不是“平台在 8 月 29～31 日收紧实锤”。官方固定 baseline 的核心示例使用三参数，但其自带 `InternChatClient` 同时明确支持 `thinking_mode/tools` 和额外请求参数；平台日志没有逐题异常、线上 client 签名或版本。准确结论是：参数缺陷是当前最强的可复现候选根因；私有同名方法/marker、绝对路径入口和构造期异常收敛仍是独立缺陷；线上唯一归因必须等待绑定新提交的正式运行。
+
+当前工作树已完成五层失败关闭：未知 client 只收到 `messages/temperature/max_tokens`；项目扩展只保留在自有 `InternChatClient` 名义类型边界；未知 client 的工具槽显式降级为纯文本并记录状态；根入口按自身文件目录引导包导入，gateway/上下文构造及 fallback 纳入顶层异常收敛；公开 trace 经白名单投影。运行时指纹和合规探针同步覆盖新边界。三参数 fake 在当前工作树由 0 请求恢复为 6 请求。
+
+最终离线门禁为 21/21 项通过：196 项测试通过，总语句覆盖率 77.46%；Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包、依赖一致性与漏洞审计、敏感信息扫描、Markdown 链接、竞赛合规探针、few-shot dry-run、runner 和全部评测 CLI 入口均通过。模型、候选槽数量、温度配置、token、工具轮数、验证、恢复和聚合算法没有改变，也没有调用真实模型 API；但未知注入路径不再发送 `thinking_mode/tools/tool_choice`，两个工具槽成为纯文本候选，可能改变模型默认推理、工具能力、请求量、截断和正确率。后续必须建立当前环境新基线，不能声称能力不受影响。`CLIENT-001` 保持“离线修复、官方重跑待完成”；下次先看 `request_count>0`、`success>0`，再讨论正确率。

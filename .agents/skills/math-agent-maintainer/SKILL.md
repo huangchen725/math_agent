@@ -17,12 +17,13 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 
 ## Preserve active contracts
 
-- Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list.
+- Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list. Exercise the root facade through an isolated path-based import; do not assume the judge's current directory makes `math_agent/` importable.
 - Keep the API client injected and secrets environment-only.
 - Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
 - Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
-- Pass per-problem budget, trace, and model access through `SolveContext`; keep response metadata atomically bound by `ModelGateway` and never restore a last-response side channel.
+- Pass per-problem budget, trace, and model access through `SolveContext`; keep response metadata atomically bound by `ModelGateway` and never restore a last-response side channel. Unknown injected clients expose only the three-argument public minimum `chat(messages, temperature, max_tokens)`—never read a private marker or forward project-only kwargs.
+- Project public trace through the metadata-only sanitizer before return. Do not expose problem, prompt, candidate/model/verifier/critic/tool text, final answers, or exception messages in trace.
 - Keep `agent.py` limited to lifecycle, validation, error containment, and compatibility delegates. Route, generate, evaluate, recover, select, and format through their focused modules instead of adding stage logic back to the Agent class.
 - Keep `math_tools.py` as a compatibility facade. Put restricted parsing, concrete tools, registry/dispatch, and the tool-calling loop in `math_parsing.py`, `tool_implementations.py`, `tool_registry.py`, and `tool_loop.py` respectively.
 - Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
@@ -42,7 +43,7 @@ For runner changes, validate JSONL shape and indexes, keep atomic writes, retry 
 
 For client changes, retry only transient network/service errors and never log authorization headers or keys.
 
-For injected-client changes, use only the public `chat()` contract. Project-private atomic metadata is permitted only after the project-owned client explicitly advertises the exact protocol marker; always retain a fake client with a deliberately incompatible same-name private method so structural probing cannot return.
+For injected-client changes, send unknown clients exactly `messages`, `temperature`, and `max_tokens`. Project-private atomic metadata, `thinking_mode`, `tools`, and `tool_choice` are permitted only behind the project client's nominal type boundary; never read a marker from an injected object. Retain a fake with an incompatible same-name method, a fake that raises on private attribute access, and a minimum-signature fake whose `chat` has no `**kwargs`. Cover the tool-candidate text fallback at the same boundary.
 
 For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
 

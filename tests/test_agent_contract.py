@@ -75,6 +75,14 @@ def test_fallback_response_adds_final_marker():
     assert agent._build_response("", "42") == "最终答案：42"
 
 
+def test_valid_solve_contains_gateway_construction_failure() -> None:
+    result = ReasoningAgent(client=object()).solve("计算 1+1", {})
+
+    assert result["final_response"] == "未解出"
+    assert any(event["step"] == "global_error" for event in result["trace"])
+    assert result["trace"][-1]["step"] == "budget_summary"
+
+
 def test_normalize_equivalent_numeric_forms():
     assert ReasoningAgent._normalize(r"\(\frac{1}{2}\)") == "1/2"
     assert ReasoningAgent._numeric("1/2") == 0.5

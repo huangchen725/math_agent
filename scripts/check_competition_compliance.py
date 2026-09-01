@@ -6,6 +6,8 @@ import argparse
 import ast
 import json
 import re
+import subprocess  # nosec B404
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -53,10 +55,22 @@ class _CaptureAgent:
 class _RecordingClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
-        self.responses = ["最终答案：0\n因为 0+0=0。", "VERDICT: A"]
+        self.responses = [
+            "最终答案：0\nPRIVATE_MODEL_RESPONSE_8C3B",
+            "VERDICT: A\nPRIVATE_VERIFIER_RESPONSE_6A1D",
+        ]
 
-    def chat(self, **kwargs: Any) -> str:
-        self.calls.append(kwargs)
+    def chat(
+        self,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        self.calls.append({
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        })
         return self.responses.pop(0)
 
 
@@ -109,7 +123,7 @@ def _check_answer_isolation_and_json() -> list[str]:
     sentinel_answer = "DO_NOT_FORWARD_REFERENCE_7F2A"
     item = {
         "idx": "compliance-probe",
-        "problem": "计算 0+0。",
+        "problem": "PRIVATE_HIDDEN_PROBLEM_4E9A：计算 0+0。",
         "answer": sentinel_answer,
         "expected_answer": sentinel_answer,
         "reference_answer": sentinel_answer,
@@ -153,11 +167,68 @@ def _check_answer_isolation_and_json() -> list[str]:
     )
     if sentinel_answer in json.dumps(client.calls, ensure_ascii=False):
         findings.append("reference-answer metadata reached a model request")
+    if len(client.calls) != 2:
+        findings.append("minimum-signature client did not receive policy and verifier calls")
+    if any(
+        set(call) != {"messages", "temperature", "max_tokens"}
+        for call in client.calls
+    ):
+        findings.append("injected client received arguments beyond the public minimum")
     if sentinel_answer in json.dumps(agent_result, ensure_ascii=False):
         findings.append("reference-answer metadata leaked into the agent result")
+    trace_text = json.dumps(agent_result.get("trace", []), ensure_ascii=False)
+    for private_text in (
+        item["problem"],
+        "PRIVATE_MODEL_RESPONSE_8C3B",
+        "PRIVATE_VERIFIER_RESPONSE_6A1D",
+        "最终答案：0",
+    ):
+        if private_text in trace_text:
+            findings.append("problem, model response, or final answer leaked into trace")
+            break
     if str(agent_result.get("final_response", "")).splitlines()[-1] != "最终答案：0":
         findings.append("full Agent compliance probe broke the final-answer contract")
     return findings
+
+
+def _check_isolated_entrypoint_import(root: Path) -> list[str]:
+    """Mirror the judge's path-based import without inheriting the repo cwd."""
+    probe = """
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+entrypoint = Path(sys.argv[1]).resolve()
+project_root = str(entrypoint.parent)
+sys.path = [item for item in sys.path if item not in {"", project_root}]
+spec = importlib.util.spec_from_file_location("_official_user_agent_probe", entrypoint)
+if spec is None or spec.loader is None:
+    raise RuntimeError("unable to create entrypoint spec")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(json.dumps({"agent": module.ReasoningAgent.__name__}))
+"""
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", probe, str(root / "user_agent.py")],
+            cwd=root.parent,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )  # nosec B603
+    except (OSError, subprocess.SubprocessError):
+        return ["isolated user_agent import probe could not run"]
+    if completed.returncode != 0:
+        return ["user_agent failed isolated path-based import"]
+    try:
+        payload = json.loads(completed.stdout)
+    except (TypeError, ValueError):
+        return ["isolated user_agent import probe returned invalid JSON"]
+    if payload != {"agent": "ReasoningAgent"}:
+        return ["isolated user_agent import did not expose ReasoningAgent"]
+    return []
 
 
 def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
@@ -188,6 +259,7 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
     record("formal_policy", policy_findings)
 
     record("runtime_network_boundary", _check_runtime_network_boundary(root))
+    record("isolated_entrypoint_import", _check_isolated_entrypoint_import(root))
     record("answer_isolation_and_json", _check_answer_isolation_and_json())
 
     release_findings = [

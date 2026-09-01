@@ -54,6 +54,7 @@ RUNTIME_FILES = (
     "math_agent/model_calls.py",
     "math_agent/model_gateway.py",
     "math_agent/response_processing.py",
+    "math_agent/trace_sanitizer.py",
     "math_agent/solver.py",
     "math_agent/task_router.py",
     "math_agent/truncation.py",

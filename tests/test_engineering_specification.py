@@ -56,6 +56,14 @@ def test_known_problem_registry_preserves_open_evidence_boundaries() -> None:
     assert "已失败关闭" in rows["COMP-001"]
 
 
+def test_normative_client_contract_is_the_three_argument_minimum() -> None:
+    text = SPEC_PATH.read_text(encoding="utf-8")
+
+    assert "chat(messages=..., temperature=..., max_tokens=...)" in text
+    assert "fake 的 `chat` 必须显式只收三参数且无 `**kwargs`" in text
+    assert "不得写“8 月 29～31 日平台收紧实锤”" in text
+
+
 def test_normative_entrypoints_reference_engineering_specification() -> None:
     for relative in (
         "AGENTS.md",

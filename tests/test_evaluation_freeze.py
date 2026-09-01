@@ -54,6 +54,7 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert "math_agent/candidate_generation.py" in RUNTIME_FILES
     assert "math_agent/candidate_evaluation.py" in RUNTIME_FILES
     assert "math_agent/candidate_selection.py" in RUNTIME_FILES
+    assert "math_agent/trace_sanitizer.py" in RUNTIME_FILES
     assert "agent_types.py" not in RUNTIME_FILES
 
 

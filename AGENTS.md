@@ -7,14 +7,15 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 ## Non-negotiable contracts
 
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.
-- Keep the client injected by the caller. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
+- Keep the client injected by the caller. Unknown injected clients may receive only `messages`, `temperature`, and `max_tokens` through public `chat()`; do not pass `thinking_mode`, `tools`, `tool_choice`, or other project extensions, and do not probe a protocol marker, private field, or similarly named method. Extended arguments and atomic metadata are allowed only for the project-owned `InternChatClient` nominal type. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
 - `final_response` contains the selected reasoning and ends with exactly one canonical `最终答案：...` line. The answer body must not contain an explanatory sentence.
+- Public `trace` is metadata only. It must not contain the problem, prompts, model/candidate/verifier/critic/tool text, final answer, or exception messages; unknown trace fields fail closed at the public boundary.
 - The competition endpoint rejects `stream=True` and `n != 1`.
 - Do not change candidate counts, temperatures, thinking mode, or token budgets without an evaluation plan that isolates one variable and records the dataset/commit/config.
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
 - Treat JSONL records and `idx` as untrusted input. Output paths must stay inside the requested output directory.
 - Keep per-problem state in `SolveContext`. Model response text and metadata must return atomically through `ModelGateway`; do not reintroduce process/thread/context-local "last response" side channels.
-- Keep `math_agent/agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class.
+- Keep `math_agent/agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class. The root facade must remain loadable by absolute path from an isolated interpreter without relying on the current working directory.
 - Keep `math_agent/math_tools.py` as an import-compatibility facade. Restricted parsing belongs in `math_parsing.py`, implementations in `tool_implementations.py`, schemas/dispatch in `tool_registry.py`, and the model loop in `tool_loop.py`.
 - Keep offline evaluation grouped under `evaluation/data`, `evaluation/scoring`, and `evaluation/experiments`. Use `evaluation/io_utils.py` for JSON/JSONL, hashing, and atomic writes; do not add `sys.path` mutation to evaluation modules.
 - Keep dependency inputs and locks paired: edit `requirements*.txt`, regenerate the affected `requirements*.lock` with exact versions and SHA-256 hashes, then validate installation with `--require-hashes`. A lock shared across Python minors must include target-only dependency markers and be installed by the lowest supported real interpreter; cross-target pip dry-runs alone are insufficient.
@@ -77,4 +78,5 @@ Run focused tests first while iterating, then the complete gate. `pip-audit` may
 - Flag benchmark records without source, license, split, and calibrated level metadata; flag any test/dev item that overlaps prompt few-shots or public samples.
 - Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.
 - Flag changes that contradict a rule ID, omit a regression for a listed historical failure, or silently turn a pending/unresolved item into a success claim.
-- Flag any injected-client integration that depends on methods or fields beyond the public `chat()` contract, even when an official-looking fake happens to expose them.
+- Flag any injected-client integration that depends on methods or fields beyond the public `chat()` contract, including private protocol markers or request kwargs beyond the three-argument minimum, even when an official-looking fake happens to expose them.
+- Flag any public trace that can retain free-form problem, prompt, response, answer, tool, or exception text, and any root-entrypoint test that imports only from the repository working directory.

@@ -4,11 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from math_agent.budget import ExecutionBudget
+from math_agent.llm_client import InternChatClient
 from math_agent.model_gateway import ModelGateway
 
 
-class AtomicClient:
-    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+class AtomicClient(InternChatClient):
+    def __init__(self) -> None:
+        pass
 
     def chat(self, **kwargs):
         response, _ = self.chat_with_metadata(**kwargs)
@@ -77,12 +79,78 @@ def test_gateway_ignores_unadvertised_private_metadata_method() -> None:
 
     assert result.text == "ok"
     assert client.chat_calls == 1
+    assert ModelGateway(client).supports_tool_calls is False
+
+
+def test_gateway_never_reads_private_fields_from_an_injected_client() -> None:
+    class StrictOfficialClient:
+        def __init__(self) -> None:
+            self.chat_calls = 0
+
+        def chat(self, messages, temperature, max_tokens):
+            self.chat_calls += 1
+            return "ok"
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise RuntimeError("private client fields are forbidden")
+            raise AttributeError(name)
+
+    client = StrictOfficialClient()
+    result = ModelGateway(client).chat(
+        [{"role": "user", "content": "hello"}],
+        stage="policy_plain",
+        temperature=0.6,
+        max_tokens=8192,
+        thinking_mode=False,
+        tools=[{"type": "function"}],
+        tool_choice="auto",
+    )
+
+    assert result.text == "ok"
+    assert client.chat_calls == 1
+
+
+def test_project_client_keeps_atomic_metadata_and_extended_arguments() -> None:
+    class ExtendedProjectClient(InternChatClient):
+        def __init__(self) -> None:
+            self.received = None
+
+        def chat(self, **kwargs):
+            return "unused"
+
+        def chat_with_metadata(self, **kwargs):
+            self.received = kwargs
+            return "ok", {}
+
+    client = ExtendedProjectClient()
+    result = ModelGateway(client).chat(
+        [{"role": "user", "content": "hello"}],
+        stage="policy_tool",
+        temperature=0.6,
+        max_tokens=8192,
+        thinking_mode=False,
+        tools=[{"type": "function"}],
+        tool_choice="auto",
+    )
+
+    assert result.text == "ok"
+    assert ModelGateway(client).supports_tool_calls is True
+    assert set(client.received) == {
+        "messages",
+        "temperature",
+        "max_tokens",
+        "thinking_mode",
+        "tools",
+        "tool_choice",
+    }
 
 
 @pytest.mark.parametrize("completed", ["bad", ("ok", []), ("ok", {}, "extra")])
 def test_gateway_rejects_invalid_atomic_client_contract(completed) -> None:
-    class InvalidClient:
-        _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+    class InvalidClient(InternChatClient):
+        def __init__(self) -> None:
+            pass
 
         def chat(self, **kwargs):
             return "unused"

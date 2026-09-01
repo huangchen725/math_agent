@@ -6,12 +6,11 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from math_agent.budget import BudgetExceeded, ExecutionBudget
+from math_agent.llm_client import InternChatClient
 from user_agent import AgentConfig, ReasoningAgent
 
 
-class SequenceClient:
-    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
-
+class SequenceClient(InternChatClient):
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
@@ -235,8 +234,9 @@ def test_recovery_requests_obey_their_own_limit_and_shared_token_budget():
         budget.consume_model_request(stage="verifier")
 
 
-class ConcurrentClient:
-    _math_agent_metadata_protocol = "math-agent.atomic-metadata.v1"
+class ConcurrentClient(InternChatClient):
+    def __init__(self) -> None:
+        pass
 
     def chat(self, **kwargs):
         response, _ = self.chat_with_metadata(**kwargs)

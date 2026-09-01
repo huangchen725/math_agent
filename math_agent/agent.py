@@ -43,6 +43,7 @@ from .response_processing import (
 )
 from .solver import SolveOrchestrator
 from .task_router import TaskAnalysis
+from .trace_sanitizer import sanitize_trace
 from .truncation import contain_pending_truncations, mark_truncation
 
 
@@ -60,7 +61,7 @@ class ReasoningAgent:
         """Preserve the competition contract and contain all pipeline failures."""
         input_error = self._validate_input(problem, metadata)
         if input_error is not None:
-            return input_error
+            return self._public_result(input_error)
 
         trace: List[Dict] = []
         budget = ExecutionBudget(
@@ -70,37 +71,62 @@ class ReasoningAgent:
             max_tool_calls=self.config.max_tool_calls,
             timeout_seconds=self.config.problem_timeout_seconds,
         )
-        context = SolveContext(
-            problem=problem,
-            metadata=dict(metadata),
-            trace=trace,
-            budget=budget,
-            gateway=ModelGateway(self.client, budget),
-        )
+        context: SolveContext | None = None
         try:
+            context = SolveContext(
+                problem=problem,
+                metadata=dict(metadata),
+                trace=trace,
+                budget=budget,
+                gateway=ModelGateway(self.client, budget),
+            )
             result = self._solve_impl(context)
         except BudgetExceeded as exc:
-            trace.append({"step": "budget_exceeded", "content": str(exc)[:300]})
+            trace.append({
+                "step": "budget_exceeded",
+                "content": {"error_type": type(exc).__name__},
+            })
             result = {"final_response": "未解出", "trace": trace}
         except Exception as exc:
             trace.append({
                 "step": "global_error",
-                "content": f"{type(exc).__name__}: {str(exc)[:300]}",
+                "content": {"error_type": type(exc).__name__},
             })
-            try:
-                fallback = self._quick_fallback(context)
-                final_response = build_response("", fallback) if fallback else "未解出"
-                result = {"final_response": final_response, "trace": trace}
-            except BudgetExceeded as budget_error:
-                trace.append({
-                    "step": "budget_exceeded",
-                    "content": str(budget_error)[:300],
-                })
-                result = {"final_response": "未解出", "trace": trace}
+            result = {"final_response": "未解出", "trace": trace}
+            if context is not None:
+                try:
+                    fallback = self._quick_fallback(context)
+                    final_response = build_response("", fallback) if fallback else "未解出"
+                    result = {"final_response": final_response, "trace": trace}
+                except BudgetExceeded as budget_error:
+                    trace.append({
+                        "step": "budget_exceeded",
+                        "content": {"error_type": type(budget_error).__name__},
+                    })
+                except Exception as fallback_error:
+                    trace.append({
+                        "step": "fallback_error",
+                        "content": {"error_type": type(fallback_error).__name__},
+                    })
 
         contain_pending_truncations(budget)
         trace.append({"step": "budget_summary", "content": budget.snapshot()})
-        return result
+        return self._public_result(result)
+
+    @staticmethod
+    def _public_result(result: object) -> Dict:
+        """Normalize the public object and remove all sensitive trace prose."""
+        if not isinstance(result, dict):
+            return {
+                "final_response": "未解出",
+                "trace": [{"step": "global_error", "content": {"status": "error"}}],
+            }
+        response = result.get("final_response")
+        final_response = response if isinstance(response, str) and response.strip() else "未解出"
+        return {
+            "final_response": final_response,
+            "trace": sanitize_trace(result.get("trace")),
+        }
 
     def _validate_input(self, problem: object, metadata: object) -> dict | None:
         if not isinstance(problem, str) or not problem.strip():

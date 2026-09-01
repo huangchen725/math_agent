@@ -7,19 +7,36 @@ from typing import Any
 
 from .agent_types import ModelCallResult
 from .budget import ExecutionBudget
+from .llm_client import InternChatClient
 
 
-_ATOMIC_METADATA_PROTOCOL = "math-agent.atomic-metadata.v1"
+_PUBLIC_CHAT_KWARGS = ("temperature", "max_tokens")
 
 
 class ModelGateway:
     """Bind an injected client to one optional per-problem execution budget."""
 
     def __init__(self, client: Any, budget: ExecutionBudget | None = None) -> None:
-        if not callable(getattr(client, "chat", None)):
+        public_chat = getattr(client, "chat", None)
+        if not callable(public_chat):
             raise TypeError("client must provide a callable chat method")
         self.client = client
         self.budget = budget
+        self._public_chat = public_chat
+        # Nominal trust boundary: never inspect an injected client's private
+        # fields or similarly named methods.  Only the project-owned client (or
+        # an explicit subclass used by offline tests) can use project-private
+        # atomic response metadata.
+        self._project_metadata_chat = (
+            client.chat_with_metadata
+            if isinstance(client, InternChatClient)
+            else None
+        )
+
+    @property
+    def supports_tool_calls(self) -> bool:
+        """Whether project-owned extended request arguments are available."""
+        return self._project_metadata_chat is not None
 
     def chat(
         self,
@@ -68,18 +85,8 @@ class ModelGateway:
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> tuple[Any, Mapping[str, Any]]:
-        metadata_protocol = getattr(
-            self.client,
-            "_math_agent_metadata_protocol",
-            None,
-        )
-        if metadata_protocol == _ATOMIC_METADATA_PROTOCOL:
-            chat_with_metadata = getattr(self.client, "chat_with_metadata", None)
-            if not callable(chat_with_metadata):
-                raise TypeError(
-                    "atomic metadata clients must provide chat_with_metadata"
-                )
-            completed = chat_with_metadata(messages=messages, **kwargs)
+        if self._project_metadata_chat is not None:
+            completed = self._project_metadata_chat(messages=messages, **kwargs)
             if not isinstance(completed, tuple) or len(completed) != 2:
                 raise TypeError("chat_with_metadata must return (response, metadata)")
             response, metadata = completed
@@ -89,7 +96,12 @@ class ModelGateway:
                 raise TypeError("chat_with_metadata metadata must be a mapping")
             return response, metadata
 
-        # The competition contract guarantees only ``client.chat``. Do not
-        # probe similarly named private methods on an injected platform client:
-        # their signature and return value are outside the public protocol.
-        return self.client.chat(messages=messages, **kwargs), {}
+        # The competition contract guarantees only ``client.chat``.  No
+        # attribute beyond that public method is read from injected clients,
+        # and no project-specific request extension crosses this boundary.
+        public_kwargs = {
+            key: kwargs[key]
+            for key in _PUBLIC_CHAT_KWARGS
+            if key in kwargs
+        }
+        return self._public_chat(messages=messages, **public_kwargs), {}
