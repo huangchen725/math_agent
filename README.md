@@ -15,6 +15,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
 - `trace` 记录领域/题型判断、确定性验证状态、题型长度目标、候选生成、工具调用、模型验证、截断恢复、反思、最终答案来源和单题预算摘要；截断事件只保存阶段、token 与处理状态，不保存残缺回复。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
+- P1、S1～S6 的不可回退工程规则、历史故障和验收矩阵见 [工程规范](docs/ENGINEERING_SPECIFICATION.md)；赛事手册事实与资格红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
 ## 环境与安装
 
@@ -219,7 +220,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 ├── scripts/                   # 质量/合规门禁、密钥/链接检查和确定性打包
 ├── .github/                   # SHA 固定的 CI 与依赖更新配置
 ├── .agents/skills/            # 仓库级 Codex skill
-├── docs/                      # 审计与优化路线
+├── docs/                      # 工程/合规规范、审计路线与冻结评测证据
 ├── requirements*.lock         # 精确版本与制品哈希锁
 ├── LICENSE                    # 项目代码许可边界
 ├── THIRD_PARTY_NOTICES.md     # 第三方依赖与数据边界
@@ -233,6 +234,6 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 - 模型产生的工具参数始终按不可信输入处理，必须保留解析白名单和资源边界。
 - 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
 - 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
-- 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 协作规则见 [AGENTS.md](AGENTS.md)、[工程规范](docs/ENGINEERING_SPECIFICATION.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

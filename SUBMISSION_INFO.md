@@ -43,6 +43,7 @@
 | .github/ | Python 3.10/3.12 CI 与依赖更新配置 |
 | LICENSE / THIRD_PARTY_NOTICES.md | 项目与第三方许可边界 |
 | ARCHITECTURE.md | 唯一架构规范 |
+| docs/ENGINEERING_SPECIFICATION.md | P1～S6 工程硬规则、历史故障和回归验收基线 |
 | docs/COMPETITION_COMPLIANCE.md | 赛事红线、手册哈希、工程控制和提交操作清单 |
 
 ## 本地运行

@@ -197,6 +197,7 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
     ]
     required_compliance_files = {
         "docs/COMPETITION_COMPLIANCE.md",
+        "docs/ENGINEERING_SPECIFICATION.md",
         "math_agent/competition_policy.py",
         "scripts/check_competition_compliance.py",
     }

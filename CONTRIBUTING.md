@@ -9,7 +9,7 @@ python -m venv .venv
 python -m pip install --require-hashes -r requirements-dev.lock
 ```
 
-先阅读 `AGENTS.md`；涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`。
+先阅读 `AGENTS.md` 和 `docs/ENGINEERING_SPECIFICATION.md`；在变更说明中列出受影响的硬规则 ID、历史问题 ID 和保持不变的策略参数。涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`；涉及正式比赛、模型、日志或提交时，同时读取 `docs/COMPETITION_COMPLIANCE.md`。
 
 ## 修改原则
 
@@ -19,6 +19,8 @@ python -m pip install --require-hashes -r requirements-dev.lock
 - 新增或升级依赖时先更新对应 `requirements*.txt`，再用 `pip-compile --generate-hashes --strip-extras` 重新生成受影响的 `.lock`，并在全新环境用 `--require-hashes` 验证安装；共享锁必须在最低支持 Python 上真实安装，不能只依赖另一解释器的 `--python-version` 干运行。不要手工编辑锁内版本或哈希。
 - 修复缺陷时优先在现有测试文件中补回归测试；只有没有自然归属时才新建测试文件。
 - 不把真实 API 调用放进默认测试。
+- 不通过删除回归测试、降低覆盖率、扩大发布白名单、切换非 S1 模型或依赖平台私有接口来绕过失败。
+- 不把结构测试通过、一次随机分数或内部合成集满分写成解题能力已经提高；声明口径按工程规范第 8 节执行。
 
 ## 提交前检查
 
@@ -47,3 +49,9 @@ python -m scripts.build_release --output-dir dist
 3. 如何验证；
 4. 是否影响竞赛接口、调用量、超时风险或输出格式；
 5. 是否仍有未解决风险。
+
+还应列出：
+
+6. 受影响的工程规范规则 ID；
+7. 关联的历史问题 ID 及其状态是否改变；
+8. 若状态由“待验证/未解决”改为“已修复”，对应的冻结证据和回归测试在哪里。

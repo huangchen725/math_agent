@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. `math_agent/` is the only runtime implementation; root `user_agent.py` is the official compatibility facade. `ARCHITECTURE.md` is the sole architecture source of truth.
+This repository is the XH-202627 competition math agent. `math_agent/` is the only runtime implementation; root `user_agent.py` is the official compatibility facade. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the normative P1-S6 change and regression baseline; it must not be used as a second architecture description.
 
 ## Non-negotiable contracts
 
@@ -23,13 +23,16 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Treat `docs/COMPETITION_COMPLIANCE.md` as the repository's competition-policy record. Formal competition runs use `intern-s1`, the official injected client or official Intern endpoint, and local bounded tools only.
 - Never add per-question human answer overrides, accept post-evaluation filled results as model output, fabricate or rewrite source logs, forward reference-answer fields to the Agent, or route solving through an unauthorized external closed service.
 - A non-S1 run must set `COMPETITION_MODE=0`, be labelled as a non-submission experiment, and remain in a draft artifact. Do not weaken the formal S1 or `competition_compliance` gates without archived written organizer authorization.
+- Preserve every hard rule and fixed-stage boundary in `docs/ENGINEERING_SPECIFICATION.md`. A change that intentionally alters one must name its rule ID, isolate the variable, update the specification and architecture/compliance documents actually affected, and add regression evidence before merge.
+- Never call capability improvement, online compatibility, truncation recovery, or competition compliance "proven" when the corresponding issue remains `待验证`, `未解决`, or `条件性缺口` in the engineering specification.
 
 ## Start of work
 
 1. Inspect `git status` and preserve unrelated user changes. In particular, submission documents and generated report artifacts may be under active editing.
 2. Read `README.md`. For architecture changes, also read `ARCHITECTURE.md` and the relevant current source files.
-3. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
-4. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and preserve its fail-closed model, endpoint, answer-isolation, logging, and release controls.
+3. Read `docs/ENGINEERING_SPECIFICATION.md`, identify the affected rule IDs and known-problem IDs, and preserve unresolved status unless new evidence closes it.
+4. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
+5. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and preserve its fail-closed model, endpoint, answer-isolation, logging, and release controls.
 
 ## Relevant files
 
@@ -39,6 +42,7 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
 - Offline evaluation: `python -m evaluation.data.audit_dataset` audits provenance and prompt/sample overlap; `evaluation.scoring.judge` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
 - Generated outputs: `outputs/`; never use them as committed source.
+- Normative engineering baseline: `docs/ENGINEERING_SPECIFICATION.md`; historical evidence remains in `docs/AUDIT_AND_OPTIMIZATION.md` and `docs/evaluations/`.
 
 ## Verification
 
@@ -56,6 +60,7 @@ Run focused tests first while iterating, then the complete gate. `pip-audit` may
 - Update `README.md` when setup, environment variables, entrypoints, output behavior, or directory layout changes.
 - Update `ARCHITECTURE.md` when component boundaries, data flow, contracts, tool limits, or runtime behavior changes. Do not create another architecture document.
 - Update `docs/AUDIT_AND_OPTIMIZATION.md` when closing or discovering a material defect.
+- Update `docs/ENGINEERING_SPECIFICATION.md` when a P1-S6 invariant, hard rule, acceptance gate, or known-problem status changes. Do not copy runtime component descriptions into it.
 - Keep claims about accuracy, score, latency, cost, and platform limits tied to a recorded experiment or existing project evidence.
 - Use `AGENTS.md` for durable repository rules and the project skill for task-specific maintenance workflow. Avoid duplicating long architecture material in either file.
 
@@ -70,3 +75,5 @@ Run focused tests first while iterating, then the complete gate. `pip-audit` may
 - Flag tests that require a real API key or depend on stochastic model output.
 - Flag benchmark records without source, license, split, and calibrated level metadata; flag any test/dev item that overlaps prompt few-shots or public samples.
 - Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.
+- Flag changes that contradict a rule ID, omit a regression for a listed historical failure, or silently turn a pending/unresolved item into a success claim.
+- Flag any injected-client integration that depends on methods or fields beyond the public `chat()` contract, even when an official-looking fake happens to expose them.

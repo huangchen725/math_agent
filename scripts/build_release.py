@@ -89,6 +89,7 @@ REQUIRED_RELEASE_FILES = {
     "LICENSE",
     "README.md",
     "docs/COMPETITION_COMPLIANCE.md",
+    "docs/ENGINEERING_SPECIFICATION.md",
     "math_agent/__init__.py",
     "math_agent/competition_policy.py",
     "requirements-dev.lock",

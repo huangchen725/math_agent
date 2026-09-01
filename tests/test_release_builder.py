@@ -41,6 +41,7 @@ def _repository(tmp_path: Path) -> Path:
         ".gitignore": ".quality/\ndist/\n",
         "ARCHITECTURE.md": "# Architecture\n",
         "docs/COMPETITION_COMPLIANCE.md": "# Compliance\n",
+        "docs/ENGINEERING_SPECIFICATION.md": "# Engineering specification\n",
         "LICENSE": "All rights reserved.\n",
         "README.md": "# Project\n",
         "math_agent/__init__.py": "class AgentConfig:\n    pass\n",

@@ -11,6 +11,8 @@ Maintain the repository's single runtime architecture and its competition contra
 
 Read `AGENTS.md` and inspect `git status` before editing. Preserve unrelated working-tree changes.
 
+Read `docs/ENGINEERING_SPECIFICATION.md` and name the affected hard-rule IDs and known-problem IDs before changing behavior. Keep unresolved items unresolved unless the task produces the exact evidence required by that registry. Do not infer success from a passing structural test, an API request being submitted, or a single stochastic score.
+
 Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The only runtime implementation is the `math_agent/` package. Root `user_agent.py` is the competition compatibility facade; `main.py` and `demo.py` are adapters and must import the package public API.
 
 ## Preserve active contracts
@@ -38,6 +40,8 @@ For runner changes, validate JSONL shape and indexes, keep atomic writes, retry 
 
 For client changes, retry only transient network/service errors and never log authorization headers or keys.
 
+For injected-client changes, use only the public `chat()` contract. Project-private atomic metadata is permitted only after the project-owned client explicitly advertises the exact protocol marker; always retain a fake client with a deliberately incompatible same-name private method so structural probing cannot return.
+
 For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
 
 Invoke evaluation CLIs with `python -m evaluation.<group>.<module>` so package imports behave the same in tests and command-line use.
@@ -59,3 +63,5 @@ For delivery, run the complete gate on a clean commit and then `python -m script
 ## Keep documentation aligned
 
 Update `README.md` for changed setup, environment variables, entrypoints, layout, or output behavior. Update `ARCHITECTURE.md` for changed contracts, components, data flow, tool limits, or failure behavior. Update `docs/AUDIT_AND_OPTIMIZATION.md` when a material finding is discovered, fixed, downgraded, or accepted. Do not create a second architecture document.
+
+Update `docs/ENGINEERING_SPECIFICATION.md` when a P1-S6 stage invariant, hard rule, acceptance matrix, or known-problem status changes. Update `docs/COMPETITION_COMPLIANCE.md` only for handbook facts, written organizer authorization, formal run controls, or submission evidence. Keep historical experiment numbers in evaluation reports rather than silently replacing them with current values.
