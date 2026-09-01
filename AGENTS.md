@@ -32,7 +32,8 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 2. Read `README.md`. For architecture changes, also read `ARCHITECTURE.md` and the relevant current source files.
 3. Read `docs/ENGINEERING_SPECIFICATION.md`, identify the affected rule IDs and known-problem IDs, and preserve unresolved status unless new evidence closes it.
 4. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
-5. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and preserve its fail-closed model, endpoint, answer-isolation, logging, and release controls.
+5. Also use `.agents/skills/property-based-testing/SKILL.md` when changing parsers, canonicalizers, normalizers, validators, numeric equivalence, serialization, or state-machine invariants. It supplements the project skill and never overrides repository rules. Adding Hypothesis or another test dependency remains a separate dependency decision and requires updated inputs, hashes, and lock verification.
+6. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and preserve its fail-closed model, endpoint, answer-isolation, logging, and release controls.
 
 ## Relevant files
 

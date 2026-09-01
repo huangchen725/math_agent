@@ -219,7 +219,9 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 ├── tests/                     # 无网络回归测试
 ├── scripts/                   # 质量/合规门禁、密钥/链接检查和确定性打包
 ├── .github/                   # SHA 固定的 CI 与依赖更新配置
-├── .agents/skills/            # 仓库级 Codex skill
+├── .agents/skills/            # 仓库级 Codex skills
+│   ├── math-agent-maintainer/ # 项目维护、合规与回归工作流
+│   └── property-based-testing/ # 固定版本的第三方属性测试 Skill（仅开发期）
 ├── docs/                      # 工程/合规规范、审计路线与冻结评测证据
 ├── requirements*.lock         # 精确版本与制品哈希锁
 ├── LICENSE                    # 项目代码许可边界
@@ -234,6 +236,7 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 - 模型产生的工具参数始终按不可信输入处理，必须保留解析白名单和资源边界。
 - 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
 - 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
+- 第三方 `property-based-testing` Skill 只辅助开发期的解析、归一化和状态不变量测试，不属于运行时，也不会进入 formal 竞赛包；其固定来源、文件哈希和许可证保存在 Skill 目录内。
 - 协作规则见 [AGENTS.md](AGENTS.md)、[工程规范](docs/ENGINEERING_SPECIFICATION.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

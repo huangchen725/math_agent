@@ -18,6 +18,7 @@ python -m pip install --require-hashes -r requirements-dev.lock
 - 不在同一次实验中同时修改候选数、温度、token 预算与 prompt。
 - 新增或升级依赖时先更新对应 `requirements*.txt`，再用 `pip-compile --generate-hashes --strip-extras` 重新生成受影响的 `.lock`，并在全新环境用 `--require-hashes` 验证安装；共享锁必须在最低支持 Python 上真实安装，不能只依赖另一解释器的 `--python-version` 干运行。不要手工编辑锁内版本或哈希。
 - 修复缺陷时优先在现有测试文件中补回归测试；只有没有自然归属时才新建测试文件。
+- 修改解析器、答案归一化、等价判定、validator、序列化或状态机不变量时，同时使用 `.agents/skills/property-based-testing/SKILL.md` 设计幂等、往返、oracle 或状态保持性质。第三方 Skill 只提供测试方法；增加 Hypothesis 等依赖仍须单独说明、更新输入规格与哈希锁并完成最低 Python 验证。
 - 不把真实 API 调用放进默认测试。
 - 不通过删除回归测试、降低覆盖率、扩大发布白名单、切换非 S1 模型或依赖平台私有接口来绕过失败。
 - 不把结构测试通过、一次随机分数或内部合成集满分写成解题能力已经提高；声明口径按工程规范第 8 节执行。

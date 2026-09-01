@@ -34,6 +34,8 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 
 For correctness, prompt, candidate, temperature, thinking-mode, or token changes, first read the relevant history in `技术报告.md` and the current contract in `ARCHITECTURE.md`. Define a fixed dataset and record commit, model, configuration, request count, errors, runtime, and score. Change one experimental variable at a time.
 
+For parsers, canonicalizers, normalizers, validators, numeric equivalence, serialization, or state-machine invariants, also apply `.agents/skills/property-based-testing/SKILL.md`. Identify a real algebraic property such as idempotence, roundtrip, oracle agreement, or state preservation; keep example regressions for known failures. Do not add Hypothesis or any other dependency merely because the third-party skill mentions it: first name the concrete property, obtain approval for the dependency change, and regenerate and verify all affected locks.
+
 For tool changes, keep an explicit registry, JSON-schema definition, bounded arguments/results, restricted SymPy namespace, killable child-process timeout, and malformed-call behavior. Add an offline test for successful calculation and rejected hostile, excessive, or timed-out input.
 
 For runner changes, validate JSONL shape and indexes, keep atomic writes, retry invalid/error checkpoints, and test that paths cannot escape the output directory.

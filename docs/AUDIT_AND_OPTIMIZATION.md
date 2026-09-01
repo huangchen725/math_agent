@@ -591,3 +591,11 @@ S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工�
 执行层面，`AGENTS.md`、维护 Skill、`CONTRIBUTING.md`、README、唯一架构文档和提交说明均已引用该规范，并要求变更说明列出受影响的规则/问题 ID 与证据。formal 发布白名单和离线合规探针把规范列为必需文件，避免发布包遗漏；新增规范回归测试固定阶段锚点、规则类别、开放问题状态、文档入口和手册关键事实。
 
 本次最终离线门禁为 21/21 检查通过，185 项测试通过，总语句覆盖率 76.87%；Ruff、compileall、Bandit、Python 3.10/Linux 锁闭包、`pip check`、三套依赖漏洞审计、secret scan、20 份 Markdown 本地链接、竞赛合规探针、few-shot dry-run、runner 与 9 个评测 CLI 入口全部通过。首次受限环境运行仅因套接字权限无法访问 PyPI 漏洞数据库而使 `pip_audit` 失败；在允许该公开安全查询后，同一工作树完整通过。这一过程没有调用真实模型 API，也没有产生新的正确率或线上平台兼容性结论。
+
+## 27. 项目级属性测试 Skill 集成
+
+2026-09-01 从 Trail of Bits `skills` 仓库的固定提交 `6feac677af72e52ef4d279412276b5a6f21366f0` 引入 `property-based-testing`，安装于 `.agents/skills/property-based-testing/`。该 Skill 精确覆盖项目中风险较高的 parser、canonicalizer、normalizer、validator、数值等价、序列化和恢复状态机不变量；它补充现有 `math-agent-maintainer` 的项目约束，不定义架构、比赛规则或数学策略，也不会因安装而提高模型解题能力。
+
+路由采用三层闭环：上游 `SKILL.md` 的窄触发描述负责 Codex 隐式发现，`AGENTS.md` 明确项目内适用模块，项目维护 Skill 与贡献指南要求相关修改同时应用属性测试方法。工程规则 `QUAL-005` 进一步规定第三方 Skill 的固定提交、许可证、归属、逐文件哈希、依赖审批和 formal 发布隔离。当前安装不包含 `scripts/`，没有增加 Hypothesis 或其他 Python 依赖；若未来确有可验证性质需要新库，仍按 S5 锁文件流程单独审批。
+
+上游 CC BY-SA 4.0 许可证全文保存在 Skill 子目录，`UPSTREAM.json` 记录来源路径和每个导入文件的 SHA-256，`THIRD_PARTY_NOTICES.md` 明确该子树的独立许可。供应链回归测试会拒绝未更新 manifest 的增删改，并确认该 Skill 不在 formal 竞赛发布白名单中。完整离线门禁为 21/21 检查通过，188 项测试通过，总语句覆盖率 76.87%；未调用真实模型 API。

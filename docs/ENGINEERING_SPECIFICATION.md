@@ -158,6 +158,7 @@
 - **QUAL-002**：无网络时 `--skip-dependency-audit` 只产生诊断报告，不能授权 formal 发布。
 - **QUAL-003**：CI 必须在 Python 3.10/3.12 使用哈希锁；GitHub Actions 固定完整 SHA、权限 `contents: read`、checkout 不持久化凭据，且不得使用 `pull_request_target` 执行不可信代码。
 - **QUAL-004**：临时目录和漏洞缓存必须位于忽略的 `.quality/` 独立子目录，避免跨权限残留污染后续检查。
+- **QUAL-005**：项目级第三方 Skill 必须固定上游提交、保留适用许可证与归属、记录逐文件 SHA-256，并以回归测试验证来源和发布边界。`property-based-testing` 只用于开发期解析器、归一化器、validator、数值等价、序列化和状态机不变量测试，不得进入运行时或 formal 竞赛包，也不得自行授权新增测试依赖。
 - **REL-001**：formal 包要求干净 Git 工作树、同一 commit/tree 的完整通过报告、依赖审计和竞赛合规检查；源文件必须读取该提交的 Git blob。
 - **REL-002**：脏工作树或显式 `--allow-dirty` 只能生成 `draft`，永远不得改名或解释为 formal。
 - **REL-003**：`.env`、outputs、私有数据、`.quality`、dist、缓存、虚拟环境、符号链接、二进制伪装和超限文件不得进入发布包。
@@ -212,6 +213,7 @@
 | Runner/checkpoint | JSONL、idx、路径逃逸、原子写、损坏/失败 checkpoint、隐私安全摘要 | 正式运行只用新目录；人工预置结果立即作废整批 |
 | 数据/判分/实验 | provenance、license、split、level、重复/泄漏、四态 judge、manifest 指纹 | 缺来源或重合不清时不能进入正式能力结论 |
 | 依赖/CI | 重生成哈希锁、真实 Python 3.10 安装、目标闭包、Python 3.12、pip check/audit | 已知漏洞、缺哈希、未固定 Action 或 3.10 失败时停止 |
+| 第三方开发 Skill | 固定 commit、许可证、归属、逐文件哈希、无意外脚本、项目触发路由和 provenance 测试 | 不得覆盖项目 Skill/规范，不得隐式增加依赖，不得进入运行时或 formal 包 |
 | 架构拆分 | 结构测试、运行模块指纹、公开类型身份、完整离线门禁 | 不得恢复重复实现、隐式上下文或巨型门面 |
 | 合规/发布 | `competition_compliance`、secret/link、formal/draft、确定性 ZIP、manifest/hash | 非 S1、脏树、报告不匹配、缺审计或缺书面授权时拒绝 formal |
 | 文档/规范 | Markdown 链接、规范锚点测试、README/ARCHITECTURE/审计同步 | 不得用历史报告覆盖当前规范，也不得创建第二架构文档 |
@@ -221,7 +223,7 @@
 1. 读取 `git status`，确认并保护未提交内容。
 2. 读取 `AGENTS.md`、本文件；涉及运行行为时再读 `ARCHITECTURE.md`，涉及比赛/提交时再读 `COMPETITION_COMPLIANCE.md`。
 3. 在变更说明中列出受影响的规则 ID、已知问题 ID、保持不变的策略参数和验证计划。
-4. 先添加能复现缺陷的离线回归，再修改实现；结构迁移必须对比迁移前后的请求序列和配置。
+4. 先添加能复现缺陷的离线回归，再修改实现；结构迁移必须对比迁移前后的请求序列和配置。涉及解析、归一化、等价、序列化或状态机时，应用 `property-based-testing` Skill 选择最强可验证性质，同时保留已知故障的固定样例。
 5. 迭代时运行最小测试，完成后运行 `python -m scripts.run_quality_gates`。真实 API 不属于默认验证。
 6. 更新 README、唯一架构文档、工程规范、合规规范或审计记录中实际受影响的部分；没有影响时不要机械复制内容。
 7. 推送前确认身份、远程、分支，先 fetch；禁止覆盖未知远程提交。
