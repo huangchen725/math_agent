@@ -41,7 +41,6 @@ from .response_processing import (
     validate_response,
 )
 from .solver import SolveOrchestrator
-from .task_router import TaskAnalysis
 from .trace_sanitizer import sanitize_trace
 from .truncation import contain_pending_truncations, mark_truncation
 
@@ -238,20 +237,6 @@ class ReasoningAgent:
         batch = self._orchestrator.generator.generate(context, domain_prompt, target_tokens)
         return batch.candidates, batch.trace, batch.emergency_hints
 
-    def _solve_tools_result(
-        self,
-        context: SolveContext,
-        candidate_id: int,
-        domain_prompt: str,
-        target_tokens: int,
-    ) -> tuple[ModelCallResult, list[dict]]:
-        return self._orchestrator.generator.solve_tools_result(
-            context,
-            candidate_id,
-            domain_prompt,
-            target_tokens,
-        )
-
     def _solve_plain_result(
         self,
         context: SolveContext,
@@ -279,41 +264,12 @@ class ReasoningAgent:
         context: SolveContext,
         candidate: str,
         candidate_id: int,
-        *,
-        task_analysis: TaskAnalysis | None = None,
     ) -> tuple[float, list[dict], list[Verification]]:
         return self._orchestrator.evaluator.verify(
             context,
             candidate,
             candidate_id,
-            task_analysis=task_analysis,
         )
-
-    def _critic(self, context: SolveContext, candidate: str) -> str:
-        return self._orchestrator.evaluator.critic(context, candidate)
-
-    def _reflect_result(
-        self,
-        context: SolveContext,
-        previous: str,
-        feedback: str,
-        *,
-        candidate_id: int,
-    ) -> ModelCallResult:
-        return self._orchestrator.evaluator.reflect_result(
-            context,
-            previous,
-            feedback,
-            candidate_id=candidate_id,
-        )
-
-    def _reflect(self, context: SolveContext, previous: str, feedback: str) -> str:
-        return self._reflect_result(
-            context,
-            previous,
-            feedback,
-            candidate_id=-1,
-        ).text
 
     def _prepare_candidate(
         self,

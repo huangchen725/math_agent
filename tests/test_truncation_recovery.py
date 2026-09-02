@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 import pytest
 
@@ -21,7 +22,12 @@ class SequenceClient(InternChatClient):
 
     def chat_with_metadata(self, **kwargs):
         self.calls.append(kwargs)
-        text, finish_reason = self.responses.pop(0)
+        if self.responses:
+            text, finish_reason = self.responses.pop(0)
+        elif "VERDICT" in kwargs["messages"][-1]["content"]:
+            text, finish_reason = "VERDICT: A", "stop"
+        else:
+            text, finish_reason = "最终答案：2\n默认完整候选", "stop"
         metadata = {
             "finish_reason": finish_reason,
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
@@ -67,7 +73,7 @@ def test_plain_truncation_is_recovered_without_leaking_partial_reasoning():
     assert "残缺推理" not in result["final_response"]
     assert_valid_final_response(result["final_response"])
     summary = budget_summary(result)
-    assert summary["model_requests"] == 2
+    assert summary["model_requests"] == 7
     assert summary["recovery_requests"] == 1
     assert summary["truncation_recovery"]["handled"] == 1
     assert summary["truncation_recovery"]["succeeded"] == 1
@@ -91,6 +97,8 @@ def test_truncated_recovery_is_quarantined_and_emergency_answer_is_used():
     client = SequenceClient([
         ("最终答案：3\n原始残句", "length"),
         ("最终答案：2\n恢复残句", "length"),
+        ("没有显式答案", "stop"),
+        ("仍没有显式答案", "stop"),
         ("最终答案：2", "stop"),
     ])
 
@@ -132,6 +140,8 @@ def test_three_truncated_candidates_share_three_recoveries_and_reserve_emergency
 def test_emergency_truncation_salvages_only_first_line_answer():
     client = SequenceClient([
         ("没有显式答案", "stop"),
+        ("没有显式答案", "stop"),
+        ("没有显式答案", "stop"),
         ("最终答案：2\n紧急残句", "length"),
     ])
 
@@ -143,7 +153,7 @@ def test_emergency_truncation_salvages_only_first_line_answer():
     assert summary["final_answer_source"] == "emergency_truncated_answer_only"
 
 
-def test_tool_candidate_truncation_uses_same_recovery_state_machine():
+def test_legacy_tool_slot_uses_plain_truncation_recovery_state_machine():
     client = SequenceClient([
         ("最终答案：3\n工具候选残句", "length"),
         ("最终答案：2\n短核验", "stop"),
@@ -154,14 +164,19 @@ def test_tool_candidate_truncation_uses_same_recovery_state_machine():
 
     assert result["final_response"].endswith("最终答案：2")
     summary = budget_summary(result)
-    assert summary["truncated_by_stage"] == {"policy_tool": 1}
+    assert summary["truncated_by_stage"] == {"policy_plain": 1}
+    assert not any(event["step"].startswith("tool_") for event in result["trace"])
 
 
 def test_verifier_truncation_retries_once_and_keeps_unknown_neutral():
     client = SequenceClient([
         ("最终答案：2\n推理", "stop"),
+        ("最终答案：2\n推理", "stop"),
+        ("最终答案：2\n推理", "stop"),
         ("VER", "length"),
         ("仍无法给出判定", "stop"),
+        ("VERDICT: A", "stop"),
+        ("VERDICT: A", "stop"),
     ])
     agent_config = config(verifier_voting_times=1)
 
@@ -177,37 +192,22 @@ def test_verifier_truncation_retries_once_and_keeps_unknown_neutral():
     assert summary["truncation_recovery"]["handled"] == 1
 
 
-def test_critic_truncation_is_discarded_without_reflection():
+def test_legacy_critic_and_reflection_flags_do_not_add_formal_requests():
     client = SequenceClient([
         ("最终答案：2\n推理", "stop"),
+        ("最终答案：2\n推理", "stop"),
+        ("最终答案：2\n推理", "stop"),
         ("VERDICT: B", "stop"),
-        ("这里可能有", "length"),
+        ("VERDICT: B", "stop"),
+        ("VERDICT: B", "stop"),
     ])
     agent_config = config(verifier_voting_times=1, enable_critic=True, enable_reflection=True)
 
     result = ReasoningAgent(client, agent_config).solve("计算 1+1", {})
 
-    assert len(client.calls) == 3
-    assert any(event["step"] == "critic_truncated" for event in result["trace"])
+    assert len(client.calls) == 6
+    assert not any(event["step"] == "critic" for event in result["trace"])
     assert not any(event["step"] == "reflection" for event in result["trace"])
-
-
-def test_reflection_truncation_is_recovered_before_aggregation():
-    client = SequenceClient([
-        ("最终答案：1\n旧推理", "stop"),
-        ("VERDICT: B", "stop"),
-        ("首个错误在计算；应得到 2。", "stop"),
-        ("最终答案：9\n反思残句", "length"),
-        ("最终答案：2\n修正推理", "stop"),
-        ("VERDICT: A", "stop"),
-    ])
-    agent_config = config(verifier_voting_times=1, enable_critic=True, enable_reflection=True)
-
-    result = ReasoningAgent(client, agent_config).solve("计算 1+1", {})
-
-    assert result["final_response"].endswith("最终答案：2")
-    assert "反思残句" not in result["final_response"]
-    assert budget_summary(result)["truncated_by_stage"] == {"reflection": 1}
 
 
 def test_recovery_requests_obey_their_own_limit_and_shared_token_budget():
@@ -236,7 +236,8 @@ def test_recovery_requests_obey_their_own_limit_and_shared_token_budget():
 
 class ConcurrentClient(InternChatClient):
     def __init__(self) -> None:
-        pass
+        self._lock = Lock()
+        self._truncated_a = False
 
     def chat(self, **kwargs):
         response, _ = self.chat_with_metadata(**kwargs)
@@ -244,7 +245,18 @@ class ConcurrentClient(InternChatClient):
 
     def chat_with_metadata(self, **kwargs):
         content = kwargs["messages"][-1]["content"]
-        if "题A" in content and "上一次解答被截断" not in content and "截断回复" not in content:
+        if "VERDICT" in content:
+            finish_reason = "stop"
+            text = "VERDICT: A"
+        elif "题A" in content and "上一次解答被截断" not in content and "截断回复" not in content:
+            with self._lock:
+                should_truncate = not self._truncated_a
+                self._truncated_a = True
+            if not should_truncate:
+                return "最终答案：1\n题A完整", {
+                    "finish_reason": "stop",
+                    "usage": {"total_tokens": 5},
+                }
             finish_reason = "length"
             text = "最终答案：1\n题A残句"
             time.sleep(0.02)

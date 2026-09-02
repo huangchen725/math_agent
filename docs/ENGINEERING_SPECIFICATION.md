@@ -30,7 +30,7 @@
 
 | 阶段 | 提交锚点 | 已完成内容 | 不可回退结果 |
 | --- | --- | --- | --- |
-| P1 | `a0df6d0` | 接入零调用题型分析、受限确定性验证和证据优先选择 | 只有结构明确且一致的 `pass` 可以提高选择优先级；`fail`、`unknown`、冲突、超时或无计划必须回退原选择规则 |
+| P1 | `a0df6d0` | 接入零调用题型分析、受限确定性验证和证据优先选择 | 实现、受限解析和回归证据必须可追溯；当前兼容内核暂停正式激活，恢复时仍只有结构明确且一致的 `pass` 可提高选择优先级 |
 | S1 | `3ba0610` | 建立唯一 `math_agent/` 运行包，根 `user_agent.py` 收缩为兼容门面；适配器统一导入包 API；增加公开接口与 Demo 安全网 | 不得恢复根目录第二份 Agent 实现；根入口和包公开类型必须保持对象身份一致；可选 Demo 依赖必须延迟加载 |
 | S2 | `13fb638`、`70ac53f` | 引入显式 `SolveContext`、统一 `ModelGateway`、原子响应元数据、共享预算；拆分 Agent 顶层编排与候选生命周期 | 不得恢复 ContextVar、最近响应 getter、Agent 级单题可变状态或模型调用旁路；`agent.py` 只保留生命周期/兼容边界 |
 | S3 | `70ac53f` | 把数学工具拆为解析、实现、schema/分发、模型循环、子进程执行和兼容门面 | `math_tools.py` 不得重新承载实现；所有模型参数视为不可信；解析白名单、参数边界、工具预算与可终止超时必须保留 |
@@ -38,6 +38,7 @@
 | S5 | `3cbd587`、`366f270` | 建立三套带哈希依赖锁、Python 3.10/3.12 CI、覆盖率/静态/安全/漏洞/CLI 完整门禁 | 不得只更新输入规格而遗漏锁，不得用跨版本 dry-run 替代最低 Python 真实安装，不得移除失败检查来换取绿色状态 |
 | S6 | `3cbd587` | 建立许可证边界、第三方声明、正式/草稿发布状态机、Git blob 确定性打包和来源/质量/文件哈希 | 脏树只能生成 `draft`；formal 必须来自干净提交和同提交完整质量报告；不得扩大白名单或降低扫描/大小/来源限制绕过失败 |
 | 兼容与合规收口 | `c088a84` | 完成第一阶段同名私有方法隔离；增加 Intern-S1/官方端点失败关闭、赛事合规门禁及手册哈希 | 该提交未完成三参数投影且官方复测仍为 0 request；后续不得把阶段性 fake 通过写成平台兼容已恢复 |
+| 保守兼容内核 | 2026-09-03 工作树（提交待定） | 保留模块化架构，把正式路径收敛为 3 个纯文本候选、每候选 1 次模型验证、模型多数票和有界恢复 | 默认恰好 6 次普通三参数调用；tools/critic/reflection/deterministic 旧开关不得启用另一套正式协议；在线恢复仍待正式评测 |
 
 结构阶段的完成不等于数学能力提高。P1 的收益、S2～S6 的工程收益和真实正确率必须分别陈述，不能互相替代。
 
@@ -47,16 +48,16 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 候选 | 配置为 2 个工具候选 + 1 个纯推理候选；未知注入 client 不保证扩展参数时，两个工具槽显式降级为纯文本候选 |
-| 模型 verifier | 每候选 1 次 |
-| 温度 | policy `0.6`；verifier `0.0`；critic/reflection `0.3` |
-| thinking mode | policy/verifier/critic 内部配置均为 `False`；仅项目自有客户端接收该扩展参数，未知注入 client 使用平台默认行为 |
+| 候选 | 正式固定 3 个纯文本候选；旧 `tool_candidates/plain_candidates` 默认 `0/3` 但不改变数量 |
+| 模型 verifier | 正式固定每候选 1 次；旧 `verifier_voting_times` 不改变数量 |
+| 温度 | 正式活动项为 policy `0.6`、verifier `0.0`；critic/reflection 的旧字段不参与正式请求 |
+| thinking mode | 正式上层不发送 `thinking_mode`；旧字段只为配置构造兼容保留 |
 | API 单请求上限 | `8192` tokens |
 | 本地推理目标 | 计算题 `1800`；证明/推导/分类题 `3500` 输出 tokens |
 | 恢复 | 每候选最多 1 次；恢复请求总额 4；单次恢复上限 `2048` |
-| 普通模型请求 | 每题最多 16；加恢复后绝对上限 20 |
+| 普通模型请求 | 默认恰好 6、上限 6；加恢复后绝对上限 10 |
 | 其他单题预算 | 总 token `200000`；工具 48 次；deadline 600 秒 |
-| 工具 | 项目自有客户端最多 3 轮、单工具默认硬超时 5 秒；未知注入 client 不发送 tool schema |
+| 工具/critic/reflection/确定性选择 | 正式路径暂停；受限模块和旧配置字段保留，但开关不能恢复第二条运行分支 |
 | 输入 | 题面和 metadata 各最多 20000 字符 |
 | 本地 runner 并发 | 默认 3 |
 | formal 模型 | 默认 `intern-s1`；允许证据登记册已确认的 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，实际提交模型另留页面回执 |
@@ -89,6 +90,7 @@
 - **API-007**：API key 只来自环境变量。代码、测试、trace、日志、文档、质量报告、压缩包和命令输出不得保存或回显密钥/Authorization。
 - **API-008**：真实评测首先验证 `request_count > 0`、`success > 0` 和运行耗时合理；请求为 0 的整批结果是入口故障，不得记为数学正确率 0%。
 - **API-009**：根 `ReasoningAgent` 构造器必须兼容平台公开的 `ReasoningAgent(client=official_client)` 及 `__init__(self, client, *args, **kwargs)`；额外参数视为不透明平台选项，只有运行时确为项目 `AgentConfig` 的位置值或 `config=` 值可被采用。字典、字符串及其它值不得污染配置、驱动求解、读取私有状态或绕过显式配置。离线门禁必须同时注入不透明位置值、伪 `config` 值、真正配置和未知关键字并完成一次严格三参数求解。
+- **API-010**：当前正式兼容内核固定为 3 个纯文本候选和每候选 1 次紧凑 verifier，正常题恰好 6 次普通请求。旧 `tool_candidates`、`plain_candidates`、`verifier_voting_times` 数值及 `enable_tools`、`enable_critic`、`enable_reflection`、`enable_deterministic_verification` 开关均不得改变数量、触发工具参数/私有方法或形成另一条正式协议；恢复策略字段必须单变量提交、增加严格 client 请求序列回归并重新获得在线授权。
 
 ### 4.3 外部接口与输出
 
@@ -113,14 +115,15 @@
 - **TRUNC-007**：恢复请求不得用于稀释总体比例，也不得绕过请求、token、工具和 deadline 预算。
 - **TRUNC-008**：压缩推理不能以明显低于约 22% 的历史隐藏集基线为代价；能力判定仍需逐题配对和重复运行。
 
-### 4.5 P1 验证与候选选择
+### 4.5 P1 保留能力与当前候选选择
 
 - **VER-001**：只有封闭数值表达式、明确数域的有限方程解集、导数、不定积分、极限、留数、数值行列式、模幂和组合数等受支持结构才生成强验证计划。
 - **VER-002**：证明、复合目标、数域不明、整数/正根等额外约束和无法安全解析的题必须保持无强计划或 `unknown`。
 - **VER-003**：确定性验证在可终止子进程中执行并占用共享工具预算，结果只允许 `pass/fail/unknown`。
 - **VER-004**：仅当一个或多个 `pass` 指向同一 canonical answer 时优先；证据冲突、只有 `fail/unknown`、超时、预算不足或解析失败都回退多数票/置信度规则。
 - **VER-005**：确定性 verifier 不是任意题型的真值 oracle；扩大支持范围必须增加严格解析、正反例、漏根/增根、数域、超时和冲突测试。
-- **VER-006**：关闭 `enable_deterministic_verification` 必须完整恢复 P0 选择行为，以支持单变量 A/B。
+- **VER-006**：当前正式选择器必须保持 P0 的 canonical answer 多数票/置信度行为，并忽略旧确定性证据；打开 `enable_deterministic_verification` 也不得绕过 `API-010`。
+- **VER-007**：恢复 P1 时必须从 Git 历史独立提出并显式重新启用，验证关闭时完整恢复 P0、开启时满足 `VER-001`～`VER-005`，再按冻结协议做离线和受控在线 A/B；不得把“模块仍存在”解释为“正式路径已启用”。
 
 ### 4.6 架构与状态
 
@@ -194,7 +197,7 @@
 | ARCH-001 | 根实现与包实现曾重复，入口/依赖容易漂移 | 缺少唯一运行包和公开契约测试 | S1 已修复 | 结构测试必须阻止第二份实现 |
 | STATE-001 | 旧预算和最近响应依赖 ContextVar/隐式侧信道 | 并发题目可能串 metadata，工具循环重复记账 | S2 已修复 | 同 Agent/共享 client 并发隔离回归必须保留 |
 | STATE-002 | S2 拆分后工具循环一度未从 gateway 取得共享工具预算 | 组件拆分时只迁移模型入口，遗漏预算绑定 | 已修复 | 网关、上下文和工具必须引用同一预算对象 |
-| CLIENT-001 | `70ac53f`、`c088a84` 和已含三参数投影的 `eb5d8d4` 三次官方评测均为 112/112 error、0 request、0 token；这反证 `thinking_mode/tools` 缺陷修复足以恢复线上。官方固定 baseline `43be244` + 精确 `eb5d8d4` + fake HTTP 的 112 题对照为 112 success、672 次进入公开 client；仅拒绝 8192 仍为 112 success，拒绝全部 chat 也因 `未解出` 被公开 runner 记为 112 success | 平台未公开注入 client 的类/版本、返回类型、校验顺序与逐题异常；三参数投影是必要兼容修复，但公开 client 契约已不能解释正式 0 分，正式环境至少存在一项 baseline 外差异 | 已实现三参数投影、工具槽文本降级、私有读取移除和严格 fake；`eb5d8d4` 正式复核失败后状态仍为 **未解决** | 下一次先确认实际 SHA、`request_count>0`、`success>0`、`error=0`；向主办方索取脱敏异常类型、精确 client 契约及正式 runner 与公开 baseline 的差异，未取得前不得再写唯一根因 |
+| CLIENT-001 | `70ac53f`、`c088a84` 和已含三参数投影的 `eb5d8d4` 三次官方评测均为 112/112 error、0 request、0 token；这反证 `thinking_mode/tools` 缺陷修复足以恢复线上。官方固定 baseline `43be244` + 精确 `eb5d8d4` + fake HTTP 的 112 题对照为 112 success、672 次进入公开 client；仅拒绝 8192 仍为 112 success，拒绝全部 chat 也因 `未解出` 被公开 runner 记为 112 success | 平台未公开注入 client 的类/版本、返回类型、校验顺序与逐题异常；三参数投影是必要兼容修复，但公开 client 契约已不能解释正式 0 分，正式环境至少存在一项 baseline 外差异 | 已实现三参数投影、固定 3×1 纯文本兼容内核、私有读取移除和严格 fake；`eb5d8d4` 正式复核失败后状态仍为 **未解决** | 下一次先确认实际 SHA、`request_count>0`、`success>0`、`error=0`；向主办方索取脱敏异常类型、精确 client 契约及正式 runner 与公开 baseline 的差异，未取得前不得再写唯一根因 |
 | ENTRY-001 | S1 后根入口改为包门面；在仓库根不在 `sys.path` 的官方式绝对路径加载中可复现 `ModuleNotFoundError: math_agent` | 入口测试继承了仓库当前目录，未覆盖 path-based 独立 worker | 已按 `__file__` 引导且加入隔离解释器门禁；**线上关联待验证** | 每次正式发布用 `python -I` 从仓库外动态加载根入口，不得依赖 cwd/PYTHONPATH |
 | DATA-001 | 位于其他 Git 工作树内但未跟踪的 Putnam 源文件曾继承错误 commit | 仅检查父目录是 Git 仓库，没有确认文件被跟踪 | 已修复 | 只有 `git ls-files` 确认跟踪才采信 source commit |
 | EVAL-IO-001 | 平铺脚本重复 JSON/哈希/普通覆盖写入，并依赖 `sys.path` | 缺少包边界和共享 I/O | S4 已修复 | 结构测试要求分组包、原子 I/O、无 `sys.path` |
@@ -210,6 +213,7 @@
 | OFFICIAL-002 | 连续三次 112 error / 0 request 暴露 client/response/error/runner 契约缺失；模型 ID、预算、资源、Judger、工具和变更版本同样未完整发布。官方固定 baseline 与 `eb5d8d4` 的 112 题精确入口对照全部 success，证明正式平台至少存在一项未公开差异 | 把 baseline 示例、宽松 fake、历史成功或一次候选缺陷修复误当平台注入实现保证；反过来把正式失败直接归因于公开 baseline 也不成立 | **未解决**；已登记十类 `OFFICIAL-GAP-*` 并采用最小接口、本地预算、隔离入口和外层契约保护 | 只有满足对应缺口所需的精确书面证据才能关闭；正式运行前向主办方请求正式 runner 与公开 baseline 的差异、实际构造参数、client 版本/签名、逐题异常类型、状态分类和计数语义 |
 | JUDGE-001 | 旧 FAQ 截图称 `trace` 可参与 Judger，当前 baseline 又限制 trace 为非敏感元数据并以 `final_response` 为主 | 官方 Judger 版本、输入字段和大小限制未冻结 | **官方口径未解决**；当前以自包含 `final_response` + 元数据 trace 双重兼容 | 等待绑定 Judger 版本的书面输入契约；不得把推理正文放回公开 trace |
 | ENTRY-002 | MAT-007/官方 README 要求构造器至少兼容 `client,*args,**kwargs`；被评测 `eb5d8d4` 只接受 `client, config`，不透明位置字典会污染 `self.config`，本地可复现 0 次 chat 后 `AttributeError` 逃出 `solve()`。该故障模型在官方 `main.py` 上精确产生 112 error / 0 request；但公开 `main.py` 实际只传 `client=`，同提交 baseline Agent 自身也只有 `client, config=None` | 本地只测试了正常 `client` 和真正的 `AgentConfig`，没有覆盖平台值占据位置参数或 `config=` 名称，也没有覆盖预检/收尾异常；官方示例代码与 README 扩展签名存在不一致 | 已只采纳运行时确为 `AgentConfig` 的值，并增加完整生命周期最外层契约保护；离线同形复现由 0 调用恢复为 6 调用；这是当前唯一匹配全部聚合指标的候选，**线上关联待验证** | 根入口/合规测试必须同时带不透明位置值、伪 `config` 字典、真正 `AgentConfig` 和未知关键字；普通预检/收尾异常不得逃出且最外层不得绕预算请求；向官方确认正式构造调用 |
+| COMPAT-CORE-001 | S1～S4 后连续出现正式 `0 request / 112 error`，而公开 baseline 对照不能复现；在多个未公开平台变量同时存在时继续保留工具、题型、确定性证据和反思会扩大诊断面 | 结构改造与运行策略同时演进，无法用一次正式失败区分入口、client、请求协议、资源或高级阶段影响 | 2026-09-03 已保留显式上下文、网关、预算、截断和格式架构，把正式路径收敛为 3 个纯文本候选 + 3 次 verifier；旧高级开关被证明不能改变调用序列；**线上兼容性与数学能力均待验证** | 首次正式运行只检查 SHA、`request_count>0`、`success>0`、`error=0` 和耗时；成功后再以单变量分支逐项恢复能力，不得一次恢复多个阶段 |
 | SUBMIT-001 | MAT-007 明确双通道：AtomGit 最新 `main` 固定批次自动评测，截止前最终 ZIP 邮件归档；当前本地只有 GitHub `origin`，`atomgit` 地址和两类回执均待填 | 沿用 GitHub/commit-hash 流程会无法入队；只做 AtomGit 或只发 ZIP 都缺交付证据 | **操作阻断项，未解决** | 取得 URL 后新增 `atomgit` 远程并推送 `main`；12:00/24:00 前点击提交并冻结至抓取完成；截止前发送最终 ZIP 并保存邮件记录 |
 | RESOURCE-001 | SymPy 子进程有时间限制但没有 OS 级内存上限 | Python 子进程边界未提供内存配额 | **未解决** | 复杂表达式继续限长；正式扩展工具前评估内存隔离 |
 | HTTP-001 | 单题 deadline 无法取消已经发出的阻塞 HTTP 请求 | 同步 requests 调用只能依靠单请求 timeout | **未解决** | 不得声称 deadline 可强制中断在途请求 |
@@ -224,10 +228,10 @@
 
 | 变更类型 | 最低验证 | 额外证据/停止条件 |
 | --- | --- | --- |
-| 公开接口、客户端、gateway | Agent 构造器额外 `*args/**kwargs`、无 `**kwargs` 的三参数 fake、同名不兼容私有方法、私有字段访问抛错 fake、项目扩展 client、工具槽文本降级、隔离入口、tool-call message、并发原子 metadata、预算测试 | 带不透明 runner 参数仍须成功构造；未知 client 每次只收三参数且至少实际进入一次 `chat()`；不得靠签名探测、失败后重试、平台私有接口或 judge cwd 修复 |
+| 公开接口、客户端、gateway | Agent 构造器额外 `*args/**kwargs`、无 `**kwargs` 的三参数 fake、同名不兼容私有方法、私有字段访问抛错 fake、项目扩展 client、默认精确 6 次请求、旧高级开关隔离、隔离入口、并发原子 metadata、预算测试 | 带不透明 runner 参数仍须成功构造；未知 client 每次只收三参数；默认必须实际进入 6 次 `chat()`；旧 tools/critic/reflection/deterministic 开关不得改变协议；不得靠签名探测、失败后重试、平台私有接口或 judge cwd 修复 |
 | 公开 trace | 固定泄漏哨兵、JSON 序列化、白名单字段、投影幂等性、未知字段失败关闭 | 题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案或异常消息任一出现即停止 |
 | 候选、prompt、温度、thinking、token | 现有契约/格式/截断/预算测试 | 固定 A/B，只改一个变量；真实 API 前先获请求额度授权 |
-| P1 题型或 verifier | 正反例、漏根/增根、数域、证明阻断、复合目标、冲突、超时 | 无法证明安全时保持 `unknown`，不得扩大 pass 范围 |
+| P1 题型或 verifier | 保留库的正反例、漏根/增根、数域、证明阻断、复合目标、冲突、超时；正式选择器忽略旧证据 | 当前兼容内核不得调用 P1；未来恢复时无法证明安全仍保持 `unknown`，不得扩大 pass 范围 |
 | 截断恢复 | 各阶段 `finish_reason=length`、恢复成功/再截断/缺答案/预算耗尽/全候选失败 | 模拟 4% 必须通过、6% 必须失败；残句泄漏立即失败 |
 | 工具或解析 | schema/实现对应、成功路径、恶意/超限/超时、预算 | 新工具必须解决固定集真实失败类型；不得使用 unrestricted parser |
 | Runner/checkpoint | JSONL、idx、路径逃逸、原子写、损坏/失败 checkpoint、隐私安全摘要 | 正式运行只用新目录；人工预置结果立即作废整批 |

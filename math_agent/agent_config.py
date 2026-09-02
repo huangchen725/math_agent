@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 
 @dataclass
 class AgentConfig:
-    """Stable knobs for candidate generation, verification, and budgets."""
+    """Stable knobs for the conservative competition runtime.
 
-    tool_candidates: int = 2
-    plain_candidates: int = 1
+    The formal default is deliberately one fixed path: three plain candidates,
+    one verifier call per candidate, majority selection, and bounded recovery.
+    Legacy strategy fields remain accepted so older local callers can construct
+    the config, but they no longer enable a second formal solving pipeline.
+    """
+
+    formal_candidate_count: ClassVar[int] = 3
+    formal_verifier_calls_per_candidate: ClassVar[int] = 1
+
+    # Retained only so older callers can still construct AgentConfig. The
+    # formal runtime uses the ClassVar constants above, not these legacy knobs.
+    tool_candidates: int = 0
+    plain_candidates: int = 3
     verifier_voting_times: int = 1
 
     policy_temperature: float = 0.6
@@ -32,14 +44,14 @@ class AgentConfig:
     verifier_thinking_mode: bool = False
     critic_thinking_mode: bool = False
 
-    enable_tools: bool = True
-    enable_critic: bool = True
-    enable_reflection: bool = True
+    enable_tools: bool = False
+    enable_critic: bool = False
+    enable_reflection: bool = False
     enable_fallback: bool = True
-    enable_deterministic_verification: bool = True
+    enable_deterministic_verification: bool = False
     max_tool_rounds: int = 3
     tool_timeout_seconds: float = 5.0
-    max_model_requests: int = 16
+    max_model_requests: int = 6
     max_total_tokens: int = 200_000
     max_tool_calls: int = 48
     problem_timeout_seconds: float = 600.0

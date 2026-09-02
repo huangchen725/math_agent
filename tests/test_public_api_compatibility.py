@@ -12,14 +12,11 @@ from user_agent import AgentConfig, ReasoningAgent
 class RecordingClient:
     def __init__(self) -> None:
         self.calls = []
-        self.responses = [
-            "最终答案：4\n因为 2+2=4。",
-            "VERDICT: A",
-        ]
 
     def chat(self, **kwargs):
         self.calls.append(kwargs)
-        return self.responses.pop(0)
+        serialized = json.dumps(kwargs["messages"], ensure_ascii=False)
+        return "VERDICT: A" if "VERDICT" in serialized else "最终答案：4\n因为 2+2=4。"
 
 
 def _frozen_config() -> AgentConfig:
@@ -95,8 +92,8 @@ def test_frozen_request_sequence_output_and_trace_contract() -> None:
     assert result["final_response"].count("最终答案：") == 1
     assert result["final_response"].splitlines()[-1] == "最终答案：4"
 
-    assert len(client.calls) == 2
-    policy_call, verifier_call = client.calls
+    assert len(client.calls) == 6
+    policy_call, verifier_call = client.calls[0], client.calls[3]
     assert [message["role"] for message in policy_call["messages"]] == ["system", "user"]
     assert policy_call["temperature"] == 0.6
     assert policy_call["max_tokens"] == 8192
@@ -112,16 +109,19 @@ def test_frozen_request_sequence_output_and_trace_contract() -> None:
     )
     steps = [event["step"] for event in result["trace"]]
     assert steps == [
-        "task_route",
         "reasoning_budget",
         "policy_plain_0",
+        "policy_plain_1",
+        "policy_plain_2",
         "verify_0_0",
-        "select_final",
+        "verify_1_0",
+        "verify_2_0",
+        "self_consistency",
         "final_answer_source",
         "budget_summary",
     ]
     summary = result["trace"][-1]["content"]
-    assert summary["model_requests"] == 2
+    assert summary["model_requests"] == 6
     assert summary["recovery_requests"] == 0
 
 
@@ -135,17 +135,13 @@ def test_agent_uses_only_the_injected_clients_public_chat_contract() -> None:
     result = ReasoningAgent(client, _frozen_config()).solve("计算 2+2", {})
 
     assert result["final_response"].splitlines()[-1] == "最终答案：4"
-    assert len(client.calls) == 2
+    assert len(client.calls) == 6
 
 
 def test_agent_does_not_probe_strict_injected_client_private_fields() -> None:
     class StrictOfficialClient:
         def __init__(self) -> None:
             self.calls = []
-            self.responses = [
-                "最终答案：4\n因为 2+2=4。",
-                "VERDICT: A",
-            ]
 
         def chat(self, messages, temperature, max_tokens):
             self.calls.append({
@@ -153,7 +149,8 @@ def test_agent_does_not_probe_strict_injected_client_private_fields() -> None:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             })
-            return self.responses.pop(0)
+            serialized = json.dumps(messages, ensure_ascii=False)
+            return "VERDICT: A" if "VERDICT" in serialized else "最终答案：4\n因为 2+2=4。"
 
         def __getattr__(self, name):
             if name.startswith("_"):
@@ -165,14 +162,14 @@ def test_agent_does_not_probe_strict_injected_client_private_fields() -> None:
     result = ReasoningAgent(client, _frozen_config()).solve("计算 2+2", {})
 
     assert result["final_response"].splitlines()[-1] == "最终答案：4"
-    assert len(client.calls) == 2
+    assert len(client.calls) == 6
     assert all(
         set(call) == {"messages", "temperature", "max_tokens"}
         for call in client.calls
     )
 
 
-def test_tool_candidate_degrades_to_text_for_minimum_contract_client() -> None:
+def test_default_compatibility_core_uses_exactly_six_public_calls() -> None:
     class MinimumContractClient:
         def __init__(self) -> None:
             self.calls = []
@@ -186,13 +183,7 @@ def test_tool_candidate_degrades_to_text_for_minimum_contract_client() -> None:
             serialized = json.dumps(messages, ensure_ascii=False)
             return "VERDICT: A" if "VERDICT" in serialized else "最终答案：4\n短解。"
 
-    config = AgentConfig(
-        verifier_voting_times=1,
-        enable_critic=False,
-        enable_reflection=False,
-        enable_fallback=False,
-        enable_deterministic_verification=False,
-    )
+    config = AgentConfig()
     client = MinimumContractClient()
 
     result = ReasoningAgent(client, config).solve("计算 2+2", {})
@@ -205,11 +196,47 @@ def test_tool_candidate_degrades_to_text_for_minimum_contract_client() -> None:
     )
     first_user_message = client.calls[0]["messages"][-1]["content"]
     assert "请调用工具" not in first_user_message
-    assert sum(
-        event["step"] == "tool_capability_fallback"
-        and event["content"]["status"] == "fallback"
+    assert not any(
+        event["step"].startswith("tool_")
         for event in result["trace"]
-    ) == 2
+    )
+    summary = result["trace"][-1]["content"]
+    assert summary["normal_model_requests"] == 6
+    assert summary["limits"]["model_requests"] == 6
+
+
+def test_legacy_tool_flags_cannot_enable_an_alternate_formal_protocol() -> None:
+    class StrictClient:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def chat(self, messages, temperature, max_tokens):
+            self.calls.append((messages, temperature, max_tokens))
+            serialized = json.dumps(messages, ensure_ascii=False)
+            return "VERDICT: A" if "VERDICT" in serialized else "最终答案：4"
+
+        def chat_with_metadata(self, **kwargs):
+            raise AssertionError("private method must not be called")
+
+    config = AgentConfig(
+        tool_candidates=7,
+        plain_candidates=9,
+        verifier_voting_times=4,
+        enable_tools=True,
+        enable_critic=True,
+        enable_reflection=True,
+        enable_deterministic_verification=True,
+    )
+    client = StrictClient()
+
+    result = ReasoningAgent(client, config).solve("计算 2+2", {})
+
+    assert result["final_response"].splitlines()[-1] == "最终答案：4"
+    assert len(client.calls) == 6
+    assert not any(
+        event["step"].startswith(("tool_", "critic", "reflection", "deterministic"))
+        for event in result["trace"]
+    )
 
 
 def test_root_entrypoint_loads_by_absolute_path_outside_project_sys_path() -> None:

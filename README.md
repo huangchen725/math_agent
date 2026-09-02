@@ -1,6 +1,6 @@
 # XH-202627 数学推理智能体
 
-本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域/题型路由 → 多候选生成 → 工具计算 → 确定性与模型验证 → 反思 → 证据优先聚合** 的单一流水线。
+本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前正式实现采用 **领域路由 → 三个纯文本候选 → 每候选一次模型验证 → 多数票/置信度选择 → 答案规范化** 的单一保守流水线。候选/验证数量及工具、确定性证据优先和 critic/reflection 的旧配置字段只兼容历史构造，不能改变固定 3×1 协议或重新启用第二条正式路径。
 
 ## 核心接口
 
@@ -17,6 +17,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - 对外 `trace` 只保留步骤、状态、候选/请求编号、长度和预算等结构化元数据；题面、prompt、候选/工具/验证正文、最终答案与异常消息会在返回前删除。截断事件只保存阶段、token 与处理状态。
 - 根 `user_agent.py` 可被平台从任意工作目录按绝对路径加载，不依赖 judge 当前目录或预置 `PYTHONPATH`。
 - `solve()` 对输入预检到输出投影的完整生命周期失败关闭；最外层保护不会额外发请求或绕过预算，普通异常不得逃成 runner 级整题 error。
+- 默认正常题固定发起 6 次公开调用：3 次候选生成和 3 次紧凑验证；另有最多 4 次仅用于截断/整题紧急处理的恢复预算。正式上层不发送工具、批评、反思或确定性验证请求。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 - P1、S1～S6 的不可回退工程规则、历史故障和验收矩阵见 [工程规范](docs/ENGINEERING_SPECIFICATION.md)；赛事红线和执行控制见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)；三份原件、新通知转录、动态官方页面、baseline 版本、冲突口径和未定义技术边界见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)。
 
@@ -131,7 +132,7 @@ python -m evaluation.scoring.score_run outputs/ability/benchmark.jsonl outputs/a
 
 `evaluation.experiments.paired_compare` 只在三轮报告、两份干净提交生成的冻结 manifest 和新版截断门禁均存在时，才可能给出“能力提升已获得证据”的结论。冻结旧版真实基线已完成 120 题 × 3 次，共 3,173 个模型请求；可靠性门禁通过，数学正确率仍等待候选版本完成后的匿名 A/B 盲审。匿名汇总见 [P0 公开能力基线结果](docs/evaluations/ABILITY_BASELINE_RESULTS_V1.md)。候选版本运行前必须重新确认费用与额度，单版本硬上限仍为 7,200 次请求。
 
-P1 已接入严格题型验证层：封闭数值表达式、明确数域的有限方程解集、导数、不定积分、极限、留数、数值矩阵行列式、模幂和组合数可在隔离子进程中生成 `pass/fail/unknown` 证据。只有相互一致的 `pass` 会优先于旧聚合；无计划、失败、未知或证据冲突全部回退原多数票/置信度规则。该层可通过 `AgentConfig(enable_deterministic_verification=False)` 关闭。此处只说明实现与离线回归已经完成，不代表真实正确率已经提高。
+P1 曾完成严格题型验证层：封闭数值表达式、明确数域的有限方程解集、导数、不定积分、极限、留数、数值矩阵行列式、模幂和组合数可在隔离子进程中生成 `pass/fail/unknown` 证据。该成果仍由离线测试覆盖，但为保持当前兼容性实验只有一个变量，正式 `solve()` 暂不调用题型分析或确定性验证，选择器也忽略旧确定性证据；`enable_deterministic_verification=True` 不会恢复该分支。以后若恢复 P1，须从 Git 历史单独提出并完成冻结 A/B，不能把既有工程实现直接写成正确率提升。
 
 截断专项压力集固定在 `evaluation/data/truncation_stress.jsonl`，包含 18 领域各 2 题，只用于长输出与恢复可靠性，不用于声称实际正确率。正式在线压力测试应对同一提交连续运行 3 次，将各次 `evaluation.scoring.score_run` 报告交给门禁：
 
@@ -195,24 +196,24 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 │   ├── answer_equivalence.py  # 保守答案归一化与等价判断
 │   ├── solver.py              # 顶层求解编排
 │   ├── candidate_generation.py # 候选生成、恢复与紧急答案
-│   ├── candidate_evaluation.py # 验证、批评与反思
-│   ├── candidate_selection.py # 证据优先选择与多数票回退
+│   ├── candidate_evaluation.py # 每候选一次紧凑模型验证
+│   ├── candidate_selection.py # 多数票与置信度选择
 │   ├── response_processing.py # 答案抽取与最终格式校验
 │   ├── trace_sanitizer.py     # 对外 trace 元数据白名单投影
 │   ├── context.py             # 单题显式 SolveContext
 │   ├── model_gateway.py       # 统一模型调用、元数据与预算记账
 │   ├── model_calls.py         # 显式模型消息适配
 │   ├── truncation.py          # 截断事件状态记账
-│   ├── task_router.py         # 零调用题型识别与严格验证计划
+│   ├── task_router.py         # 暂停于正式路径的题型分析库
 │   ├── domain_router.py       # 零调用领域关键词路由
 │   ├── budget.py              # 单题请求、token、工具与时间预算
 │   ├── math_tools.py          # 旧导入兼容门面，不承载具体工具逻辑
 │   ├── math_parsing.py        # 受限 SymPy 解析与参数边界
 │   ├── tool_implementations.py # 11 个有界数学工具实现
 │   ├── tool_registry.py       # 工具 schema、注册表与隔离分发
-│   ├── tool_loop.py           # 显式上下文的 tool-calling 循环
+│   ├── tool_loop.py           # 暂停于正式路径的受限工具循环
 │   ├── tool_executor.py       # 可终止子进程与工具硬超时
-│   ├── deterministic_verifier.py # 隔离验证与候选证据
+│   ├── deterministic_verifier.py # 暂停于正式路径的隔离验证库
 │   ├── domain_prompts.py      # 18 个数学领域提示
 │   └── llm_client.py          # OpenAI 兼容 HTTP 客户端
 ├── main.py                    # JSONL 批处理与断点续跑

@@ -16,6 +16,17 @@ def test_agent_composes_focused_pipeline_components() -> None:
     assert agent._orchestrator.config is config
     assert agent._orchestrator.generator.config is config
     assert agent._orchestrator.evaluator.config is config
+    assert config.tool_candidates == 0
+    assert config.plain_candidates == 3
+    assert config.verifier_voting_times == 1
+    assert config.max_model_requests == 6
+    assert config.max_recovery_requests == 4
+    assert config.enable_tools is False
+    assert config.enable_critic is False
+    assert config.enable_reflection is False
+    assert config.enable_deterministic_verification is False
+    assert config.formal_candidate_count == 3
+    assert config.formal_verifier_calls_per_candidate == 1
 
 
 def test_agent_config_keeps_one_public_type_after_module_split() -> None:

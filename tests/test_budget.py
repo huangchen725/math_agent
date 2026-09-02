@@ -56,29 +56,19 @@ def test_execution_budget_records_truncated_responses():
 
 def test_agent_records_per_problem_budget_usage():
     client = TextClient()
-    config = AgentConfig(
-        tool_candidates=0,
-        plain_candidates=1,
-        enable_critic=False,
-        max_model_requests=2,
-    )
+    config = AgentConfig()
     result = ReasoningAgent(client, config).solve("1+1", {})
 
     assert result["final_response"].endswith("最终答案：2")
     summary = result["trace"][-1]
     assert summary["step"] == "budget_summary"
-    assert summary["content"]["model_requests"] == 2
-    assert summary["content"]["total_tokens"] == 30
+    assert summary["content"]["model_requests"] == 6
+    assert summary["content"]["total_tokens"] == 90
 
 
 def test_agent_stops_before_exceeding_model_request_budget():
     client = TextClient()
-    config = AgentConfig(
-        tool_candidates=0,
-        plain_candidates=2,
-        enable_critic=False,
-        max_model_requests=1,
-    )
+    config = AgentConfig(max_model_requests=1)
     result = ReasoningAgent(client, config).solve("1+1", {})
 
     assert result["final_response"] == "未解出"

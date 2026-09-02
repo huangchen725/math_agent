@@ -61,10 +61,6 @@ class _CaptureAgent:
 class _RecordingClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
-        self.responses = [
-            "最终答案：0\nPRIVATE_MODEL_RESPONSE_8C3B",
-            "VERDICT: A\nPRIVATE_VERIFIER_RESPONSE_6A1D",
-        ]
 
     def chat(
         self,
@@ -77,7 +73,10 @@ class _RecordingClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         })
-        return self.responses.pop(0)
+        serialized = json.dumps(messages, ensure_ascii=False)
+        if "VERDICT" in serialized:
+            return "VERDICT: A\nPRIVATE_VERIFIER_RESPONSE_6A1D"
+        return "最终答案：0\nPRIVATE_MODEL_RESPONSE_8C3B"
 
 
 def _runtime_paths(root: Path) -> list[Path]:
@@ -160,13 +159,14 @@ def _check_answer_isolation_and_json() -> list[str]:
 
     client = _RecordingClient()
     config = AgentConfig(
-        tool_candidates=0,
-        plain_candidates=1,
-        verifier_voting_times=1,
-        enable_critic=False,
-        enable_reflection=False,
+        tool_candidates=7,
+        plain_candidates=9,
+        verifier_voting_times=4,
+        enable_tools=True,
+        enable_critic=True,
+        enable_reflection=True,
         enable_fallback=False,
-        enable_deterministic_verification=False,
+        enable_deterministic_verification=True,
     )
     agent_result = ReasoningAgent(
         client,
@@ -184,8 +184,8 @@ def _check_answer_isolation_and_json() -> list[str]:
     )
     if sentinel_answer in json.dumps(client.calls, ensure_ascii=False):
         findings.append("reference-answer metadata reached a model request")
-    if len(client.calls) != 2:
-        findings.append("minimum-signature client did not receive policy and verifier calls")
+    if len(client.calls) != 6:
+        findings.append("minimum-signature client did not receive the fixed six-call sequence")
     if any(
         set(call) != {"messages", "temperature", "max_tokens"}
         for call in client.calls

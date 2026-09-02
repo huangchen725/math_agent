@@ -1,4 +1,4 @@
-"""Evidence-first candidate selection with the original majority fallback."""
+"""Conservative majority selection for complete, explicit-answer candidates."""
 
 from __future__ import annotations
 
@@ -21,48 +21,6 @@ def select_candidate(
     ]
     if not eligible:
         return "", ""
-
-    deterministic_passes = [
-        candidate
-        for candidate in eligible
-        if any(
-            evidence.source.startswith("deterministic:") and evidence.status == "pass"
-            for evidence in candidate.verifications
-        )
-    ]
-    if deterministic_passes:
-        passed_keys = {candidate.answer.canonical for candidate in deterministic_passes}
-        if len(passed_keys) == 1:
-            selected = max(deterministic_passes, key=lambda item: item.confidence)
-            trace.append({
-                "step": "deterministic_selection",
-                "content": {
-                    "status": "selected",
-                    "candidate_ids": [
-                        candidate.metadata.get("candidate_id")
-                        for candidate in deterministic_passes
-                    ],
-                    "evidence_sources": sorted({
-                        evidence.source
-                        for candidate in deterministic_passes
-                        for evidence in candidate.verifications
-                        if evidence.source.startswith("deterministic:")
-                        and evidence.status == "pass"
-                    }),
-                },
-            })
-            record_final_source(selected, trace, budget)
-            return selected.answer.normalized, selected.content
-        trace.append({
-            "step": "deterministic_selection",
-            "content": {
-                "status": "conflict_fallback",
-                "candidate_ids": [
-                    candidate.metadata.get("candidate_id")
-                    for candidate in deterministic_passes
-                ],
-            },
-        })
 
     groups = {}
     for candidate in eligible:

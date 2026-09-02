@@ -62,7 +62,7 @@
 | 模型简写或历史实验被误当成正式选择 | 默认模型仍为 `intern-s1`；参赛模式只接受三个有书面依据的精确 ID；“397/35B”映射保持未决 | 客户端拒绝 allowlist 外模型；formal manifest 同时记录材料指纹、动态页面核验日、baseline commit、allowlist 和实际模型 |
 | 未授权外部服务 | 自有客户端只接受官方 HTTPS Chat Completions 地址；工具均在本地受限子进程执行 | 合规门禁扫描运行时网络依赖和 URL |
 | 格式导致直接未通过 | 输出构造、runner 和回归测试验证 JSON、非空答案及唯一末行标记 | 合规门禁执行无网络契约探针 |
-| 注入客户端在请求前失败 | Agent 构造器接受 `client,*args,**kwargs`，且只有真正的项目 `AgentConfig` 可成为配置；未知 client 只收到 `messages/temperature/max_tokens`；自有扩展按项目类型选择，不做签名/marker 探测；最外层 `solve` 收敛预检和收尾异常且不额外请求 | 同时注入不透明位置值、伪 `config` 字典、真正 `AgentConfig` 和未知关键字；无 `**kwargs` 的三参数 fake 与私有访问抛错 fake 必须产生公开 chat 调用；首请求前异常不得逃出，工具槽须显式文本降级 |
+| 注入客户端在请求前失败 | Agent 构造器接受 `client,*args,**kwargs`，且只有真正的项目 `AgentConfig` 可成为配置；当前正式路径固定 3 个纯文本候选 + 3 次紧凑 verifier，未知 client 每次只收到 `messages/temperature/max_tokens`；自有 metadata 按项目类型取得，不做签名/marker 探测；最外层 `solve` 收敛预检和收尾异常且不额外请求 | 同时注入不透明位置值、伪 `config` 字典、真正 `AgentConfig` 和未知关键字；无 `**kwargs` 的三参数 fake 与私有访问抛错 fake 必须恰好产生 6 次公开 chat 调用；首请求前异常不得逃出，旧 tools/critic/reflection/deterministic 开关不得改变正式协议 |
 | AtomGit 没有进入评测队列或抓到错误版本 | 官方要求现有本地仓库新增名为 `atomgit` 的远程；队伍仓库 `main`、作品页模型和“提交作品”动作共同构成一次评测提交；12:00/24:00 抓取前冻结分支 | 提交清单记录 AtomGit URL、点击时间、批次、模型回执和抓取后的 `main` SHA；当前缺少 `atomgit` 远程时 formal 操作必须停止 |
 | 独立 worker 无法导入包门面 | 根 `user_agent.py` 按自身文件目录引导唯一 `math_agent/` 包 | 隔离解释器从仓库外按绝对路径动态加载入口 |
 | trace 泄露题面或模型正文 | 返回前通过元数据白名单失败关闭投影，未知事件/字段不外发 | 固定题面、模型、verifier 和答案哨兵；投影幂等且可 JSON 序列化 |

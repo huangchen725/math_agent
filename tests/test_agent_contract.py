@@ -122,7 +122,7 @@ def test_aggregate_never_selects_candidate_marked_as_truncated():
     assert "截断残句" not in content
 
 
-def test_deterministic_pass_overrides_a_wrong_model_majority_for_direct_task():
+def test_formal_selector_keeps_model_majority_when_legacy_deterministic_flag_is_set():
     class SequenceClient:
         def __init__(self):
             self.responses = [
@@ -132,7 +132,9 @@ def test_deterministic_pass_overrides_a_wrong_model_majority_for_direct_task():
             ]
 
         def chat(self, **kwargs):
-            return self.responses.pop(0)
+            if self.responses:
+                return self.responses.pop(0)
+            return "VERDICT: A"
 
     config = AgentConfig(
         tool_candidates=0,
@@ -140,40 +142,19 @@ def test_deterministic_pass_overrides_a_wrong_model_majority_for_direct_task():
         verifier_voting_times=0,
         enable_critic=False,
         enable_reflection=False,
-    )
-    result = ReasoningAgent(SequenceClient(), config).solve("计算 3^100 除以 7 的余数", {})
-
-    assert result["final_response"].endswith("最终答案：4")
-    assert any(event["step"] == "deterministic_selection" for event in result["trace"])
-    summary = next(
-        event["content"] for event in result["trace"] if event["step"] == "budget_summary"
-    )
-    assert summary["tool_calls"] == 3
-
-
-def test_deterministic_verification_has_a_full_rollback_switch():
-    class SequenceClient:
-        def __init__(self):
-            self.responses = ["最终答案：5", "最终答案：5", "最终答案：4"]
-
-        def chat(self, **kwargs):
-            return self.responses.pop(0)
-
-    config = AgentConfig(
-        tool_candidates=0,
-        plain_candidates=3,
-        verifier_voting_times=0,
-        enable_critic=False,
-        enable_reflection=False,
-        enable_deterministic_verification=False,
+        enable_deterministic_verification=True,
     )
     result = ReasoningAgent(SequenceClient(), config).solve("计算 3^100 除以 7 的余数", {})
 
     assert result["final_response"].endswith("最终答案：5")
     assert not any(event["step"] == "deterministic_selection" for event in result["trace"])
+    summary = next(
+        event["content"] for event in result["trace"] if event["step"] == "budget_summary"
+    )
+    assert summary["tool_calls"] == 0
 
 
-def test_conflicting_deterministic_passes_fall_back_to_original_selector():
+def test_selector_ignores_legacy_deterministic_evidence():
     evidence = [Verification("deterministic:test", "pass", 1.0)]
     candidates = [
         Candidate("候选 A", "plain", build_answer("1"), 0.8, 0.8, evidence),
@@ -186,11 +167,7 @@ def test_conflicting_deterministic_passes_fall_back_to_original_selector():
 
     assert answer == "2"
     assert content == "候选 B"
-    assert any(
-        event["step"] == "deterministic_selection"
-        and event["content"]["status"] == "conflict_fallback"
-        for event in trace
-    )
+    assert not any(event["step"] == "deterministic_selection" for event in trace)
 
 
 def test_review_excerpt_keeps_final_answer_at_tail():

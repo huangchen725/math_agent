@@ -12,11 +12,10 @@ from .context import SolveContext
 from .domain_prompts import get_domain_prompt
 from .domain_router import detect_domain
 from .response_processing import build_response, extract_answer
-from .task_router import TaskAnalysis, analyze_task
 
 
 class SolveOrchestrator:
-    """Coordinate routing, generation, evaluation, reflection, and selection."""
+    """Run the single conservative generation, verification, and selection path."""
 
     def __init__(self, config: AgentConfig) -> None:
         self.config = config
@@ -31,21 +30,6 @@ class SolveOrchestrator:
                 "step": "domain_detect",
                 "content": f"关键词识别: {domain_name}",
             })
-
-        task_analysis = analyze_task(context.problem)
-        context.trace.append({
-            "step": "task_route",
-            "content": {
-                "task_types": list(task_analysis.task_types),
-                "confidence": task_analysis.confidence,
-                "deterministic_verifier": (
-                    task_analysis.verification_plan.kind
-                    if task_analysis.verification_plan is not None
-                    else ""
-                ),
-                "reason": task_analysis.reason,
-            },
-        })
 
         target_tokens = reasoning_target_tokens(context.problem, self.config)
         context.trace.append({
@@ -74,14 +58,10 @@ class SolveOrchestrator:
             self._score_result(
                 context,
                 result,
-                task_analysis,
                 fallback_candidate_id=index,
             )
             for index, result in enumerate(batch.candidates)
         ]
-        reflected = self._maybe_reflect(context, scored, task_analysis, batch.emergency_hints)
-        if reflected is not None:
-            scored.append(reflected)
 
         final_answer, best_content = select_candidate(
             scored,
@@ -104,7 +84,6 @@ class SolveOrchestrator:
         self,
         context: SolveContext,
         result: ModelCallResult,
-        task_analysis: TaskAnalysis,
         *,
         fallback_candidate_id: int = 0,
         strategy: str | None = None,
@@ -119,7 +98,6 @@ class SolveOrchestrator:
             context,
             result.text,
             candidate_id,
-            task_analysis=task_analysis,
         )
         context.trace.extend(verification_trace)
         answer = build_answer(extract_answer(result.text))
@@ -136,50 +114,13 @@ class SolveOrchestrator:
             strategy=(
                 strategy
                 if strategy is not None
-                else ("tool" if result.stage in {"policy_tool", "tool_final"} else "plain")
+                else "plain"
             ),
             confidence=confidence + (0.3 if answer.raw else -0.5),
             answer=answer,
             raw_confidence=confidence,
             verifications=verifications,
             metadata=metadata,
-        )
-
-    def _maybe_reflect(
-        self,
-        context: SolveContext,
-        scored: list[Candidate],
-        task_analysis: TaskAnalysis,
-        emergency_hints: list[str],
-    ) -> Candidate | None:
-        if not self.config.enable_critic or not scored:
-            return None
-        best = max(scored, key=lambda item: item.confidence)
-        if best.raw_confidence >= 0.5 or not best.answer.raw:
-            return None
-        criticism = self.evaluator.critic(context, best.content)
-        if not criticism or "NO ERROR" in criticism.upper():
-            return None
-
-        candidate_id = self.config.tool_candidates + self.config.plain_candidates
-        reflected = self.evaluator.reflect_result(
-            context,
-            best.content,
-            criticism,
-            candidate_id=candidate_id,
-        )
-        prepared, hint = self.generator.prepare_candidate(context, reflected, candidate_id)
-        if hint:
-            emergency_hints.append(hint)
-        if prepared is None:
-            return None
-        return self._score_result(
-            context,
-            prepared,
-            task_analysis,
-            fallback_candidate_id=candidate_id,
-            strategy="reflection",
-            extra_metadata={"temperature": self.config.reflection_temperature},
         )
 
     def _emergency_or_unsolved(

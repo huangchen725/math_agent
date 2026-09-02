@@ -6,14 +6,13 @@ import re
 from dataclasses import dataclass
 
 from .agent_config import AgentConfig
-from .agent_prompts import POLICY_NO_TOOL_PROMPT, POLICY_PROMPT
+from .agent_prompts import POLICY_NO_TOOL_PROMPT
 from .agent_types import ModelCallResult
 from .answer_equivalence import format_answer_for_output
 from .budget import BudgetExceeded
 from .context import SolveContext
 from .model_calls import call_model_result, call_model_text
 from .response_processing import extract_answer, extract_first_line_answer
-from .tool_loop import run_tool_loop
 from .truncation import mark_truncation
 
 
@@ -79,33 +78,10 @@ class CandidateGenerator:
         candidates: list[ModelCallResult] = []
         trace: list[dict] = []
         emergency_hints: list[str] = []
-        candidate_id = 0
-
-        for index in range(self.config.tool_candidates):
-            if self.config.enable_tools:
-                result, tool_trace = self.solve_tools_result(
-                    context,
-                    candidate_id,
-                    domain_prompt,
-                    reasoning_target,
-                )
-            else:
-                result = self.solve_plain_result(
-                    context,
-                    domain_prompt,
-                    reasoning_target,
-                    candidate_id=candidate_id,
-                )
-                tool_trace = model_result_trace(result, f"policy_tool_{index}")
-            prepared, hint = self.prepare_candidate(context, result, candidate_id)
-            if prepared:
-                candidates.append(prepared)
-            if hint:
-                emergency_hints.append(hint)
-            trace.extend(tool_trace)
-            candidate_id += 1
-
-        for index in range(self.config.plain_candidates):
+        # Keep older configs constructible, but ignore their strategy counts.
+        # No tool capability, private method, or alternate request protocol can
+        # change the fixed three-candidate sequence.
+        for candidate_id in range(self.config.formal_candidate_count):
             result = self.solve_plain_result(
                 context,
                 domain_prompt,
@@ -117,76 +93,9 @@ class CandidateGenerator:
                 candidates.append(prepared)
             if hint:
                 emergency_hints.append(hint)
-            trace.extend(model_result_trace(result, f"policy_plain_{index}"))
-            candidate_id += 1
+            trace.extend(model_result_trace(result, f"policy_plain_{candidate_id}"))
 
         return GenerationBatch(candidates, trace, emergency_hints)
-
-    def solve_tools_result(
-        self,
-        context: SolveContext,
-        candidate_id: int,
-        domain_prompt: str,
-        target_tokens: int,
-    ) -> tuple[ModelCallResult, list[dict]]:
-        if not context.gateway.supports_tool_calls:
-            result = self.solve_plain_result(
-                context,
-                domain_prompt,
-                target_tokens,
-                candidate_id=candidate_id,
-            )
-            return result, [
-                {
-                    "step": "tool_capability_fallback",
-                    "content": {
-                        "candidate_id": candidate_id,
-                        "status": "fallback",
-                    },
-                },
-                *model_result_trace(result, f"policy_tool_{candidate_id}"),
-            ]
-        try:
-            length_instruction = reasoning_instruction(target_tokens)
-            messages = [
-                {"role": "system", "content": domain_prompt or POLICY_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"{context.problem}\n\n请调用工具验证关键计算。候选编号：{candidate_id}。"
-                        f"\n{length_instruction}"
-                    ),
-                },
-            ]
-            _, tool_trace, result = run_tool_loop(
-                context.gateway,
-                messages,
-                max_rounds=self.config.max_tool_rounds,
-                thinking_mode=self.config.policy_thinking_mode,
-                temperature=self.config.policy_temperature,
-                max_tokens=self.config.max_tokens,
-                tool_timeout_seconds=self.config.tool_timeout_seconds,
-                candidate_id=candidate_id,
-                final_instruction=(
-                    "工具轮次已结束。第一行必须写“最终答案：XXX”，再给出必要推导。"
-                    + length_instruction
-                ),
-                return_call_result=True,
-            )
-            trace = [{"step": f"tool_solve_{candidate_id}", "content": tool_trace}]
-            trace.extend(model_result_trace(result, f"policy_tool_{candidate_id}"))
-            return result, trace
-        except BudgetExceeded:
-            raise
-        except Exception as exc:
-            trace = [{"step": f"tool_error_{candidate_id}", "content": str(exc)[:200]}]
-            fallback = self.solve_plain_result(
-                context,
-                domain_prompt,
-                target_tokens,
-                candidate_id=candidate_id,
-            )
-            return fallback, trace
 
     def solve_plain_result(
         self,
@@ -205,7 +114,6 @@ class CandidateGenerator:
                 candidate_id=candidate_id,
                 temperature=self.config.policy_temperature,
                 max_tokens=self.config.max_tokens,
-                thinking_mode=self.config.policy_thinking_mode,
             )
         except BudgetExceeded:
             raise
@@ -277,7 +185,6 @@ class CandidateGenerator:
                 recovery=True,
                 temperature=0.0,
                 max_tokens=self.config.recovery_max_tokens,
-                thinking_mode=False,
             )
         except BudgetExceeded:
             mark_truncation(context, result, "quarantined", bool(original_answer))
@@ -324,7 +231,6 @@ class CandidateGenerator:
                 recovery=True,
                 temperature=0.0,
                 max_tokens=self.config.fallback_max_tokens,
-                thinking_mode=False,
             )
         except BudgetExceeded as exc:
             context.trace.append({"step": "emergency_unavailable", "content": str(exc)[:200]})
@@ -366,9 +272,10 @@ class CandidateGenerator:
                 POLICY_NO_TOOL_PROMPT,
                 f"{context.problem}\n\n请直接给出最终答案，不要详细推导。"
                 "单独一行按“最终答案：XXX”输出，XXX 只写答案本体。",
+                stage="emergency",
+                recovery=True,
                 temperature=0.0,
                 max_tokens=self.config.fallback_max_tokens,
-                thinking_mode=False,
             )
             answer = extract_answer(response)
             context.trace.append({"step": "fallback_result", "content": answer[:100]})
