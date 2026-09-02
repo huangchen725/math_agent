@@ -11,12 +11,14 @@ ReasoningAgent(client).solve(problem, metadata)
 # -> {"final_response": str, "trace": list[dict]}
 ```
 
+- 构造器兼容平台公开的 `__init__(self, client, *args, **kwargs)`；只有真正的项目 `AgentConfig` 才会被采用，字典、字符串等不透明参数即使占用 `config` 名称也不会污染求解配置。
 - `client` 由调用方注入。未知注入客户端只接收公开最小参数 `messages/temperature/max_tokens`；`thinking_mode/tools/tool_choice` 和原子 metadata 仅用于项目自有 `InternChatClient`。代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
 - 对外 `trace` 只保留步骤、状态、候选/请求编号、长度和预算等结构化元数据；题面、prompt、候选/工具/验证正文、最终答案与异常消息会在返回前删除。截断事件只保存阶段、token 与处理状态。
 - 根 `user_agent.py` 可被平台从任意工作目录按绝对路径加载，不依赖 judge 当前目录或预置 `PYTHONPATH`。
+- `solve()` 对输入预检到输出投影的完整生命周期失败关闭；最外层保护不会额外发请求或绕过预算，普通异常不得逃成 runner 级整题 error。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
-- P1、S1～S6 的不可回退工程规则、历史故障和验收矩阵见 [工程规范](docs/ENGINEERING_SPECIFICATION.md)；赛事手册事实与资格红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
+- P1、S1～S6 的不可回退工程规则、历史故障和验收矩阵见 [工程规范](docs/ENGINEERING_SPECIFICATION.md)；赛事红线和执行控制见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)；三份原件、新通知转录、动态官方页面、baseline 版本、冲突口径和未定义技术边界见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)。
 
 ## 环境与安装
 
@@ -61,11 +63,11 @@ Copy-Item .env.example .env
 | --- | --- | --- | --- |
 | `INTERN_API_KEY` | 是 | 无 | Intern API token |
 | `INTERN_API_BASE` | 否 | 官方 Chat Completions 地址 | OpenAI 兼容端点 |
-| `INTERN_MODEL` | 否 | `intern-s1` | 正式参赛模型 |
-| `COMPETITION_MODE` | 否 | `1` | 参赛合规模式；拒绝非 S1 模型 |
+| `INTERN_MODEL` | 否 | `intern-s1` | formal 默认值；当前书面证据还允许 `intern-s1-pro`、`intern-s2-preview` |
+| `COMPETITION_MODE` | 否 | `1` | 参赛合规模式；拒绝 formal allowlist 外的模型 ID |
 | `LOCAL_MAX_CONCURRENCY` | 否 | `3` | 本地并发，必须为正整数 |
 
-自有 HTTP 客户端只接受赛事官方 Intern API 地址。`COMPETITION_MODE=0` 仅用于明确标记的本地非提交实验，不能放宽端点限制，也不能让非 S1 模型进入 formal 交付包。赛事红线、手册哈希和正式操作清单见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
+自有 HTTP 客户端只接受赛事官方 Intern API 地址。`COMPETITION_MODE=0` 仅用于明确标记的本地非提交实验，不能放宽端点限制，也不能让 allowlist 外模型进入 formal 交付包。当前 FAQ 已撤销 S1-only 推断，但“397/35B”简写、登录后提交页实际选项和版本漂移仍未解决；正式运行必须保存模型选择回执。运行阶段不依赖 GPU、通用外网或动态下载。赛事红线与操作清单见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)，证据冲突和缺口见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)。
 
 ## 运行
 
@@ -117,7 +119,7 @@ python -m evaluation.scoring.score_run outputs/private-eval/benchmark.jsonl outp
 
 审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [2026-08-29 隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)，后续 112/112 请求前失败见 [2026-08-31 运行时故障复盘](docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
-下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。下方冻结命令中的 `intern-s2-preview` 只复现既有历史实验，不得作为正式参赛配置：
+下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。下方冻结命令中的 `intern-s2-preview` 用于复现既有实验；它当前属于 formal allowlist，但历史实验记录本身不能替代本次 AtomGit 模型选择回执：
 
 ```bash
 python -m evaluation.data.import_putnam_bench path/to/PutnamBench/informal/putnam.json --source-commit COMMIT --output outputs/ability/benchmark.jsonl --manifest outputs/ability/source.json --recent-count 36
@@ -156,6 +158,10 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 
 在线模式会产生真实调用、费用和限流影响。
 
+## AtomGit 正式提交
+
+初赛自动判分不从本仓库当前的 GitHub `origin` 自动取码。官方规则要求把队伍 AtomGit 仓库添加为名为 `atomgit` 的远程并推送 `main`，再在作品页关联仓库、选择模型并点击“提交作品”；只推送代码不会进入评测队列。平台在北京时间 12:00/24:00 抓取当时最新 `main`，因此点击提交后到抓取完成前要冻结分支，随后以 AtomGit 远端 SHA 与本地冻结 SHA 对账。平台不要求填写 commit hash，但本地发布与审计仍使用精确 SHA。截止前还需把最终代码与规定材料打成 ZIP 发组委会邮箱；邮件归档不能替代 AtomGit 自动评测。当前 `atomgit` 地址尚未配置，两类提交回执也未生成，正式提交链路仍是阻断项；具体清单见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
+
 ## 可复现交付
 
 正式交付包只能从干净 Git 提交生成，并要求同一提交已经通过含依赖审计的完整质量门禁：
@@ -165,7 +171,7 @@ python -m scripts.run_quality_gates
 python -m scripts.build_release --output-dir dist
 ```
 
-正式包直接读取当前提交中的 Git blob，固定 ZIP 条目顺序、时间戳和权限，并附带 `release-manifest.json`、精简质量报告、手册哈希、正式模型匹配状态、全部文件 SHA-256 和压缩包 `.sha256`。formal 包只接受 `intern-s1`；非 S1 只能生成明确标记的 draft 实验包。路径白名单、Git 忽略规则、单文件/总大小限制和二次敏感信息扫描会阻止本地密钥、运行输出、二进制伪装、无法完整扫描或意外过大的文件进入包；嵌入的质量报告也单独扫描。
+正式包直接读取当前提交中的 Git blob，固定 ZIP 条目顺序、时间戳和权限，并附带 `release-manifest.json`、精简质量报告、三份官方原件与新通知转录哈希、动态官方证据 URL/核验日、核验过的 baseline commit、formal 默认值/allowlist/匹配状态、全部文件 SHA-256 和压缩包 `.sha256`。formal 接受 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`；其它模型只能生成明确标记的 draft 实验包。路径白名单、Git 忽略规则、单文件/总大小限制和二次敏感信息扫描会阻止本地密钥、运行输出、原始群截图、二进制伪装、无法完整扫描或意外过大的文件进入包；嵌入的质量报告也单独扫描。正式包成功不等于 AtomGit 已点击提交或完成批次抓取。
 
 开发中的脏工作树只能显式生成标记为 `draft` 的预览包，不能冒充正式产物：
 

@@ -15,6 +15,12 @@ from urllib.parse import urlsplit
 from math_agent.competition_policy import (
     COMPETITION_MANUAL_SHA256,
     FORMAL_COMPETITION_MODEL,
+    FORMAL_COMPETITION_MODELS,
+    OFFICIAL_BASELINE_COMMIT,
+    OFFICIAL_EVIDENCE_VERIFIED_ON,
+    OFFICIAL_EVIDENCE_URLS,
+    OFFICIAL_MATERIAL_SHA256,
+    OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
     OFFICIAL_API_BASE,
     validate_official_api_base,
 )
@@ -109,9 +115,14 @@ def _check_runtime_network_boundary(root: Path) -> list[str]:
                 f"{relative}: unexpected network imports {sorted(unexpected)}"
             )
         text = path.read_text(encoding="utf-8")
+        evidence_urls = (
+            frozenset(OFFICIAL_EVIDENCE_URLS.values())
+            if relative == "math_agent/competition_policy.py"
+            else frozenset()
+        )
         for match in _URL_PATTERN.finditer(text):
             url = match.group(0).rstrip(".,;)")
-            if urlsplit(url).hostname != official_host:
+            if urlsplit(url).hostname != official_host and url not in evidence_urls:
                 findings.append(f"{relative}: non-official runtime URL")
     return findings
 
@@ -157,7 +168,13 @@ def _check_answer_isolation_and_json() -> list[str]:
         enable_fallback=False,
         enable_deterministic_verification=False,
     )
-    agent_result = ReasoningAgent(client, config).solve(
+    agent_result = ReasoningAgent(
+        client,
+        "opaque-platform-positional",
+        config,
+        config={"opaque_platform_config": True},
+        platform_run_id="opaque-platform-keyword",
+    ).solve(
         item["problem"],
         {
             "idx": item["idx"],
@@ -231,6 +248,62 @@ print(json.dumps({"agent": module.ReasoningAgent.__name__}))
     return []
 
 
+def _check_official_material_registry(root: Path) -> list[str]:
+    """Keep every evidence digest and unresolved-boundary class in the release."""
+    path = root / "docs" / "OFFICIAL_MATERIALS_REGISTER.md"
+    if not path.is_file():
+        return ["official material registry is missing"]
+    text = path.read_text(encoding="utf-8").casefold()
+    findings = [
+        f"official material registry omits digest: {name}"
+        for name, digest in OFFICIAL_MATERIAL_SHA256.items()
+        if digest.casefold() not in text
+    ]
+    if OFFICIAL_BASELINE_COMMIT.casefold() not in text:
+        findings.append("official material registry omits the pinned baseline commit")
+    for name, url in OFFICIAL_EVIDENCE_URLS.items():
+        if url.casefold() not in text:
+            findings.append(f"official material registry omits evidence URL: {name}")
+    for name, verified_on in OFFICIAL_EVIDENCE_VERIFIED_ON.items():
+        if verified_on not in text:
+            findings.append(
+                f"official material registry omits evidence verification date: {name}"
+            )
+    if OFFICIAL_WEB_EVIDENCE_VERIFIED_ON not in text:
+        findings.append("official material registry omits web evidence verification date")
+    for required_source in tuple(f"MAT-{index:03d}" for index in range(1, 10)):
+        if required_source.casefold() not in text:
+            findings.append(f"official material registry omits {required_source}")
+    for required_conflict in (
+        "INFO-CONFLICT-001",
+        "INFO-CONFLICT-002",
+        "INFO-CONFLICT-003",
+        "INFO-CONFLICT-004",
+        "INFO-CONFLICT-005",
+        "INFO-CONFLICT-006",
+        "INFO-CONFLICT-007",
+        "INFO-CONFLICT-008",
+        "INFO-CONFLICT-009",
+    ):
+        if required_conflict.casefold() not in text:
+            findings.append(f"official material registry omits {required_conflict}")
+    for required_gap in (
+        "OFFICIAL-GAP-CLIENT",
+        "OFFICIAL-GAP-RESPONSE",
+        "OFFICIAL-GAP-ERROR",
+        "OFFICIAL-GAP-BUDGET",
+        "OFFICIAL-GAP-MODEL",
+        "OFFICIAL-GAP-RESOURCE",
+        "OFFICIAL-GAP-JUDGE",
+        "OFFICIAL-GAP-RUNNER",
+        "OFFICIAL-GAP-TOOLS",
+        "OFFICIAL-GAP-CHANGE",
+    ):
+        if required_gap.casefold() not in text:
+            findings.append(f"official material registry omits {required_gap}")
+    return findings
+
+
 def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
     """Return a machine-readable offline compliance report."""
     root = root.resolve()
@@ -246,8 +319,10 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
         )
 
     policy_findings: list[str] = []
-    if DEFAULT_MODEL != FORMAL_COMPETITION_MODEL or DEFAULT_MODEL != "intern-s1":
-        policy_findings.append("runtime default model is not the formal Intern-S1 model")
+    if DEFAULT_MODEL != FORMAL_COMPETITION_MODEL:
+        policy_findings.append("runtime default model differs from the formal default")
+    if DEFAULT_MODEL not in FORMAL_COMPETITION_MODELS:
+        policy_findings.append("runtime default model is outside the documented allowlist")
     if DEFAULT_API_BASE != OFFICIAL_API_BASE:
         policy_findings.append("runtime default API base differs from the official endpoint")
     try:
@@ -256,8 +331,29 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
         policy_findings.append("runtime default API base failed strict validation")
     if len(COMPETITION_MANUAL_SHA256) != 64:
         policy_findings.append("competition manual digest is malformed")
+    if len(OFFICIAL_MATERIAL_SHA256) != 4 or any(
+        len(digest) != 64 for digest in OFFICIAL_MATERIAL_SHA256.values()
+    ):
+        policy_findings.append("official material digest registry is malformed")
+    if not OFFICIAL_EVIDENCE_URLS or not all(
+        url.startswith("https://") for url in OFFICIAL_EVIDENCE_URLS.values()
+    ):
+        policy_findings.append("official web evidence registry is malformed")
+    if (
+        set(OFFICIAL_EVIDENCE_VERIFIED_ON) != set(OFFICIAL_EVIDENCE_URLS)
+        or not all(
+            re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)
+            for value in OFFICIAL_EVIDENCE_VERIFIED_ON.values()
+        )
+        or OFFICIAL_WEB_EVIDENCE_VERIFIED_ON
+        != max(OFFICIAL_EVIDENCE_VERIFIED_ON.values())
+    ):
+        policy_findings.append("official web evidence dates are malformed")
+    if not re.fullmatch(r"[0-9a-f]{40}", OFFICIAL_BASELINE_COMMIT):
+        policy_findings.append("official baseline commit is malformed")
     record("formal_policy", policy_findings)
 
+    record("official_material_registry", _check_official_material_registry(root))
     record("runtime_network_boundary", _check_runtime_network_boundary(root))
     record("isolated_entrypoint_import", _check_isolated_entrypoint_import(root))
     record("answer_isolation_and_json", _check_answer_isolation_and_json())
@@ -270,6 +366,7 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
     required_compliance_files = {
         "docs/COMPETITION_COMPLIANCE.md",
         "docs/ENGINEERING_SPECIFICATION.md",
+        "docs/OFFICIAL_MATERIALS_REGISTER.md",
         "math_agent/competition_policy.py",
         "scripts/check_competition_compliance.py",
     }
@@ -287,7 +384,13 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
         "schema_version": 1,
         "status": "passed" if not failed else "failed",
         "manual_sha256": COMPETITION_MANUAL_SHA256,
+        "official_materials_sha256": dict(OFFICIAL_MATERIAL_SHA256),
+        "official_baseline_commit": OFFICIAL_BASELINE_COMMIT,
+        "official_evidence_urls": dict(OFFICIAL_EVIDENCE_URLS),
+        "official_evidence_verified_on": dict(OFFICIAL_EVIDENCE_VERIFIED_ON),
+        "official_web_evidence_verified_on": OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
         "formal_model": FORMAL_COMPETITION_MODEL,
+        "formal_models": sorted(FORMAL_COMPETITION_MODELS),
         "failed_checks": failed,
         "checks": checks,
     }

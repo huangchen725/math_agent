@@ -18,6 +18,12 @@ from math_agent import AgentConfig
 from math_agent.competition_policy import (
     COMPETITION_MANUAL_SHA256,
     FORMAL_COMPETITION_MODEL,
+    FORMAL_COMPETITION_MODELS,
+    OFFICIAL_BASELINE_COMMIT,
+    OFFICIAL_EVIDENCE_VERIFIED_ON,
+    OFFICIAL_EVIDENCE_URLS,
+    OFFICIAL_MATERIAL_SHA256,
+    OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
 )
 
 from .check_secrets import scan_paths
@@ -90,6 +96,7 @@ REQUIRED_RELEASE_FILES = {
     "README.md",
     "docs/COMPETITION_COMPLIANCE.md",
     "docs/ENGINEERING_SPECIFICATION.md",
+    "docs/OFFICIAL_MATERIALS_REGISTER.md",
     "math_agent/__init__.py",
     "math_agent/competition_policy.py",
     "requirements-dev.lock",
@@ -269,8 +276,14 @@ def build_release_manifest(
         "model": model,
         "competition": {
             "manual_sha256": COMPETITION_MANUAL_SHA256,
-            "formal_model_required": FORMAL_COMPETITION_MODEL,
-            "formal_model_match": model == FORMAL_COMPETITION_MODEL,
+            "official_materials_sha256": dict(OFFICIAL_MATERIAL_SHA256),
+            "official_baseline_commit": OFFICIAL_BASELINE_COMMIT,
+            "official_evidence_urls": dict(OFFICIAL_EVIDENCE_URLS),
+            "official_evidence_verified_on": dict(OFFICIAL_EVIDENCE_VERIFIED_ON),
+            "official_web_evidence_verified_on": OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
+            "formal_model_default": FORMAL_COMPETITION_MODEL,
+            "formal_models_allowed": sorted(FORMAL_COMPETITION_MODELS),
+            "formal_model_match": model in FORMAL_COMPETITION_MODELS,
         },
         "source": snapshot,
         "source_date_epoch": snapshot["commit_timestamp"],
@@ -358,9 +371,10 @@ def build_release(
     formal = snapshot["worktree_clean"] and not allow_dirty
     if not snapshot["worktree_clean"] and not allow_dirty:
         raise ReleaseError("formal release requires a clean Git worktree")
-    if formal and model != FORMAL_COMPETITION_MODEL:
+    if formal and model not in FORMAL_COMPETITION_MODELS:
         raise ReleaseError(
-            f"formal competition release requires model {FORMAL_COMPETITION_MODEL}"
+            "formal competition release requires a documented Intern-S model: "
+            f"{', '.join(sorted(FORMAL_COMPETITION_MODELS))}"
         )
     files = collect_release_files(root, include_untracked=allow_dirty)
     secret_findings = scan_paths(root, files.values(), fail_unscannable=True)

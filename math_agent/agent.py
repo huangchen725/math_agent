@@ -30,7 +30,6 @@ from .candidate_generation import (
 from .candidate_selection import record_final_source, select_candidate
 from .context import SolveContext
 from .domain_router import DOMAIN_KEYWORDS, detect_domain
-from .llm_client import InternChatClient
 from .model_calls import call_model_result, call_model_text
 from .model_gateway import ModelGateway
 from .response_processing import (
@@ -52,13 +51,40 @@ class ReasoningAgent:
 
     _DOMAIN_KEYWORDS = DOMAIN_KEYWORDS
 
-    def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
-        self.config = config or AgentConfig()
+    def __init__(
+        self,
+        client: Any,
+        *args: Any,
+        config: AgentConfig | None = None,
+        **_platform_kwargs: Any,
+    ) -> None:
+        # The official runner may provide opaque positional/keyword options.
+        # Preserve the project's historical positional AgentConfig without
+        # making any platform extras part of the solving contract.
+        positional_config = next(
+            (value for value in args if isinstance(value, AgentConfig)),
+            None,
+        )
+        keyword_config = config if isinstance(config, AgentConfig) else None
+        self.config = keyword_config or positional_config or AgentConfig()
         self.client = client
         self._orchestrator = SolveOrchestrator(self.config)
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
-        """Preserve the competition contract and contain all pipeline failures."""
+        """Preserve the public contract even if preflight or finalization fails."""
+        try:
+            return self._solve_guarded(problem, metadata)
+        except Exception:
+            # This last-resort value is deliberately independent of config,
+            # client, trace projection, and pipeline state.  The official
+            # runner must always receive a JSON-safe, non-empty response.
+            return {
+                "final_response": "未解出",
+                "trace": [{"step": "global_error", "content": {"status": "error"}}],
+            }
+
+    def _solve_guarded(self, problem: str, metadata: Dict) -> Dict:
+        """Run one solve while retaining the richer in-pipeline recovery path."""
         input_error = self._validate_input(problem, metadata)
         if input_error is not None:
             return self._public_result(input_error)

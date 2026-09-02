@@ -135,11 +135,21 @@ def test_client_rejects_competition_incompatible_options(monkeypatch, kwargs):
         client.chat([{"role": "user", "content": "hello"}], **kwargs)
 
 
-def test_client_rejects_non_s1_model_in_default_competition_mode(monkeypatch):
+def test_client_allows_documented_s2_model_in_competition_mode(monkeypatch):
     monkeypatch.setenv("INTERN_API_KEY", "test-key")
     monkeypatch.setenv("INTERN_MODEL", "intern-s2-preview")
 
-    with pytest.raises(RuntimeError, match="Competition mode permits only intern-s1"):
+    client = InternChatClient(retry=1)
+
+    assert client.model == "intern-s2-preview"
+    assert client.competition_mode is True
+
+
+def test_client_rejects_undocumented_model_in_competition_mode(monkeypatch):
+    monkeypatch.setenv("INTERN_API_KEY", "test-key")
+    monkeypatch.setenv("INTERN_MODEL", "unrelated-model")
+
+    with pytest.raises(RuntimeError, match="documented Intern-S models"):
         InternChatClient(retry=1)
 
 

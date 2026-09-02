@@ -610,4 +610,46 @@ S5/S6 没有修改模型、候选数量、温度、thinking mode、token、工�
 
 当前工作树已完成五层失败关闭：未知 client 只收到 `messages/temperature/max_tokens`；项目扩展只保留在自有 `InternChatClient` 名义类型边界；未知 client 的工具槽显式降级为纯文本并记录状态；根入口按自身文件目录引导包导入，gateway/上下文构造及 fallback 纳入顶层异常收敛；公开 trace 经白名单投影。运行时指纹和合规探针同步覆盖新边界。三参数 fake 在当前工作树由 0 请求恢复为 6 请求。
 
-最终离线门禁为 21/21 项通过：196 项测试通过，总语句覆盖率 77.46%；Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包、依赖一致性与漏洞审计、敏感信息扫描、Markdown 链接、竞赛合规探针、few-shot dry-run、runner 和全部评测 CLI 入口均通过。模型、候选槽数量、温度配置、token、工具轮数、验证、恢复和聚合算法没有改变，也没有调用真实模型 API；但未知注入路径不再发送 `thinking_mode/tools/tool_choice`，两个工具槽成为纯文本候选，可能改变模型默认推理、工具能力、请求量、截断和正确率。后续必须建立当前环境新基线，不能声称能力不受影响。`CLIENT-001` 保持“离线修复、官方重跑待完成”；下次先看 `request_count>0`、`success>0`，再讨论正确率。
+最终离线门禁为 21/21 项通过：196 项测试通过，总语句覆盖率 77.46%；Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包、依赖一致性与漏洞审计、敏感信息扫描、Markdown 链接、竞赛合规探针、few-shot dry-run、runner 和全部评测 CLI 入口均通过。模型、候选槽数量、温度配置、token、工具轮数、验证、恢复和聚合算法没有改变，也没有调用真实模型 API；但未知注入路径不再发送 `thinking_mode/tools/tool_choice`，两个工具槽成为纯文本候选，可能改变模型默认推理、工具能力、请求量、截断和正确率。后续必须建立当前环境新基线，不能声称能力不受影响。本节完成时 `CLIENT-001` 的状态是“官方重跑待完成”；2026-09-02 对 `eb5d8d4` 的重跑仍为 112 error / 0 request，已将状态改回未解决，见第 31 节。
+
+## 29. 三份官方材料全量登记与契约缺口治理
+
+2026-09-01 对当前可获得的三份官方材料重新做完整性核验：13 页赛事方案逐页提取并渲染检查；`官方工具.docx` 的正文、链接、文档属性和关系结构逐段读取；纯截图 DOCX 的 8 张嵌入 JPEG 全部按原分辨率检查。三个原件 SHA-256 依次为 `ece081cd4a0c4f496943b3e3c7d79716d8ffd1d9a6249e11bb3ed5c4a39902d7`、`6855baa8b2ebaa38642725ca3404f7ad98cbadee7fb695ccccc04faf9667c8c4`、`30cac629e87703c8decf28e9596af56e6c280be8a84745db8199e47cccd1401e`。同时重新核验官方 baseline 远端提交为 `43be244a880d64a1f9d3a631aa7d9e976f26c17b`。原始群截图和个人联系方式没有进入仓库，只以来源哈希和必要事实留证。
+
+新建 `docs/OFFICIAL_MATERIALS_REGISTER.md` 作为非架构的证据登记册，完整记录参赛资格、单/多 Agent 阶段、112 题与 18 领域、评分、交付、违规红线、通知时间线、全部官方入口、模型/Judger/trace、20 分钟时限、网络/依赖/GPU、进程模型、调用与流控口径。材料并非完全没有技术底线：运行时只允许官方 API、无 GPU 和通用外网、依赖须预安装、每题独立进程、单题硬时限 1200 秒、Agent 阶段 6 小时、最多 3 个题目进程，以及 JSON/可独立判分 `final_response` 都有书面依据。
+
+更严重的缺口是这些材料没有形成可执行的完整平台契约。登记册保留七项 `INFO-CONFLICT-*`：S1/397B/可选模型、trace 是否参与 Judger、调用/token 是否无限、综合评分与榜单评分、9 月 5 日/9 月 15 日、2000 RPM/公开额度、邮箱/AtomGit 提交渠道；同时保留十类 `OFFICIAL-GAP-*`：client、response、error、budget、model、resource、Judge、runner、tools 和 change。多次 0 request 说明 `OFFICIAL-GAP-CLIENT/ERROR/RUNNER/CHANGE` 会直接造成整场失效，不能再把 baseline 示例、宽松 fake、历史成功请求或材料沉默当成平台保证。
+
+规范层已同步建立失败关闭流程：`AGENTS.md`、项目维护 Skill、贡献指南、工程规范、唯一架构文档、README、提交说明、合规清单和技术报告都指向证据登记册；`intern-s1` 明确降格为冲突未解决前的项目保守 formal 门禁，而非已统一的官方最终模型；`final_response` 必须自包含，公开 trace 继续按当前 baseline 限制为元数据；正式运行不得依赖 GPU、外网或动态下载。正式 manifest 现在冻结三份原件哈希和 baseline commit，合规探针检查全部来源冲突与技术缺口 ID，防止以后发布时无声丢失。
+
+本次只改证据治理、规范和离线发布校验，没有改变候选数、prompt、温度、token、工具轮数、验证、恢复、聚合或未知 client 的三参数投影，也没有调用真实模型 API。登记册列出的八个最小书面问题必须在下一次正式提交前优先向主办方确认；只有答复同时具备原文、日期、适用批次、精确接口/模型标识和来源指纹，才能关闭相应缺口。
+
+完成后的全量离线门禁为 21/21 项通过：198 项测试通过，总语句覆盖率 77.44%；Ruff、compileall、Bandit、Python 3.10/Linux 锁闭包、`pip check`、三套依赖漏洞审计、敏感信息扫描、29 份 Markdown 本地链接、官方材料/赛事合规探针、few-shot dry-run、runner 和全部评测 CLI 入口均通过。首次受限运行只有 `pip_audit` 因套接字权限失败；允许访问公开 PyPI 漏洞数据库后，同一工作树完整通过。该查询没有访问模型端点，逐页渲染和八张截图的临时副本在核验后已从 `.quality/` 删除。
+
+## 30. AtomGit 新通知与动态官方契约复核
+
+2026-09-01 收到一条 AtomGit 赛事通知正文。规范化时移除 Markdown 链接外壳、保留 URL、统一 LF 和 UTF-8 并保留末尾换行，SHA-256 为 `757377813dc101c3ad3574aa2b1acb0da12ffe7e6178fd79c9b716a46a1defa3`。正文与 MAT-002 已保存的 7 月 21 日通知一致，确认自动判分延至 7 月 28 日、AtomGit 报名与作品截止调整到 9 月 15 日，但没有新增 client、返回类型、token、资源或 Judger 技术保证。AtomGit 注册教程在无登录访问时跳转登录页，因此只登记链接，不宣称教程正文已核验。
+
+同日只读核验通知链接的 AtomGit 赛事页、初赛提交要求、更新日志和 FAQ。页面补齐了此前规范遗漏的可执行边界：平台从根 `user_agent.py` 导入 `ReasoningAgent`，构造器至少兼容 `client,*args,**kwargs`，`solve(problem, metadata)` 返回含非空 `final_response` 的字典；公开 client 示例仍只有 `messages/temperature/max_tokens`。代码相应接受并忽略不透明平台构造参数，同时保留历史位置/关键字 `AgentConfig`，未知注入 client 的三参数投影不变。
+
+模型规则也得到书面更新。FAQ 允许 Intern-S 系列、可组合多个 Intern-S 模型并推荐精确 ID `intern-s2-preview`；结合 baseline 记录，formal allowlist 改为 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，默认仍为 `intern-s1`。因此第 25、29 节记载的 S1-only 保守门禁已被后续证据取代，不再是当前规则；“397/35B”简写与精确 ID 的映射、登录后提交页实际选项和运行模型版本仍属于 `OFFICIAL-GAP-MODEL`，不能推测关闭。
+
+正式提交链路从旧 commit-hash 语义切换为 AtomGit 最新 `main`：选手必须在队伍 AtomGit 组织仓库推送 `main`，在作品页关联仓库、选择模型并点击“提交作品”；只推送代码不会入队。平台在北京时间 12:00/24:00 抓取当时最新 `main`，单日最多 2 次、单周最多 10 次。项目继续用精确 SHA 生成发布包和审计证据，但从点击提交到批次抓取完成必须冻结 `main`，抓取后以 AtomGit 远端 SHA 对账。当前本地只配置 GitHub `origin`，AtomGit URL 尚未取得，因此 `SUBMIT-001` 保持操作阻断，不能把 GitHub 推送或 formal ZIP 写成已完成赛事提交。
+
+动态页面同时确认正式题集为不公开的 112 道中文独立题、Linux Docker、根 `requirements.txt` 的 Python 依赖、无 GPU/通用外网，可使用随仓库交付的离线 MCP/RAG/SymPy/本地 sandbox，不预装且运行时不能下载 Lean 工具链。页面仍没有给出 client 包版本与返回类型、具体 token/请求预算、基础镜像和 CPU/内存/磁盘数值、Judger 版本与 trace 权重、runner 启动细节或平台变更冻结机制；且飞书页面提示部分内容可能由 AI 生成。因此本轮缩小了契约缺口，没有把动态页面误写成不可变、完整的官方 API 规范。
+
+2026-09-02 对 MAT-007《初赛赛题介绍与提交要求》按目录 1～11 节再次逐节复核。页面自身直接列出了 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，因此 formal allowlist 不再只依赖 baseline/FAQ 的组合推断；页面同时写明普通 API 账户 RPM 30、TPM 150000、通常可申请 200 RPM 以内，但正式 runner 的模型调用预算仍由平台统一控制，不能把本地账户数字或示例 `max_tokens=4096` 当作评测上限。页面要求已有 GitHub 仓库新增名为 `atomgit` 的远程，并明确解析了此前的渠道歧义：AtomGit 绑定仓库并点击“提交作品”用于自动判分，截止前最终代码与规定材料还须打 ZIP 发组委会邮箱。两条通道及各自回执都被加入 `SUBMIT-001`；当前本地仍只有 `origin`，所以阻断状态不变。页面仍显示 07 月 21 日修改并提示部分内容可能由 AI 生成，未补齐 client 返回类型、固定 endpoint 版本、正式 token/资源数值或 Judger 版本。
+
+本轮针对性回归为 40 项通过；完成 2026-09-02 逐节复核后，全量离线门禁为 21/21 项通过、201 项测试通过、总语句覆盖率 77.42%。Ruff、compileall、Bandit、Python 3.10/Linux 开发锁闭包、`pip check`、三套依赖漏洞审计、敏感信息扫描、29 份 Markdown 本地链接、竞赛合规探针、few-shot dry-run、runner 和全部评测 CLI 入口均通过。依赖审计只访问公开漏洞数据库，没有调用模型 API；规范化通知临时文件在复核 SHA-256 后已删除。本轮没有生成正确率、平台在线兼容性或 AtomGit 提交成功的新证据。
+
+## 31. 2026-09-02 第三次 112 题请求前故障
+
+新日志 `eval_log_527cc8e9a6834c7088ce1d123aeb0131.log` 的 SHA-256 为 `ee890b09add3c2f6d5da7a23447e6b648c057f8497b544613e1b21c10cbda6f0`。平台实际拉取 `eb5d8d4793dc21de9387c24c81e38ebea6467f52`，在约 42.3 秒内产生 0 success、112 error、112 invalid，官方 client 的 request、attempt、retry 和 token 仍全部为 0。该提交已经包含三参数投影、未知工具能力文本降级、绝对路径入口与 trace 脱敏，因此 9 月 1 日锁定的扩展 kwargs 缺陷虽然真实，却已被正式结果反证为不足以恢复线上。第三轮仍是运行无效结果，不进入数学能力或截断趋势。
+
+结合当天重新发现的 MAT-007 构造契约，当前最强候选转为 `eb5d8d4` 的 `__init__(client, config=None)`。若 runner 把不透明配置作为第二位置参数传入，旧代码会把字典保存为 `self.config`，随后每题在首个请求前读取 `max_problem_chars` 并让 `AttributeError` 逃出。Git 归档同形实验已复现 0 次进入严格三参数 `chat()` 后异常逃逸；当前工作树在相同输入下恢复 6 次调用和规范答案。由于公开技术页的正常示例仍只传 `client=`，正式日志又没有逐题异常或实际构造参数，这一缺陷只能登记为“足以解释、线上待证”，不得再次写成唯一根因闭环。
+
+实现现已只采纳运行时确为项目 `AgentConfig` 的位置/关键字值；字典、字符串和伪 `config` 值均忽略。公开 `solve()` 增加覆盖预检、预算、流水线、收尾、trace 投影和规范化的最外层契约保护，普通异常返回非空 JSON 安全结果，且不会发无预算请求或泄露异常正文。合规探针和回归测试同时覆盖不透明位置参数、伪 `config`、真正配置、未知关键字、无 `**kwargs` 三参数 client 及首请求前异常。完整证据边界见 `docs/evaluations/OFFICIAL_112_20260902_RUNTIME_FAILURE.md`；`CLIENT-001`、`ENTRY-002` 与 `OFFICIAL-002` 继续保持线上未解决。
+
+随后冻结官方 GitHub baseline 提交 `43be244a880d64a1f9d3a631aa7d9e976f26c17b`，将 Git 归档还原的 `eb5d8d4` 放入未修改的公开 `main.py` 与 `InternChatClient`，只在 HTTP 边界注入确定性响应。112 题全部 success，共 672 次进入公开 client；说明被评测提交与公开 baseline 的入口及请求构造可以协同运行。三组故障矩阵进一步显示：只拒绝 `max_tokens>4096` 时 336 次高额度调用被拒、112 次低额度调用成功，最终仍为 112 success；拒绝所有 560 次调用时，112 个 `未解出` 仍被公开 runner 记为 success；只有不透明第二位置配置污染能得到 0 调用、112 error。由此排除 8192 上限或 chat 拒绝在公开状态语义下作为单一根因，确认正式平台至少存在一项 baseline 外的 runner/client/初始化或状态分类差异。构造污染仍是唯一匹配全部聚合指标的本地模型，但线上归因仍需正式构造调用或逐题异常佐证。
+
+本轮专项回归 55 项通过，完整离线门禁 21/21 项通过：202 项测试通过，总语句覆盖率 77.45%，所有代码、依赖、安全、链接、合规、runner 和评测入口检查通过。首次完整运行仅因受限网络无法访问 PyPI 漏洞数据库而失败；允许只读查询公开漏洞数据后同一工作树通过。没有调用模型 API，也没有据此声称正式平台兼容性已经恢复。

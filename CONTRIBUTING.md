@@ -9,7 +9,7 @@ python -m venv .venv
 python -m pip install --require-hashes -r requirements-dev.lock
 ```
 
-先阅读 `AGENTS.md` 和 `docs/ENGINEERING_SPECIFICATION.md`；在变更说明中列出受影响的硬规则 ID、历史问题 ID 和保持不变的策略参数。涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`；涉及正式比赛、模型、日志或提交时，同时读取 `docs/COMPETITION_COMPLIANCE.md`。
+先阅读 `AGENTS.md` 和 `docs/ENGINEERING_SPECIFICATION.md`；在变更说明中列出受影响的硬规则 ID、历史问题 ID 和保持不变的策略参数。涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`；涉及正式比赛、模型、日志或提交时，同时读取 `docs/COMPETITION_COMPLIANCE.md` 与 `docs/OFFICIAL_MATERIALS_REGISTER.md`，并列出受影响的 `INFO-CONFLICT-*`/`OFFICIAL-GAP-*`。
 
 ## 修改原则
 
@@ -21,8 +21,11 @@ python -m pip install --require-hashes -r requirements-dev.lock
 - 修改解析器、答案归一化、等价判定、validator、序列化或状态机不变量时，同时使用 `.agents/skills/property-based-testing/SKILL.md` 设计幂等、往返、oracle 或状态保持性质。第三方 Skill 只提供测试方法；增加 Hypothesis 等依赖仍须单独说明、更新输入规格与哈希锁并完成最低 Python 验证。
 - 不把真实 API 调用放进默认测试。
 - 未知注入 client 只能调用 `chat(messages, temperature, max_tokens)`；不得传 `thinking_mode/tools/tool_choice`、读取私有协议标记/字段或调用同名扩展。客户端改动必须用不含 `**kwargs` 的三参数 fake，入口改动必须从仓库外以绝对路径隔离加载 `user_agent.py` 验证。
+- 平台额外构造参数全部按不透明输入处理；只有真正的 `AgentConfig` 实例可成为配置。入口测试必须覆盖伪 `config` 字典和首请求前异常，并确认 `solve()` 返回 JSON 可序列化的非空结果且不绕过预算发请求。
 - 对外 `trace` 只允许结构化元数据；不得包含题面、prompt、模型/候选/验证/工具正文、最终答案或异常消息。修改 trace、序列化或投影规则时须验证失败关闭、幂等和 JSON 可序列化。
-- 不通过删除回归测试、降低覆盖率、扩大发布白名单、切换非 S1 模型或依赖平台私有接口来绕过失败。
+- 不通过删除回归测试、降低覆盖率、扩大发布白名单、切换 allowlist 外模型或依赖平台私有接口来绕过失败。formal 默认 `intern-s1` 不得描述成官方唯一模型；当前允许 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，实际选择仍须留 AtomGit 页面回执。
+- 新官方文件、截图、FAQ、baseline 或提交页信息必须先计算原件 SHA-256，再向证据登记册追加来源、事实、冲突和缺口状态；动态页面没有不可变版本时记录 URL、核验日期、页面更新时间、关键事实和可用快照。不得覆盖旧口径，也不得提交含个人信息的原始群截图。
+- 正式评测代码必须通过名为 `atomgit` 的远程同步到队伍仓库 `main` 并在作品页点击“提交作品”。点击后到 12:00/24:00 批次抓取完成前冻结分支，抓取后用远端 SHA 对账；截止前还要发送规定的最终 ZIP/材料邮件。GitHub 推送、本地发布包、AtomGit 点击和邮件归档不能互相替代。
 - 不把结构测试通过、一次随机分数或内部合成集满分写成解题能力已经提高；声明口径按工程规范第 8 节执行。
 
 ## 提交前检查

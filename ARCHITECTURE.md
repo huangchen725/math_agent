@@ -2,7 +2,7 @@
 
 > 状态：当前生效  
 > 更新日期：2026-09-01
-> 本文件是仓库唯一的架构事实源。`docs/ENGINEERING_SPECIFICATION.md` 规定 P1～S6 的工程变更、硬规则和故障回归门禁，`docs/COMPETITION_COMPLIANCE.md` 记录赛事手册事实与合规控制；两者都不是第二份架构文档。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时先按赛事规则失败关闭，再核对本文件和当前代码。
+> 本文件是仓库唯一的架构事实源。`docs/ENGINEERING_SPECIFICATION.md` 规定 P1～S6 的工程变更、硬规则和故障回归门禁，`docs/COMPETITION_COMPLIANCE.md` 记录赛事控制，`docs/OFFICIAL_MATERIALS_REGISTER.md` 记录官方来源、冲突和未定义契约；后三者都不是第二份架构文档。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时先按官方证据层级失败关闭，再核对本文件和当前代码。
 
 ## 1. 目标与边界
 
@@ -13,16 +13,18 @@
 ## 2. 外部契约
 
 ```python
-ReasoningAgent(client).solve(problem, metadata)
+agent = ReasoningAgent(client=official_client)
+agent.solve(problem, metadata)
 # -> {"final_response": str, "trace": list[dict]}
 ```
 
+- 构造器至少兼容 `__init__(self, client, *args, **kwargs)`。额外平台参数是不透明兼容输入；只有运行时确为项目 `AgentConfig` 的位置值或 `config=` 值才会被采用，伪装成 `config` 的字典/字符串及其它值均忽略，不参与求解、能力探测或权限判断。
 - `problem` 是题目字符串，必须非空且默认不超过 20000 字符。
 - `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
 - `client` 由调用方注入，未知实现只需提供 `chat(messages, temperature, max_tokens)`；Agent 不读取注入对象的私有字段/扩展方法，也不向其发送 `thinking_mode/tools/tool_choice`。项目自有 `InternChatClient` 通过名义类型边界保留扩展参数与原子 metadata。
 - `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理，并以唯一一行 `最终答案：...` 结尾。该行只含规范化答案体，不含解释性句子；常见 Unicode/LaTeX 表示转换为稳定记号，已有精确形式时优先保留精确形式。
 - `trace` 是公开的元数据事件列表，只允许步骤、状态、候选/请求编号、响应长度、截断状态和预算统计。`trace_sanitizer` 在返回边界删除题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案和异常消息；未知事件或字段失败关闭。截断事件只记录阶段、候选编号、token、是否已有首行答案和处理状态。
-- `ReasoningAgent.solve()` 从网关/上下文构造开始捕获全局异常；已有上下文时才尝试低成本回退，回退再次失败也不得逃出公开入口。`main.py` 将空答案和 `未解出` 视为失败记录。
+- `ReasoningAgent.solve()` 的最外层契约保护覆盖输入预检、预算创建、网关/上下文构造、流水线、截断收尾、trace 投影和返回规范化；已有上下文时才尝试低成本模型回退。任一普通异常都不得逃出公开入口，最外层保护本身不额外请求模型或绕过预算。`main.py` 将空答案和 `未解出` 视为失败记录。
 
 ## 3. 组件与数据流
 
@@ -64,7 +66,7 @@ flowchart LR
 | `math_agent/__init__.py` | 唯一包级公开 API，导出 Agent、客户端、网关、求解上下文和核心数据类型 |
 | `math_agent/agent.py` | 维护公开 Agent 生命周期：输入校验、单题上下文创建、异常收敛和兼容转发；不实现具体求解阶段 |
 | `math_agent/agent_config.py` | 定义固定候选策略、模型参数、恢复开关和单题预算配置 |
-| `math_agent/competition_policy.py` | 固定手册哈希、正式 `intern-s1` 模型、官方端点和默认开启的参赛模式校验；非 S1 只能显式作为非提交实验 |
+| `math_agent/competition_policy.py` | 固定三份官方原件及新通知转录哈希、动态官方证据 URL/核验日、核验 baseline commit、formal 默认模型与精确 allowlist、官方端点和默认参赛模式；allowlist 外模型只能显式作为非提交实验 |
 | `math_agent/agent_prompts.py` | 集中保存策略、验证、批评和反思提示词；不持有运行状态 |
 | `math_agent/agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
 | `math_agent/answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
@@ -169,17 +171,21 @@ P1 只改变“严格计划存在且获得一致确定性通过证据”时的�
 | --- | --- |
 | `INTERN_API_KEY` | 无，缺失时拒绝启动 |
 | `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
-| `INTERN_MODEL` | `intern-s1` |
-| `COMPETITION_MODE` | `1`；参赛模式拒绝非 S1 模型 |
+| `INTERN_MODEL` | `intern-s1`；formal 默认值，另允许 `intern-s1-pro`、`intern-s2-preview` |
+| `COMPETITION_MODE` | `1`；拒绝未被书面证据覆盖的模型 ID |
 
-自有客户端对端点使用失败关闭校验，只接受手册对应的官方 HTTPS Chat Completions 地址；即使 `COMPETITION_MODE=0` 也不能切换第三方服务。参赛模式默认开启并只接受 `intern-s1`，关闭模式仅允许重放明确标记为非提交的历史模型实验。客户端拒绝 `stream=True` 和 `n != 1`，当前不发送未经平台兼容验证的 `stop` 或流式参数。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。`chat()` 保持原有文本/tool-call 返回契约。`ModelGateway` 以项目 `InternChatClient` 的名义类型作为信任边界，仅对该类型调用 `chat_with_metadata()`，保留 `thinking_mode/tools/tool_choice`，并在同一返回值中取得 request id、模型、`finish_reason`、usage、耗时和尝试次数；未知外部注入客户端只收到 `messages/temperature/max_tokens`，不会读取协议 marker、其它私有字段或同名扩展方法。`CandidateGenerator` 在该最小边界下于进入 tool loop 前把工具槽改为普通纯文本 prompt，并记录 `tool_capability_fallback`，不造成全题失败，也不虚构工具执行。项目不再保存“最近一次响应”全局或上下文变量，也不再在请求后另取元数据。
+自有客户端对端点使用失败关闭校验，只接受官方 HTTPS Chat Completions 地址；即使 `COMPETITION_MODE=0` 也不能切换第三方服务。参赛模式默认开启，并只接受当前书面证据覆盖的 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`；默认仍为 `intern-s1`，实际正式模型由 AtomGit 提交页选择回执确定。“397/35B”简写和未来 ID 不能自行映射；关闭模式仅允许重放明确标记为非提交的其它模型实验。客户端拒绝 `stream=True` 和 `n != 1`，当前不发送未经平台兼容验证的 `stop` 或流式参数。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。`chat()` 保持原有文本/tool-call 返回契约。`ModelGateway` 以项目 `InternChatClient` 的名义类型作为信任边界，仅对该类型调用 `chat_with_metadata()`，保留 `thinking_mode/tools/tool_choice`，并在同一返回值中取得 request id、模型、`finish_reason`、usage、耗时和尝试次数；未知外部注入客户端只收到 `messages/temperature/max_tokens`，不会读取协议 marker、其它私有字段或同名扩展方法。`CandidateGenerator` 在该最小边界下于进入 tool loop 前把工具槽改为普通纯文本 prompt，并记录 `tool_capability_fallback`，不造成全题失败，也不虚构工具执行。项目不再保存“最近一次响应”全局或上下文变量，也不再在请求后另取元数据。模型冲突和客户端/响应契约缺口的证据边界见 `docs/OFFICIAL_MATERIALS_REGISTER.md`。
 
 `main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。`未解出` 保存为 error checkpoint，并保留 Agent trace 供区分数学失败、预算和平台错误。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数；正式评测可在 manifest 中冻结为更低值以规避端点节流。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
+
+已归档的外层评测口径是：每题独立进程重新加载模块、构造一个 Agent 并调用一次 `solve`，最多并行 3 个题目进程；单题进程组硬时限 1200 秒、Agent 阶段总硬时限 6 小时。运行时只可访问官方 API，无 GPU 和通用外网，依赖在受限阶段前安装，不能动态下载。项目的 600 秒单题软期限、默认 3 并发和离线本地工具位于这些边界内，但不得把外层时间/并发口径推导成模型调用数、token、内存、磁盘或子进程能力保证。
+
+当前 AtomGit 评测入口不绑定选手填写的 commit SHA：现有本地仓库把队伍仓库添加为远程 `atomgit`；作品页关联仓库并选择模型、点击“提交作品”后，平台在北京时间 12:00/24:00 批次拉取当时最新 `main`。因此交付控制同时保留两层版本语义：本地发布包和证据用精确 SHA 冻结；平台侧从点击提交到抓取完成必须冻结 `main`，抓取后再用 AtomGit 远端 SHA 对账。截止前最终代码与规定材料还须打 ZIP 发组委会邮箱。GitHub 镜像、只推送未点击提交、只发邮件或仅生成 ZIP 都不能单独完成交付。当前仓库未配置 `atomgit` 远程且没有两类回执时，运行架构可测试，但正式提交状态仍为阻断。
 
 ## 7. 信任边界与失败行为
 
 - API key 只从环境变量读取；`.env`、`outputs/` 和验证报告被 Git 忽略。
-- 正式参赛只使用 `intern-s1`、赛事注入客户端或官方 Intern 端点、本地受限 SymPy；禁止人工逐题干预、赛后补填、伪造日志和未经允许的外部闭源服务。详细操作证据边界见 `docs/COMPETITION_COMPLIANCE.md`。
+- 正式参赛模型必须来自三个精确 ID 的 formal allowlist，并与 AtomGit 页面回执一致；运行只使用赛事注入客户端或官方 Intern 端点，以及随仓库交付的离线受限工具。禁止人工逐题干预、赛后补填、伪造日志和未经允许的外部闭源服务；详细操作与证据边界见 `docs/COMPETITION_COMPLIANCE.md` 和 `docs/OFFICIAL_MATERIALS_REGISTER.md`。
 - 批处理入口只把 `problem` 和 `idx` 送入 Agent，输入记录中的参考答案、参考解和判分字段只属于离线评分边界，不进入求解上下文或模型消息。
 - 题目、metadata、模型文本、tool calls、HTTP/JSON 响应和 checkpoint 均视为不可信输入。
 - 内部流水线可短暂持有候选与工具结果以完成选择，但公开返回前必须经 `trace_sanitizer` 白名单投影；对外 trace 不含题面、prompt、任何模型/工具正文、最终答案或异常消息。私有原始响应只允许存在于忽略的受控实验输出中。
@@ -209,7 +215,7 @@ python -m scripts.run_quality_gates
 
 `scripts.run_quality_gates` 是唯一完整质量入口。它按固定清单执行各项检查，即使某项失败也继续诊断，并把命令参数、返回码、耗时和有界输出尾部写入 `.quality/quality-report.json`；报告同时保存检查前后的 commit、tree、分支和工作树状态。报告不保存 API key、题面或完整模型响应。CI 只授予 `contents: read`，第三方 Action 固定到完整提交 SHA，关闭 checkout 凭据持久化，并在 Python 3.10 与 3.12 上验证。CI 与默认测试均不允许 `--execute`、`main.py` 求解或启动 Demo。
 
-正式发布必须同时满足：工作树干净；模型参数等于 `intern-s1`；质量报告状态为通过且包含依赖审计与 `competition_compliance`；报告前后 commit/tree 与当前 HEAD 完全一致；所有必需检查均有通过记录。发布器只选择 Git 已跟踪或非忽略的未跟踪文件，再施加根文件白名单和受限目录/后缀；符号链接、路径逃逸、含 NUL 的伪装二进制、超过 5 MiB 扫描/单文件上限或总输入超过 50 MiB 均被拒绝，嵌入的质量报告也必须通过同一敏感信息扫描。正式包从 Git blob 读取源字节，按固定名称顺序、提交时间、Unix 文件模式和压缩级别写 ZIP；同一提交、同一质量报告、同一模型标识应得到相同 SHA-256。包内 manifest 记录提交/tree、模型、手册哈希、正式模型匹配状态、默认 `AgentConfig`、依赖锁哈希和逐文件哈希，旁路 `.sha256` 用于传输校验。
+正式发布必须同时满足：工作树干净；模型参数属于 formal allowlist；质量报告状态为通过且包含依赖审计与 `competition_compliance`；报告前后 commit/tree 与当前 HEAD 完全一致；所有必需检查均有通过记录。发布器只选择 Git 已跟踪或非忽略的未跟踪文件，再施加根文件白名单和受限目录/后缀；符号链接、路径逃逸、含 NUL 的伪装二进制、超过 5 MiB 扫描/单文件上限或总输入超过 50 MiB 均被拒绝，嵌入的质量报告也必须通过同一敏感信息扫描。正式包从 Git blob 读取源字节，按固定名称顺序、提交时间、Unix 文件模式和压缩级别写 ZIP；同一提交、同一质量报告、同一模型标识应得到相同 SHA-256。包内 manifest 记录提交/tree、模型、三份官方原件与新通知转录哈希、动态官方证据 URL/核验日、核验 baseline commit、formal 默认值/allowlist/匹配状态、默认 `AgentConfig`、依赖锁哈希和逐文件哈希，旁路 `.sha256` 用于传输校验。发布包成功只证明源码产物可复现，不证明 AtomGit 作品页已点击、批次已抓取或远端 `main` 已对账。
 
 脏工作树只能通过 `--allow-dirty` 生成 `draft`，内容来自当前工作区且 manifest 明确保留脏文件清单；它不能升级为正式包。`.env`、`.quality/`、`dist/`、`outputs/`、虚拟环境及未在白名单中的文件不会进入交付包。
 

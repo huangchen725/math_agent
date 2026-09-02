@@ -39,6 +39,52 @@ def test_root_entrypoint_is_the_package_public_api() -> None:
     assert AgentConfig is PackageAgentConfig
 
 
+def test_agent_constructor_accepts_official_runner_extras() -> None:
+    client = RecordingClient()
+    config = _frozen_config()
+
+    agent = ReasoningAgent(
+        client,
+        "opaque-platform-positional",
+        config,
+        config={"opaque_platform_config": True},
+        platform_run_id="opaque-platform-keyword",
+    )
+    result = agent.solve("计算 2+2", {})
+
+    assert agent.config is config
+    assert result["final_response"].splitlines()[-1] == "最终答案：4"
+
+    keyword_client = RecordingClient()
+    keyword_agent = ReasoningAgent(
+        client=keyword_client,
+        config=config,
+        platform_run_id="opaque-keyword-construction",
+    )
+    keyword_result = keyword_agent.solve("计算 2+2", {})
+
+    assert keyword_agent.config is config
+    assert keyword_result["final_response"].splitlines()[-1] == "最终答案：4"
+
+
+def test_public_solve_contains_preflight_failures() -> None:
+    client = RecordingClient()
+    agent = ReasoningAgent(client=client)
+
+    def fail_preflight(problem, metadata):
+        raise RuntimeError("private runner detail must not escape")
+
+    agent._validate_input = fail_preflight
+    result = agent.solve("计算 2+2", {"idx": 0})
+
+    assert result == {
+        "final_response": "未解出",
+        "trace": [{"step": "global_error", "content": {"status": "error"}}],
+    }
+    assert client.calls == []
+    json.dumps(result, ensure_ascii=False)
+
+
 def test_frozen_request_sequence_output_and_trace_contract() -> None:
     client = RecordingClient()
 

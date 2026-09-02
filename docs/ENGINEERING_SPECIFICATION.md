@@ -11,7 +11,8 @@
 
 | 层级 | 事实源 | 负责内容 |
 | --- | --- | --- |
-| 赛事规则 | 主办方手册及归档的书面答复、`docs/COMPETITION_COMPLIANCE.md` | 资格、模型、接口、输出、提交和禁止行为 |
+| 官方证据 | 主办方原件、归档书面答复、绑定提交的 baseline、`docs/OFFICIAL_MATERIALS_REGISTER.md` | 来源指纹、直接事实、时间线、冲突和官方契约缺口 |
+| 赛事规则 | 上述证据中可直接确认且适用于当前批次的规则、`docs/COMPETITION_COMPLIANCE.md` | 资格、模型、接口、输出、提交和禁止行为 |
 | 运行架构 | `ARCHITECTURE.md` 与当前代码 | 组件边界、数据流、外部契约、配置和失败行为 |
 | 工程规范 | 本文件 | P1～S6 不可回退基线、变更门禁和故障回归 |
 | 执行规则 | `AGENTS.md`、`.agents/skills/math-agent-maintainer/SKILL.md`、`CONTRIBUTING.md` | 每次任务、代码审查、验证和交付步骤 |
@@ -23,7 +24,7 @@
 - **已修复**：已有回归测试；删除测试或恢复旧行为视为回归。
 - **待验证/未解决**：不得写成已关闭，也不得据此做能力或合规声明。
 
-若不同文件冲突，先按赛事规则失败关闭；架构事实与代码不一致时先停止发布并修正文档或实现，不能选择对当前任务更方便的一份。
+若不同官方材料冲突，先登记 `INFO-CONFLICT-*`，再按资格红线、当前绑定的技术基线和可回退保守策略失败关闭；不得把任意单份材料提升成完整契约。架构事实与代码不一致时先停止发布并修正文档或实现，不能选择对当前任务更方便的一份。
 
 ## 2. P1、S1～S6 冻结基线
 
@@ -58,12 +59,13 @@
 | 工具 | 项目自有客户端最多 3 轮、单工具默认硬超时 5 秒；未知注入 client 不发送 tool schema |
 | 输入 | 题面和 metadata 各最多 20000 字符 |
 | 本地 runner 并发 | 默认 3 |
+| formal 模型 | 默认 `intern-s1`；允许证据登记册已确认的 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，实际提交模型另留页面回执 |
 
 ## 4. 硬规则目录
 
 ### 4.1 赛事与人员行为
 
-- **COMP-001**：正式参赛模型必须为 `intern-s1`。没有归档的主办方书面许可时，网页、baseline README、口头说明和历史 S2 实验均不能放宽该要求。
+- **COMP-001**：formal 只能使用证据登记册已确认的精确 Intern-S ID。MAT-007 已直接列出 `intern-s1`、`intern-s1-pro`、`intern-s2-preview` 并允许提交时选模，MAT-009 另推荐 `intern-s2-preview`；默认值仍为 `intern-s1`。未来模型必须先归档页面/书面答复、日期、适用批次和来源，再更新 allowlist；群内“397”简写仍不能自行映射。
 - **COMP-002**：只允许赛事注入客户端、官方 Intern HTTPS 端点和本地有界工具。不得调用未经允许的外部闭源服务代答。
 - **COMP-003**：不得人工逐题选择候选、改写答案、临时改 prompt、切模型或只重跑某一道题。
 - **COMP-004**：不得赛后补填结果，不得把人工创建或修改的 checkpoint 记为模型输出。
@@ -73,6 +75,8 @@
 - **COMP-008**：初赛基线保持单 Agent、自然语言理解、规划/求解/解释和 18 领域覆盖；决赛若适用，必须重新核验多 Agent 与交互式 Web/Notebook 展示要求，不能假设初赛实现自动满足决赛。
 - **COMP-009**：`COMPETITION_MODE=0` 只表示非提交实验，不能授权第三方端点，也不能使 S2 结果成为正式成绩。
 - **COMP-010**：资格红线优先于正确率、展示效果和工程便利；发现不确定授权时必须停止正式运行并请求书面确认。
+- **COMP-011**：新增官方文件、通知、FAQ、baseline 或提交页证据时，必须先计算原件/规范化转录 SHA-256（动态页面无法取得不可变版本时记录 URL、页面修改时间和核验日期）并追加到证据登记册；不得覆盖旧口径、把推断写成官方明确，或因材料没有提及就推定允许。
+- **COMP-012**：正式 Agent 运行阶段只依赖赛事官方 API，无 GPU、无通用外网且不得动态下载；依赖必须在受限运行前从锁定的 `requirements` 安装。本地工具必须离线、有界，任何在线计算器、第三方 API 或网络初始化都属于阻断项。
 
 ### 4.2 客户端、模型调用与密钥
 
@@ -84,6 +88,7 @@
 - **API-006**：只重试连接错误、超时、明确的限流和临时服务错误；认证、权限、参数校验和其他永久错误不得盲目重试。
 - **API-007**：API key 只来自环境变量。代码、测试、trace、日志、文档、质量报告、压缩包和命令输出不得保存或回显密钥/Authorization。
 - **API-008**：真实评测首先验证 `request_count > 0`、`success > 0` 和运行耗时合理；请求为 0 的整批结果是入口故障，不得记为数学正确率 0%。
+- **API-009**：根 `ReasoningAgent` 构造器必须兼容平台公开的 `ReasoningAgent(client=official_client)` 及 `__init__(self, client, *args, **kwargs)`；额外参数视为不透明平台选项，只有运行时确为项目 `AgentConfig` 的位置值或 `config=` 值可被采用。字典、字符串及其它值不得污染配置、驱动求解、读取私有状态或绕过显式配置。离线门禁必须同时注入不透明位置值、伪 `config` 值、真正配置和未知关键字并完成一次严格三参数求解。
 
 ### 4.3 外部接口与输出
 
@@ -94,6 +99,8 @@
 - **OUT-005**：空答案和 `未解出` 必须作为失败记录，不能伪装为 success；失败 trace 必须保留到 runner 记录。
 - **OUT-006**：答案归一化只能处理可证明安全的表示差异；语义句、无法证明等价的符号式和歧义多解保持 `unknown`，不能为提高分数做激进重写。
 - **OUT-007**：公开 `trace` 只能包含步骤、状态、编号、长度、截断和预算等结构化元数据；题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案和异常消息必须在返回前删除，未知字段失败关闭。
+- **OUT-008**：`final_response` 必须独立可判分；选择/填空给明确结论，证明题保留必要且完整的证明，其它推导题保留支撑结论的关键步骤。不得依赖 `trace` 才能得到答案或证明。
+- **OUT-009**：公开 `solve()` 的最外层必须覆盖输入预检、预算创建、流水线、截断收尾、trace 投影和返回规范化；普通异常不得逃给 runner。最外层失败值必须非空且可 JSON 序列化，并且不得额外请求模型、绕过预算或泄露异常正文。
 
 ### 4.4 截断与预算
 
@@ -141,6 +148,8 @@
 - **RUN-002**：结果使用同目录临时文件和原子替换；只有合法 JSON、`status=success` 且非空 `final_response` 才可作为自动恢复 checkpoint。
 - **RUN-003**：正式运行使用全新输出目录；断点恢复只能处理同一冻结运行的机器生成文件，不得接受人工预置结果。
 - **RUN-004**：运行摘要记录输入文件名/SHA-256、模型、并发、开始时间、耗时和状态计数，不保存题面或密钥。
+- **RUN-005**：正式环境按每题独立进程重新加载模块、构造一个 Agent 并调用一次 `solve`；不得依赖跨题内存、固定题序、退出钩子或当前工作目录。项目本地 600 秒软期限和最多 3 并发必须低于已归档的单题 1200 秒、Agent 阶段 6 小时和最多 3 题进程外层边界，但这些外层边界不构成请求/token 配额保证。
+- **RUN-006**：初赛评测代码必须托管并同步到队伍 AtomGit 组织仓库的 `main`，现有 GitHub 仓库按官方示例新增名为 `atomgit` 的远程；仅推送 GitHub 或仅推送代码而不在作品页点击“提交作品”不会入队。平台在北京时间 12:00/24:00 抓取当时最新 `main`，不绑定选手填写的 commit SHA；点击提交后到抓取完成前不得修改 `main`，抓取后必须用远端 SHA 对账。单日最多 2 次、单周最多 10 次。截止前还须把最终代码与规定材料打成 ZIP 发组委会邮箱，邮件归档不替代 AtomGit 评测提交。
 - **EVAL-001**：评测代码只放在 `evaluation/data`、`evaluation/scoring`、`evaluation/experiments`，共享 I/O 使用 `evaluation/io_utils.py`，CLI 使用 `python -m evaluation.<group>.<module>`。
 - **EVAL-002**：每条正式基准必须有 source、license、split、level/难度和稳定 idx；缺失时不得称为正式、私有、held-out 或大学竞赛代表集。
 - **EVAL-003**：必须审计内部重复、模板/近似重复，以及与 prompt few-shot、公开样例、开发集和其他 split 的重合。
@@ -185,7 +194,7 @@
 | ARCH-001 | 根实现与包实现曾重复，入口/依赖容易漂移 | 缺少唯一运行包和公开契约测试 | S1 已修复 | 结构测试必须阻止第二份实现 |
 | STATE-001 | 旧预算和最近响应依赖 ContextVar/隐式侧信道 | 并发题目可能串 metadata，工具循环重复记账 | S2 已修复 | 同 Agent/共享 client 并发隔离回归必须保留 |
 | STATE-002 | S2 拆分后工具循环一度未从 gateway 取得共享工具预算 | 组件拆分时只迁移模型入口，遗漏预算绑定 | 已修复 | 网关、上下文和工具必须引用同一预算对象 |
-| CLIENT-001 | `70ac53f` 与 `c088a84` 官方评测均为 112/112 error、0 request、0 token；`c088a84` 在无 `**kwargs` 的三参数 fake 下可复现 `unexpected keyword argument 'thinking_mode'`、0 次进入 `chat()`、返回 `未解出`，允许 `thinking_mode` 时为 6 请求并正常作答；`350a267` 同样复现 | 网关未在未知注入边界投影公开最小参数；私有 marker 与绝对路径导入是另外两个已确认的同型请求前缺陷。官方日志无逐题异常/client 版本，不能证明线上唯一根因或平台变更日期 | 已实现三参数投影、显式工具槽文本降级、私有读取移除和严格 fake；**官方重跑待完成** | 先确认新提交的 `request_count>0`、`success>0`；fake 的 `chat` 必须显式只收三参数且无 `**kwargs`，每次调用键集合必须严格相等 |
+| CLIENT-001 | `70ac53f`、`c088a84` 和已含三参数投影的 `eb5d8d4` 三次官方评测均为 112/112 error、0 request、0 token；这反证 `thinking_mode/tools` 缺陷修复足以恢复线上。官方固定 baseline `43be244` + 精确 `eb5d8d4` + fake HTTP 的 112 题对照为 112 success、672 次进入公开 client；仅拒绝 8192 仍为 112 success，拒绝全部 chat 也因 `未解出` 被公开 runner 记为 112 success | 平台未公开注入 client 的类/版本、返回类型、校验顺序与逐题异常；三参数投影是必要兼容修复，但公开 client 契约已不能解释正式 0 分，正式环境至少存在一项 baseline 外差异 | 已实现三参数投影、工具槽文本降级、私有读取移除和严格 fake；`eb5d8d4` 正式复核失败后状态仍为 **未解决** | 下一次先确认实际 SHA、`request_count>0`、`success>0`、`error=0`；向主办方索取脱敏异常类型、精确 client 契约及正式 runner 与公开 baseline 的差异，未取得前不得再写唯一根因 |
 | ENTRY-001 | S1 后根入口改为包门面；在仓库根不在 `sys.path` 的官方式绝对路径加载中可复现 `ModuleNotFoundError: math_agent` | 入口测试继承了仓库当前目录，未覆盖 path-based 独立 worker | 已按 `__file__` 引导且加入隔离解释器门禁；**线上关联待验证** | 每次正式发布用 `python -I` 从仓库外动态加载根入口，不得依赖 cwd/PYTHONPATH |
 | DATA-001 | 位于其他 Git 工作树内但未跟踪的 Putnam 源文件曾继承错误 commit | 仅检查父目录是 Git 仓库，没有确认文件被跟踪 | 已修复 | 只有 `git ls-files` 确认跟踪才采信 source commit |
 | EVAL-IO-001 | 平铺脚本重复 JSON/哈希/普通覆盖写入，并依赖 `sys.path` | 缺少包边界和共享 I/O | S4 已修复 | 结构测试要求分组包、原子 I/O、无 `sys.path` |
@@ -195,8 +204,13 @@
 | QUALITY-001 | Windows 跨权限遗留 pytest 临时目录不可写；pip-audit 缓存也曾权限失败 | 多次运行共享目录/用户缓存 | 已改为 `.quality/tmp/<pid-check>` 和项目缓存 | 质量门禁不得复用不可控系统临时状态 |
 | RELEASE-001 | 旧交付依赖手填 commit/清单，脏树也可能被打包 | 无来源状态机和确定性构建 | S6 已修复 | formal 必须匹配干净提交与质量报告 |
 | LICENSE-001 | 仓库曾没有明确项目许可与第三方边界 | 发布前治理缺失 | S6 已采用保留所有权利与 notices | 未授权前不得自行改成开源许可证 |
-| COMP-001 | 项目默认 S2 与 13 页赛事手册的 Intern-S1 要求冲突 | 把 baseline/实验模型选择当成正式授权 | `c088a84` 已失败关闭 | 无书面许可时 formal 只接受 S1 |
+| COMP-001 | 手册使用 Intern-S1，群消息出现 397B；MAT-007 直接列出三个精确 ID 并允许选模，MAT-009 推荐 `intern-s2-preview` | 曾把题名中的 S1 当成唯一运行模型，导致合法 S2 formal 被阻断 | **S1-only 已撤销**；formal allowlist 接受三个已书面确认的精确 ID | 实际提交保存选择回执；“397/35B”映射和未来 ID 仍按 `OFFICIAL-GAP-MODEL` 保持未决 |
 | TRACE-001 | 旧公开 trace 含候选、verifier、critic、工具结果、答案和异常片段，不符合官方 baseline 的元数据限定 | 内部诊断事件未经公开边界投影 | 已增加失败关闭的元数据白名单、幂等/JSON/秘密不泄漏性质测试和合规哨兵；原始实验正文只留忽略目录 | 新事件字段必须先加入明确白名单；正式 trace 中出现题面/模型正文立即失败 |
+| OFFICIAL-001 | 手册、通知、八张群截图、动态官方页面和 baseline 信息曾分散在附件、聊天与多份规范中，无法确认版本或发现互相覆盖 | 没有统一来源指纹、事实/推断分层和冲突登记 | 已建立 `OFFICIAL_MATERIALS_REGISTER.md`；formal manifest 与合规门禁冻结三份原件及新通知转录哈希、动态证据 URL/核验日和 baseline commit | 新官方证据必须按 `MAT-*` 追加；动态页面须记录核验日和可变性；缺哈希/URL、冲突项或缺口项时拒绝 formal |
+| OFFICIAL-002 | 连续三次 112 error / 0 request 暴露 client/response/error/runner 契约缺失；模型 ID、预算、资源、Judger、工具和变更版本同样未完整发布。官方固定 baseline 与 `eb5d8d4` 的 112 题精确入口对照全部 success，证明正式平台至少存在一项未公开差异 | 把 baseline 示例、宽松 fake、历史成功或一次候选缺陷修复误当平台注入实现保证；反过来把正式失败直接归因于公开 baseline 也不成立 | **未解决**；已登记十类 `OFFICIAL-GAP-*` 并采用最小接口、本地预算、隔离入口和外层契约保护 | 只有满足对应缺口所需的精确书面证据才能关闭；正式运行前向主办方请求正式 runner 与公开 baseline 的差异、实际构造参数、client 版本/签名、逐题异常类型、状态分类和计数语义 |
+| JUDGE-001 | 旧 FAQ 截图称 `trace` 可参与 Judger，当前 baseline 又限制 trace 为非敏感元数据并以 `final_response` 为主 | 官方 Judger 版本、输入字段和大小限制未冻结 | **官方口径未解决**；当前以自包含 `final_response` + 元数据 trace 双重兼容 | 等待绑定 Judger 版本的书面输入契约；不得把推理正文放回公开 trace |
+| ENTRY-002 | MAT-007/官方 README 要求构造器至少兼容 `client,*args,**kwargs`；被评测 `eb5d8d4` 只接受 `client, config`，不透明位置字典会污染 `self.config`，本地可复现 0 次 chat 后 `AttributeError` 逃出 `solve()`。该故障模型在官方 `main.py` 上精确产生 112 error / 0 request；但公开 `main.py` 实际只传 `client=`，同提交 baseline Agent 自身也只有 `client, config=None` | 本地只测试了正常 `client` 和真正的 `AgentConfig`，没有覆盖平台值占据位置参数或 `config=` 名称，也没有覆盖预检/收尾异常；官方示例代码与 README 扩展签名存在不一致 | 已只采纳运行时确为 `AgentConfig` 的值，并增加完整生命周期最外层契约保护；离线同形复现由 0 调用恢复为 6 调用；这是当前唯一匹配全部聚合指标的候选，**线上关联待验证** | 根入口/合规测试必须同时带不透明位置值、伪 `config` 字典、真正 `AgentConfig` 和未知关键字；普通预检/收尾异常不得逃出且最外层不得绕预算请求；向官方确认正式构造调用 |
+| SUBMIT-001 | MAT-007 明确双通道：AtomGit 最新 `main` 固定批次自动评测，截止前最终 ZIP 邮件归档；当前本地只有 GitHub `origin`，`atomgit` 地址和两类回执均待填 | 沿用 GitHub/commit-hash 流程会无法入队；只做 AtomGit 或只发 ZIP 都缺交付证据 | **操作阻断项，未解决** | 取得 URL 后新增 `atomgit` 远程并推送 `main`；12:00/24:00 前点击提交并冻结至抓取完成；截止前发送最终 ZIP 并保存邮件记录 |
 | RESOURCE-001 | SymPy 子进程有时间限制但没有 OS 级内存上限 | Python 子进程边界未提供内存配额 | **未解决** | 复杂表达式继续限长；正式扩展工具前评估内存隔离 |
 | HTTP-001 | 单题 deadline 无法取消已经发出的阻塞 HTTP 请求 | 同步 requests 调用只能依靠单请求 timeout | **未解决** | 不得声称 deadline 可强制中断在途请求 |
 | TOKEN-001 | token 预算依赖响应 usage 后记账 | 响应完成前无法得知最终 token | **未解决** | 超额后停止后续请求；不得声称可撤销已产生 token |
@@ -210,7 +224,7 @@
 
 | 变更类型 | 最低验证 | 额外证据/停止条件 |
 | --- | --- | --- |
-| 公开接口、客户端、gateway | 无 `**kwargs` 的三参数 fake、同名不兼容私有方法、私有字段访问抛错 fake、项目扩展 client、工具槽文本降级、隔离入口、tool-call message、并发原子 metadata、预算测试 | 未知 client 每次只收三参数且至少实际进入一次 `chat()`；不得靠签名探测、失败后重试、平台私有接口或 judge cwd 修复 |
+| 公开接口、客户端、gateway | Agent 构造器额外 `*args/**kwargs`、无 `**kwargs` 的三参数 fake、同名不兼容私有方法、私有字段访问抛错 fake、项目扩展 client、工具槽文本降级、隔离入口、tool-call message、并发原子 metadata、预算测试 | 带不透明 runner 参数仍须成功构造；未知 client 每次只收三参数且至少实际进入一次 `chat()`；不得靠签名探测、失败后重试、平台私有接口或 judge cwd 修复 |
 | 公开 trace | 固定泄漏哨兵、JSON 序列化、白名单字段、投影幂等性、未知字段失败关闭 | 题面、prompt、模型/候选/verifier/critic/tool 正文、最终答案或异常消息任一出现即停止 |
 | 候选、prompt、温度、thinking、token | 现有契约/格式/截断/预算测试 | 固定 A/B，只改一个变量；真实 API 前先获请求额度授权 |
 | P1 题型或 verifier | 正反例、漏根/增根、数域、证明阻断、复合目标、冲突、超时 | 无法证明安全时保持 `unknown`，不得扩大 pass 范围 |
@@ -221,18 +235,18 @@
 | 依赖/CI | 重生成哈希锁、真实 Python 3.10 安装、目标闭包、Python 3.12、pip check/audit | 已知漏洞、缺哈希、未固定 Action 或 3.10 失败时停止 |
 | 第三方开发 Skill | 固定 commit、许可证、归属、逐文件哈希、无意外脚本、项目触发路由和 provenance 测试 | 不得覆盖项目 Skill/规范，不得隐式增加依赖，不得进入运行时或 formal 包 |
 | 架构拆分 | 结构测试、运行模块指纹、公开类型身份、完整离线门禁 | 不得恢复重复实现、隐式上下文或巨型门面 |
-| 合规/发布 | `competition_compliance`、secret/link、formal/draft、确定性 ZIP、manifest/hash | 非 S1、脏树、报告不匹配、缺审计或缺书面授权时拒绝 formal |
-| 文档/规范 | Markdown 链接、规范锚点测试、README/ARCHITECTURE/审计同步 | 不得用历史报告覆盖当前规范，也不得创建第二架构文档 |
+| 合规/发布 | `competition_compliance`、secret/link、formal/draft、确定性 ZIP、四份原件/转录哈希、动态官方 URL/核验日、baseline commit、model allowlist、manifest/hash | 未登记模型、脏树、报告不匹配、材料登记缺失或缺审计时拒绝 formal；默认 S1 不得再解释成唯一合法模型 |
+| 官方材料/规范 | 原件 SHA-256、逐页/逐图核验、`MAT-*`、冲突/缺口 ID、Markdown 链接、README/ARCHITECTURE/审计同步 | 不得覆盖旧官方口径、用缺失推定允许、用历史报告覆盖当前规范，或创建第二架构文档 |
 
 ## 7. 每次任务的强制流程
 
 1. 读取 `git status`，确认并保护未提交内容。
-2. 读取 `AGENTS.md`、本文件；涉及运行行为时再读 `ARCHITECTURE.md`，涉及比赛/提交时再读 `COMPETITION_COMPLIANCE.md`。
-3. 在变更说明中列出受影响的规则 ID、已知问题 ID、保持不变的策略参数和验证计划。
+2. 读取 `AGENTS.md`、本文件；涉及运行行为时再读 `ARCHITECTURE.md`，涉及比赛/提交时同时读取 `COMPETITION_COMPLIANCE.md` 与 `OFFICIAL_MATERIALS_REGISTER.md`。
+3. 在变更说明中列出受影响的规则 ID、已知问题 ID、`INFO-CONFLICT-*`/`OFFICIAL-GAP-*`、保持不变的策略参数和验证计划。
 4. 先添加能复现缺陷的离线回归，再修改实现；结构迁移必须对比迁移前后的请求序列和配置。涉及解析、归一化、等价、序列化或状态机时，应用 `property-based-testing` Skill 选择最强可验证性质，同时保留已知故障的固定样例。
 5. 迭代时运行最小测试，完成后运行 `python -m scripts.run_quality_gates`。真实 API 不属于默认验证。
 6. 更新 README、唯一架构文档、工程规范、合规规范或审计记录中实际受影响的部分；没有影响时不要机械复制内容。
-7. 推送前确认身份、远程、分支，先 fetch；禁止覆盖未知远程提交。
+7. 推送前确认身份、远程、分支，先 fetch；禁止覆盖未知远程提交。正式评测还必须确认 AtomGit 队伍组织远程存在、`main` 已同步，平台抓取窗口内不再修改分支。
 8. formal 交付必须在目标干净提交重新运行含依赖审计的完整门禁，再执行 `python -m scripts.build_release` 并核对 manifest 与 SHA-256。
 
 ## 8. 能力与合规声明边界

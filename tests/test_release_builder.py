@@ -5,7 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from math_agent.competition_policy import FORMAL_COMPETITION_MODEL
+from math_agent.competition_policy import (
+    FORMAL_COMPETITION_MODEL,
+    FORMAL_COMPETITION_MODELS,
+    OFFICIAL_BASELINE_COMMIT,
+    OFFICIAL_EVIDENCE_VERIFIED_ON,
+    OFFICIAL_EVIDENCE_URLS,
+    OFFICIAL_MATERIAL_SHA256,
+    OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
+)
 from scripts.build_release import (
     REQUIRED_QUALITY_CHECKS,
     ReleaseError,
@@ -42,6 +50,7 @@ def _repository(tmp_path: Path) -> Path:
         "ARCHITECTURE.md": "# Architecture\n",
         "docs/COMPETITION_COMPLIANCE.md": "# Compliance\n",
         "docs/ENGINEERING_SPECIFICATION.md": "# Engineering specification\n",
+        "docs/OFFICIAL_MATERIALS_REGISTER.md": "# Official materials\n",
         "LICENSE": "All rights reserved.\n",
         "README.md": "# Project\n",
         "math_agent/__init__.py": "class AgentConfig:\n    pass\n",
@@ -112,6 +121,26 @@ def test_formal_release_is_deterministic_and_contains_provenance(tmp_path: Path)
         assert not any(name.endswith(".env") or name.startswith("outputs/") for name in names)
         manifest = json.loads(archive.read("release/release-manifest.json"))
         assert manifest["quality"]["status"] == "passed"
+        assert manifest["competition"]["official_materials_sha256"] == dict(
+            OFFICIAL_MATERIAL_SHA256
+        )
+        assert (
+            manifest["competition"]["official_baseline_commit"]
+            == OFFICIAL_BASELINE_COMMIT
+        )
+        assert manifest["competition"]["official_evidence_urls"] == dict(
+            OFFICIAL_EVIDENCE_URLS
+        )
+        assert manifest["competition"]["official_evidence_verified_on"] == dict(
+            OFFICIAL_EVIDENCE_VERIFIED_ON
+        )
+        assert (
+            manifest["competition"]["official_web_evidence_verified_on"]
+            == OFFICIAL_WEB_EVIDENCE_VERIFIED_ON
+        )
+        assert manifest["competition"]["formal_models_allowed"] == sorted(
+            FORMAL_COMPETITION_MODELS
+        )
         assert archive.read("README.md") == _git_bytes(root, "show", "HEAD:README.md")
         readme_record = next(item for item in manifest["files"] if item["path"] == "README.md")
         assert readme_record["bytes"] == len(archive.read("README.md"))
@@ -261,19 +290,32 @@ def test_release_name_cannot_escape_output_directory(tmp_path: Path) -> None:
         )
 
 
-def test_formal_release_rejects_non_s1_model_but_draft_records_it(tmp_path: Path) -> None:
+def test_formal_release_accepts_documented_s2_and_rejects_unknown_model(
+    tmp_path: Path,
+) -> None:
     root = _repository(tmp_path)
     quality = _quality_report(root)
 
-    with pytest.raises(ReleaseError, match="requires model intern-s1"):
-        build_release(root, root / "dist", quality, model="intern-s2-preview")
+    _, _, s2_manifest = build_release(
+        root,
+        root / "dist",
+        quality,
+        model="intern-s2-preview",
+        name="documented-s2",
+    )
+    assert s2_manifest["status"] == "formal"
+    assert s2_manifest["competition"]["formal_model_match"] is True
+
+    with pytest.raises(ReleaseError, match="documented Intern-S model"):
+        build_release(root, root / "dist", quality, model="unrelated-model")
 
     _, _, manifest = build_release(
         root,
         root / "dist",
         quality,
-        model="intern-s2-preview",
+        model="unrelated-model",
         allow_dirty=True,
+        name="unknown-draft",
     )
     assert manifest["status"] == "draft"
     assert manifest["competition"]["formal_model_match"] is False
