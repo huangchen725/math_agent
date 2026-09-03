@@ -64,7 +64,7 @@
 | 格式导致直接未通过 | 输出构造、runner 和回归测试验证 JSON、非空答案及唯一末行标记 | 合规门禁执行无网络契约探针 |
 | 注入客户端在请求前失败 | Agent 构造器接受 `client,*args,**kwargs`，且只有真正的项目 `AgentConfig` 可成为配置；当前正式路径固定 3 个纯文本候选 + 3 次紧凑 verifier，未知 client 每次只收到 `messages/temperature/max_tokens`；自有 metadata 按项目类型取得，不做签名/marker 探测；最外层 `solve` 收敛预检和收尾异常且不额外请求 | 同时注入不透明位置值、伪 `config` 字典、真正 `AgentConfig` 和未知关键字；无 `**kwargs` 的三参数 fake 与私有访问抛错 fake 必须恰好产生 6 次公开 chat 调用；首请求前异常不得逃出，旧 tools/critic/reflection/deterministic 开关不得改变正式协议 |
 | AtomGit 没有进入评测队列或抓到错误版本 | 官方要求现有本地仓库新增名为 `atomgit` 的远程；队伍仓库 `main`、作品页模型和“提交作品”动作共同构成一次评测提交；12:00/24:00 抓取前冻结分支 | 提交清单记录 AtomGit URL、点击时间、批次、模型回执和抓取后的 `main` SHA；当前缺少 `atomgit` 远程时 formal 操作必须停止 |
-| 独立 worker 无法导入包门面 | 根 `user_agent.py` 按自身文件目录引导唯一 `math_agent/` 包 | 隔离解释器从仓库外按绝对路径动态加载入口 |
+| 独立 worker 无法导入运行模块 | 唯一分层实现回迁根目录；`user_agent.py` 按自身文件目录引导同级 `agent.py`，不回显导入异常正文 | 隔离解释器从仓库外按绝对路径加载入口；只复制根 `.py` 且无任何包子目录时，用严格三参数 fake 完成 6 次调用 |
 | trace 泄露题面或模型正文 | 返回前通过元数据白名单失败关闭投影，未知事件/字段不外发 | 固定题面、模型、verifier 和答案哨兵；投影幂等且可 JSON 序列化 |
 | 私有数据或结果混入源码包 | 发布白名单排除 `.env`、`outputs/`、`.quality/` 和 `dist/` | formal 包要求合规门禁通过并二次扫描 |
 | 日志被赛后改写 | 运行摘要保存输入文件 SHA-256、模型、计数和时间；原始评测产物单独留存 | 提交前按下方清单生成并核对文件哈希 |

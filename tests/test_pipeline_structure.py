@@ -39,7 +39,7 @@ def test_agent_config_keeps_one_public_type_after_module_split() -> None:
 
 
 def test_runtime_has_no_hidden_per_problem_context_side_channel() -> None:
-    root = Path(__file__).resolve().parents[1] / "math_agent"
+    root = Path(__file__).resolve().parents[1]
     forbidden = ("ContextVar", "get_last_response_meta", "_ACTIVE_BUDGET", "_LAST_RESPONSE_META")
 
     for path in root.glob("*.py"):

@@ -15,7 +15,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `client` 由调用方注入。未知注入客户端只接收公开最小参数 `messages/temperature/max_tokens`；`thinking_mode/tools/tool_choice` 和原子 metadata 仅用于项目自有 `InternChatClient`。代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
 - 对外 `trace` 只保留步骤、状态、候选/请求编号、长度和预算等结构化元数据；题面、prompt、候选/工具/验证正文、最终答案与异常消息会在返回前删除。截断事件只保存阶段、token 与处理状态。
-- 根 `user_agent.py` 可被平台从任意工作目录按绝对路径加载，不依赖 judge 当前目录或预置 `PYTHONPATH`。
+- 根 `user_agent.py` 可被平台从任意工作目录按绝对路径加载，并且只依赖同级根目录模块，不依赖 judge 当前目录、预置 `PYTHONPATH` 或 `math_agent/` 子目录。扁平部署用于隔离排查连续四次 `0 request`，线上关联仍待下一次正式评测确认。
 - `solve()` 对输入预检到输出投影的完整生命周期失败关闭；最外层保护不会额外发请求或绕过预算，普通异常不得逃成 runner 级整题 error。
 - 默认正常题固定发起 6 次公开调用：3 次候选生成和 3 次紧凑验证；另有最多 4 次仅用于截断/整题紧急处理的恢复预算。正式上层不发送工具、批评、反思或确定性验证请求。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
@@ -96,13 +96,13 @@ python demo.py
 python -m scripts.run_quality_gates
 ```
 
-该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规门禁、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。合规门禁验证正式模型和端点、运行时网络入口、隔离解释器中的根入口加载、三参数注入 client、参考答案字段隔离、公开 trace 脱敏、JSON 输出契约与发布排除项，不调用模型 API。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
+该入口连续执行全量离线测试与 70% 语句覆盖率门槛、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规门禁、few-shot dry-run，以及所有正式 CLI 的帮助入口，并将脱敏后的有界输出写入 `.quality/quality-report.json`。合规门禁验证正式模型和端点、运行时网络入口、隔离解释器中的根入口加载、仅复制根目录 `.py` 时的三参数 `solve()`、参考答案字段隔离、公开 trace 脱敏、JSON 输出契约与发布排除项，不调用模型 API。除 `pip-audit` 查询公开漏洞数据库外，其余检查不需要网络；完全断网时可使用 `--skip-dependency-audit`，但该报告不能授权正式发布包。
 
 迭代时仍可单独运行：
 
 ```bash
 python -m pytest -q
-python -m compileall -q math_agent evaluation scripts tests main.py demo.py user_agent.py verify_math.py
+python -m compileall -q agent.py solver.py user_agent.py evaluation scripts tests main.py demo.py verify_math.py
 python -m ruff check .
 python -m scripts.check_secrets --include-untracked
 python -m scripts.check_markdown_links
@@ -118,7 +118,7 @@ python -m evaluation.data.generate_internal_benchmark --output outputs/private-e
 python -m evaluation.scoring.score_run outputs/private-eval/benchmark.jsonl outputs/private-eval/run --report outputs/private-eval/score.json --review outputs/private-eval/review.jsonl
 ```
 
-审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [2026-08-29 隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)，后续 112/112 请求前失败见 [2026-08-31 运行时故障复盘](docs/evaluations/OFFICIAL_112_20260831_RUNTIME_FAILURE.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
+审计和评分命令不访问模型 API。`evaluation.data.generate_internal_benchmark` 生成18领域、396题的可复现内部合成基准，仅用于项目内压力测试，不能作为官方或与预训练语料独立的成绩。该基准的 35B 实测、资源用量和适用边界见 [内部大规模评测报告](docs/evaluations/INTERNAL_35B_V1.md)；同模型在 112 题隐藏集上的低分与截断复盘见 [2026-08-29 隐藏集评测复盘](docs/evaluations/OFFICIAL_112_20260829.md)，请求前失败的证据链见 [2026-09-01 运行时故障复盘](docs/evaluations/OFFICIAL_112_20260901_RUNTIME_FAILURE.md) 和 [2026-09-03 第四次运行时故障及扁平化决策](docs/evaluations/OFFICIAL_112_20260903_RUNTIME_FAILURE.md)。正式题集记录格式见 `evaluation/data/benchmark.schema.json`。离线判分使用 `evaluation.scoring.judge` 的四态结果：`correct`、`wrong`、`unknown`、`no_answer`；文字语义或无法证明的等价关系进入 `unknown`，不能用字符串包含关系自动判对。
 
 下一版本的能力优化使用 P0 冻结与配对协议。公开大学竞赛对照来自固定版本的 PutnamBench，生成的第三方题面和盲审材料只放在被忽略的 `outputs/`；公开数据只能证明同题相对变化，不能声称预训练独立。完整条件见 [能力基线协议](docs/evaluations/ABILITY_BASELINE_PROTOCOL_V1.md)。下方冻结命令中的 `intern-s2-preview` 用于复现既有实验；它当前属于 formal allowlist，但历史实验记录本身不能替代本次 AtomGit 模型选择回执：
 
@@ -186,36 +186,28 @@ python -m scripts.build_release --allow-dirty --output-dir dist
 
 ```text
 .
-├── user_agent.py              # 可按绝对路径加载的竞赛兼容入口
-├── math_agent/                # 唯一运行时实现包
-│   ├── agent.py               # ReasoningAgent 生命周期与兼容层
-│   ├── agent_config.py        # 固定策略与预算配置
-│   ├── competition_policy.py  # 正式模型、官方端点与参赛模式校验
-│   ├── agent_prompts.py       # 流水线提示词
-│   ├── agent_types.py         # 调用、候选、答案与验证类型
-│   ├── answer_equivalence.py  # 保守答案归一化与等价判断
-│   ├── solver.py              # 顶层求解编排
-│   ├── candidate_generation.py # 候选生成、恢复与紧急答案
-│   ├── candidate_evaluation.py # 每候选一次紧凑模型验证
-│   ├── candidate_selection.py # 多数票与置信度选择
-│   ├── response_processing.py # 答案抽取与最终格式校验
-│   ├── trace_sanitizer.py     # 对外 trace 元数据白名单投影
-│   ├── context.py             # 单题显式 SolveContext
-│   ├── model_gateway.py       # 统一模型调用、元数据与预算记账
-│   ├── model_calls.py         # 显式模型消息适配
-│   ├── truncation.py          # 截断事件状态记账
-│   ├── task_router.py         # 暂停于正式路径的题型分析库
-│   ├── domain_router.py       # 零调用领域关键词路由
-│   ├── budget.py              # 单题请求、token、工具与时间预算
-│   ├── math_tools.py          # 旧导入兼容门面，不承载具体工具逻辑
-│   ├── math_parsing.py        # 受限 SymPy 解析与参数边界
-│   ├── tool_implementations.py # 11 个有界数学工具实现
-│   ├── tool_registry.py       # 工具 schema、注册表与隔离分发
-│   ├── tool_loop.py           # 暂停于正式路径的受限工具循环
-│   ├── tool_executor.py       # 可终止子进程与工具硬超时
-│   ├── deterministic_verifier.py # 暂停于正式路径的隔离验证库
-│   ├── domain_prompts.py      # 18 个数学领域提示
-│   └── llm_client.py          # OpenAI 兼容 HTTP 客户端
+├── user_agent.py              # 可按绝对路径加载的竞赛兼容门面
+├── agent.py                   # 唯一 ReasoningAgent 类型源与生命周期边界
+├── agent_config.py            # 固定策略与预算配置
+├── agent_prompts.py           # 流水线提示词
+├── agent_types.py             # 调用、候选、答案与验证类型
+├── solver.py                  # 顶层求解编排
+├── candidate_*.py             # 候选生成、评估与选择阶段
+├── context.py                 # 单题显式 SolveContext
+├── model_gateway.py           # 统一模型调用、元数据与预算记账
+├── model_calls.py             # 显式模型消息适配
+├── response_processing.py     # 答案抽取与最终格式校验
+├── trace_sanitizer.py         # 对外 trace 元数据白名单投影
+├── truncation.py              # 截断事件状态记账
+├── domain_*.py                # 零调用领域路由与 18 领域提示
+├── task_router.py             # 暂停于正式路径的题型分析库
+├── answer_equivalence.py      # 保守答案归一化与等价判断
+├── budget.py                  # 单题请求、token、工具与时间预算
+├── math_*.py                  # 工具兼容门面与受限 SymPy 解析
+├── tool_*.py                  # 工具实现、注册、循环与隔离执行
+├── deterministic_verifier.py # 暂停于正式路径的隔离验证库
+├── competition_policy.py      # 正式模型、官方端点与参赛模式校验
+├── llm_client.py              # OpenAI 兼容 HTTP 客户端
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证

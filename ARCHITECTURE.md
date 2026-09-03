@@ -1,14 +1,16 @@
 # 数学推理智能体架构
 
 > 状态：当前生效  
-> 更新日期：2026-09-03
+> 更新日期：2026-09-04
 > 本文件是仓库唯一的架构事实源。`docs/ENGINEERING_SPECIFICATION.md` 规定 P1～S6 的工程变更、硬规则和故障回归门禁，`docs/COMPETITION_COMPLIANCE.md` 记录赛事控制，`docs/OFFICIAL_MATERIALS_REGISTER.md` 记录官方来源、冲突和未定义契约；后三者都不是第二份架构文档。README、比赛报告和审计文档仅提供使用说明、实验记录或改进路线；内容冲突时先按官方证据层级失败关闭，再核对本文件和当前代码。
 
 ## 1. 目标与边界
 
 系统面向竞赛数学题，在调用方注入的 Intern 兼容模型客户端上完成领域路由、三个纯文本候选生成、逐候选模型验证、多数票选择、截断恢复和最终答案规范化。当前正式路径是为排查连续 `0 request / 112 error` 而建立的保守兼容内核；工具候选、确定性证据优先、critic/reflection 和题型路由对选择的影响均暂停，不构成第二条运行分支。
 
-当前仓库只有一套可运行实现，全部位于 `math_agent/` 包。根目录 `user_agent.py` 只是竞赛兼容入口，与 `math_agent` 导出同一个 `ReasoningAgent` 和 `AgentConfig`，不保留第二份实现；它会以自身 `__file__` 所在目录引导包导入，因此平台从其它工作目录按绝对路径加载入口时也不依赖预置 `PYTHONPATH`。2026-08-28 删除的同名目录是未接入入口、依赖不同的旧原型；2026-08-30 建立的是现有扁平运行时的保守包化迁移，两者没有代码继承关系。多智能体、共享黑板和自适应候选升级仍属于未来设想，不是当前能力。
+当前仓库只有一套可运行实现。为回到最后一次得到有效官方请求的部署形态，运行模块全部放在仓库根目录，但仍按生命周期、显式上下文、网关、候选阶段、输出和工具子系统保持代码分层；扁平部署不等于恢复单文件巨型 Agent。`user_agent.py` 只是竞赛兼容门面，它按自身 `__file__` 把同级目录置于导入路径首位，再从唯一的 `agent.py` 重导出 `ReasoningAgent` 和 `AgentConfig`，不保留第二份实现。
+
+2026-08-30 的 S1 曾把同一运行时迁入 `math_agent/` 包；从该结构进入被评测提交后，四次正式日志均为 `112 error / 0 request / 0 token`，而此前最后一次有效官方运行使用根目录扁平模块。该相关性尚不能证明正式 judge 丢弃子目录：公开材料没有给出 worker 的精确复制、`sys.path` 和加载流程，最新日志反而显示平台先克隆完整仓库。因此 2026-09-04 的回迁是一个有历史成功锚点的单变量兼容措施，状态仍为“离线验证通过、官方待验证”。多智能体、共享黑板和自适应候选升级仍属于未来设想，不是当前能力。
 
 ## 2. 外部契约
 
@@ -31,9 +33,9 @@ agent.solve(problem, metadata)
 ```mermaid
 flowchart LR
     I[JSONL / Demo / 调用方] --> F[user_agent.py<br/>兼容入口]
-    F --> A[math_agent.agent<br/>生命周期与兼容层]
+    F --> A[agent.py<br/>生命周期与兼容层]
     A --> X[SolveContext<br/>单题显式状态]
-    X --> S[math_agent.solver<br/>顶层阶段编排]
+    X --> S[solver.py<br/>顶层阶段编排]
     S --> N[candidate_generation<br/>生成与截断恢复]
     S --> V[candidate_evaluation<br/>紧凑模型验证]
     S --> L[candidate_selection<br/>多数票与置信度]
@@ -54,36 +56,35 @@ flowchart LR
 
 | 组件 | 职责 |
 | --- | --- |
-| `user_agent.py` | 按自身文件目录引导包导入并重新导出 `math_agent` 公开类型；不得增加求解实现或依赖 judge 当前目录 |
-| `math_agent/__init__.py` | 唯一包级公开 API，导出 Agent、客户端、网关、求解上下文和核心数据类型 |
-| `math_agent/agent.py` | 维护公开 Agent 生命周期：输入校验、单题上下文创建、异常收敛和兼容转发；不实现具体求解阶段 |
-| `math_agent/agent_config.py` | 定义固定候选策略、模型参数、恢复开关和单题预算配置 |
-| `math_agent/competition_policy.py` | 固定三份官方原件及新通知转录哈希、动态官方证据 URL/核验日、核验 baseline commit、formal 默认模型与精确 allowlist、官方端点和默认参赛模式；allowlist 外模型只能显式作为非提交实验 |
-| `math_agent/agent_prompts.py` | 集中保存当前策略/验证提示词及暂停功能的历史提示词；不持有运行状态 |
-| `math_agent/agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
-| `math_agent/answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
-| `math_agent/solver.py` | 只编排领域路由、三个纯文本候选、逐候选模型验证、选择和输出阶段 |
-| `math_agent/candidate_generation.py` | 通过唯一纯文本协议生成候选，执行候选截断恢复、整题紧急答案和全局短回退 |
-| `math_agent/candidate_evaluation.py` | 每个合格候选执行一次紧凑模型验证，并在 verifier 截断时使用恢复预算重试 |
-| `math_agent/candidate_selection.py` | 按规范答案多数票选择，平票时使用模型置信度，并记录最终来源；不读取确定性证据改变选择 |
-| `math_agent/response_processing.py` | 提取显式答案、解析 verdict、裁剪复核文本，并强制唯一非空末行答案 |
-| `math_agent/trace_sanitizer.py` | 把内部 trace 失败关闭地投影为可 JSON 序列化的公开元数据；未知自由文本不得外发 |
-| `math_agent/context.py` | 定义每次 `solve()` 独占的 `SolveContext`，显式持有题目、metadata、trace、预算和网关 |
-| `math_agent/model_calls.py` | 把 system/user 消息显式组装后交给 `ModelGateway`，不保存最近响应 |
-| `math_agent/model_gateway.py` | 统一候选、验证和恢复请求；未知注入 client 只绑定公开 `chat()` 并投影为三参数，自有客户端按名义类型取得原子元数据，再将响应、finish reason、usage 和预算请求编号绑定为 `ModelCallResult` |
-| `math_agent/truncation.py` | 统一更新截断事件的恢复/隔离状态，并在返回前封闭待处理事件 |
-| `math_agent/domain_router.py` | 本地关键词计数选择一个领域，不访问模型；领域提示内容仍由 `domain_prompts.py` 提供 |
-| `math_agent/task_router.py` | 保留的零调用题型分析库；当前正式 `solve()` 不调用它，也不让其验证计划影响选择 |
-| `math_agent/budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
-| `math_agent/domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
-| `math_agent/math_tools.py` | 兼容旧导入的薄门面，只重导出工具公共 API；不得新增解析、实现、注册或循环逻辑 |
-| `math_agent/math_parsing.py` | 受限 SymPy 命名空间、表达式/符号/整数/矩阵解析以及输入、结果和复杂度边界 |
-| `math_agent/tool_implementations.py` | 实现 11 个有界数学工具；不声明模型 schema，不发起模型调用 |
-| `math_agent/tool_registry.py` | 保持工具 schema 与实现一一对应，验证 tool-call JSON，并通过可终止子进程限时分发 |
-| `math_agent/tool_loop.py` | 保留并受测的 tool-calling 循环；当前正式 `solve()` 不进入该模块 |
-| `math_agent/tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
-| `math_agent/deterministic_verifier.py` | 保留并受测的受限确定性验证库；结果为 `pass/fail/unknown`，当前正式选择器不读取其证据 |
-| `math_agent/llm_client.py` | 读取环境变量，只向官方 Intern HTTPS 端点发送 OpenAI 兼容请求，处理响应和有限重试；`chat()` 保持原返回契约，项目自有 `chat_with_metadata()` 原子返回响应及元数据 |
+| `user_agent.py` | 按自身文件目录引导同级模块导入，并重导出 `agent.py` 中的公开类型；不得增加求解实现、吞掉导入异常或依赖 judge 当前目录 |
+| `agent.py` | 维护公开 Agent 生命周期：输入校验、单题上下文创建、异常收敛和兼容转发；不实现具体求解阶段 |
+| `agent_config.py` | 定义固定候选策略、模型参数、恢复开关和单题预算配置 |
+| `competition_policy.py` | 固定三份官方原件及新通知转录哈希、动态官方证据 URL/核验日、核验 baseline commit、formal 默认模型与精确 allowlist、官方端点和默认参赛模式；allowlist 外模型只能显式作为非提交实验 |
+| `agent_prompts.py` | 集中保存当前策略/验证提示词及暂停功能的历史提示词；不持有运行状态 |
+| `agent_types.py` | 定义带 `finish_reason`/usage/阶段的 `ModelCallResult`，以及 `Answer`、`Candidate`、`Verification` 内部数据对象 |
+| `answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
+| `solver.py` | 只编排领域路由、三个纯文本候选、逐候选模型验证、选择和输出阶段 |
+| `candidate_generation.py` | 通过唯一纯文本协议生成候选，执行候选截断恢复、整题紧急答案和全局短回退 |
+| `candidate_evaluation.py` | 每个合格候选执行一次紧凑模型验证，并在 verifier 截断时使用恢复预算重试 |
+| `candidate_selection.py` | 按规范答案多数票选择，平票时使用模型置信度，并记录最终来源；不读取确定性证据改变选择 |
+| `response_processing.py` | 提取显式答案、解析 verdict、裁剪复核文本，并强制唯一非空末行答案 |
+| `trace_sanitizer.py` | 把内部 trace 失败关闭地投影为可 JSON 序列化的公开元数据；未知自由文本不得外发 |
+| `context.py` | 定义每次 `solve()` 独占的 `SolveContext`，显式持有题目、metadata、trace、预算和网关 |
+| `model_calls.py` | 把 system/user 消息显式组装后交给 `ModelGateway`，不保存最近响应 |
+| `model_gateway.py` | 统一候选、验证和恢复请求；未知注入 client 只绑定公开 `chat()` 并投影为三参数，自有客户端按名义类型取得原子元数据，再将响应、finish reason、usage 和预算请求编号绑定为 `ModelCallResult` |
+| `truncation.py` | 统一更新截断事件的恢复/隔离状态，并在返回前封闭待处理事件 |
+| `domain_router.py` | 本地关键词计数选择一个领域，不访问模型；领域提示内容仍由 `domain_prompts.py` 提供 |
+| `task_router.py` | 保留的零调用题型分析库；当前正式 `solve()` 不调用它，也不让其验证计划影响选择 |
+| `budget.py` | 统一记录和限制每题普通/恢复请求、usage token、工具调用及阶段 deadline，并按调用阶段累计截断和恢复状态 |
+| `domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
+| `math_tools.py` | 兼容旧导入的薄门面，只重导出工具公共 API；不得新增解析、实现、注册或循环逻辑 |
+| `math_parsing.py` | 受限 SymPy 命名空间、表达式/符号/整数/矩阵解析以及输入、结果和复杂度边界 |
+| `tool_implementations.py` | 实现 11 个有界数学工具；不声明模型 schema，不发起模型调用 |
+| `tool_registry.py` | 保持工具 schema 与实现一一对应，验证 tool-call JSON，并通过可终止子进程限时分发 |
+| `tool_loop.py` | 保留并受测的 tool-calling 循环；当前正式 `solve()` 不进入该模块 |
+| `tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
+| `deterministic_verifier.py` | 保留并受测的受限确定性验证库；结果为 `pass/fail/unknown`，当前正式选择器不读取其证据 |
+| `llm_client.py` | 读取环境变量，只向官方 Intern HTTPS 端点发送 OpenAI 兼容请求，处理响应和有限重试；`chat()` 保持原返回契约，项目自有 `chat_with_metadata()` 原子返回响应及元数据 |
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
@@ -194,7 +195,7 @@ P1 的题型分析、确定性验证和证据优先选择是已经完成且留�
 python -m scripts.run_quality_gates
 ```
 
-测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、默认 6 次正式调用序列、预算、保留的离线工具库、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。客户端门禁同时包含不接受 `**kwargs` 的三参数 fake、私有访问抛错 fake、项目扩展 client，以及打开旧 tools/critic/reflection/deterministic 开关仍不能改变正式协议的回归。完整门禁还执行 70% 语句覆盖率阈值、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规探针、few-shot dry-run 和所有正式 CLI 的帮助入口。合规探针必须验证正式模型和端点、运行时网络入口、隔离解释器按绝对路径加载根入口、三参数注入 client、参考答案字段隔离、公开 trace 不含题面/模型正文/最终答案、JSON 输出及发布排除项。公开 trace 投影必须满足幂等性、JSON 可序列化和秘密文本不变式。漏洞审计会访问公开漏洞数据库，但不会访问模型端点；跳过它生成的报告不能授权正式包。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O；仅根竞赛门面可按自身 `__file__` 引导运行包，评测模块不得通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+测试以 fake client 和确定性输入覆盖接口、显式上下文、统一网关、模块组合边界、默认 6 次正式调用序列、预算、保留的离线工具库、截断状态机、并发元数据隔离、评分和 runner，不依赖真实 API。客户端门禁同时包含不接受 `**kwargs` 的三参数 fake、私有访问抛错 fake、项目扩展 client，以及打开旧 tools/critic/reflection/deterministic 开关仍不能改变正式协议的回归。完整门禁还执行 70% 语句覆盖率阈值、Ruff、compileall、Bandit、开发锁的 Python 3.10/Linux 条件依赖闭包检查、`pip check`、三套依赖锁漏洞审计、敏感信息扫描、Markdown 本地链接检查、竞赛合规探针、few-shot dry-run 和所有正式 CLI 的帮助入口。合规探针必须验证正式模型和端点、运行时网络入口、隔离解释器按绝对路径加载根入口、仅复制根目录 Python 文件时完成三参数调用、参考答案字段隔离、公开 trace 不含题面/模型正文/最终答案、JSON 输出及发布排除项。公开 trace 投影必须满足幂等性、JSON 可序列化和秘密文本不变式。漏洞审计会访问公开漏洞数据库，但不会访问模型端点；跳过它生成的报告不能授权正式包。并发测试要求同一注入客户端上的响应元数据原子返回，不能跨题串入其他 `SolveContext`。`python -m evaluation.data.audit_dataset <dataset>` 可离线检查题集规模、元数据和泄漏风险，并可通过 `--reference-dataset` 检查跨 split 重合；`evaluation.scoring.judge` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。证明和开放语义题只能在 `manual_blind` 模式下由盲审裁决覆盖，未复核时保持 `unknown`。能力实验必须绑定干净 commit 的冻结 manifest；新旧三轮报告按 `idx` 配对，不能用两个独立总分替代配对统计。截断门禁使用请求级点估计和单侧 95% Wilson 上界；当约有 1082 次请求时最多允许 42 次截断。`evaluation/data/truncation_stress.jsonl` 应连续运行 3 次后合并报告，且候选阶段截断率、恢复覆盖、无效答案和残句泄漏分别独立检查。评测入口统一使用 `python -m evaluation.<group>.<module>`，共享结构化文件 I/O；评测模块不得通过 `sys.path` 修改规避包边界。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
 
 ## 9. 架构变更规则
 

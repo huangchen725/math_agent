@@ -19,7 +19,7 @@ from ..io_utils import (
     write_json,
     write_jsonl,
 )
-from judge import judge_answer
+from .judge import judge_answer
 
 
 _FINAL_ANSWER = re.compile(r"^\s*最终答案\s*[:：]\s*(.*?)\s*$", re.MULTILINE)

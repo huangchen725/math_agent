@@ -15,11 +15,11 @@ Read `docs/ENGINEERING_SPECIFICATION.md` and name the affected hard-rule IDs and
 
 For competition-facing work, also read `docs/OFFICIAL_MATERIALS_REGISTER.md` before treating a handbook sentence, group screenshot, FAQ, baseline example, or submission-page label as a contract. Name every affected `INFO-CONFLICT-*` and `OFFICIAL-GAP-*` item. A missing rule is not permission, and a later statement does not erase an older contradictory statement.
 
-Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The only runtime implementation is the `math_agent/` package. Root `user_agent.py` is the competition compatibility facade; `main.py` and `demo.py` are adapters and must import the package public API.
+Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The only runtime implementation is split across root-level modules. Root `user_agent.py` is the competition compatibility facade, `agent.py` is the sole public type source, and `main.py`/`demo.py` are adapters.
 
 ## Preserve active contracts
 
-- Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list. The constructor must also accept the documented `__init__(self, client, *args, **kwargs)` signature and `ReasoningAgent(client=official_client)` call while treating platform extras as opaque; only an actual project `AgentConfig` instance may be adopted from positional arguments or `config=`. Exercise the root facade through an isolated path-based import; do not assume the judge's current directory makes `math_agent/` importable.
+- Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list. The constructor must also accept the documented `__init__(self, client, *args, **kwargs)` signature and `ReasoningAgent(client=official_client)` call while treating platform extras as opaque; only an actual project `AgentConfig` instance may be adopted from positional arguments or `config=`. Exercise the facade through an isolated path-based import and a root-files-only copy; do not assume the judge's current directory or package-directory support.
 - Keep the API client injected and secrets environment-only.
 - Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.

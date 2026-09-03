@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from project_utils import PROJECT_ROOT, atomic_write_json, git_snapshot
+from .project_utils import PROJECT_ROOT, atomic_write_json, git_snapshot
 
 
 EVALUATION_MODULES = (
@@ -24,6 +24,9 @@ EVALUATION_MODULES = (
     "evaluation.experiments.freeze_experiment",
     "evaluation.experiments.blind_review",
     "evaluation.experiments.paired_compare",
+)
+ROOT_PYTHON_FILES = tuple(
+    path.name for path in sorted(PROJECT_ROOT.glob("*.py"))
 )
 MAX_OUTPUT_CHARS = 6000
 
@@ -55,14 +58,10 @@ def build_checks(
                 "-m",
                 "compileall",
                 "-q",
-                "agent.py",
+                *ROOT_PYTHON_FILES,
                 "evaluation",
                 "scripts",
                 "tests",
-                "main.py",
-                "demo.py",
-                "user_agent.py",
-                "verify_math.py",
             ],
         ),
         (
@@ -73,12 +72,9 @@ def build_checks(
                 "bandit",
                 "-q",
                 "-r",
-                "agent.py",
+                *ROOT_PYTHON_FILES,
                 "evaluation",
                 "scripts",
-                "main.py",
-                "demo.py",
-                "verify_math.py",
             ],
         ),
         (

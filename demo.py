@@ -13,7 +13,8 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BASE, ".env"))
 
-from agent import InternChatClient, ReasoningAgent
+from agent import ReasoningAgent
+from llm_client import InternChatClient
 
 
 def _classify_step(step_name: str) -> str:

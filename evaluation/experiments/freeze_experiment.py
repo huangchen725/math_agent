@@ -39,7 +39,6 @@ REQUIRED_FIELDS = (
 )
 RUNTIME_FILES = (
     "user_agent.py",
-    "__init__.py",
     "agent.py",
     "agent_config.py",
     "competition_policy.py",
@@ -70,6 +69,7 @@ RUNTIME_FILES = (
     "llm_client.py",
     "main.py",
     "demo.py",
+    "verify_math.py",
 )
 
 

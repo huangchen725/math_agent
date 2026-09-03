@@ -26,8 +26,8 @@ from competition_policy import (
 )
 from llm_client import DEFAULT_API_BASE, DEFAULT_MODEL
 
-from build_release import REQUIRED_RELEASE_FILES, _is_release_path
-from project_utils import PROJECT_ROOT
+from .build_release import REQUIRED_RELEASE_FILES, _is_release_path
+from .project_utils import PROJECT_ROOT
 
 
 _RUNTIME_ROOT_FILES = ("main.py", "demo.py", "user_agent.py", "verify_math.py")
@@ -80,9 +80,9 @@ class _RecordingClient:
 
 
 def _runtime_paths(root: Path) -> list[Path]:
-    paths = sorted((root).glob("*.py"))
-    paths.extend(root / name for name in _RUNTIME_ROOT_FILES)
-    return [path for path in paths if path.is_file()]
+    paths = set(root.glob("*.py"))
+    paths.update(root / name for name in _RUNTIME_ROOT_FILES)
+    return sorted(path for path in paths if path.is_file())
 
 
 def _imported_network_modules(path: Path) -> set[str]:

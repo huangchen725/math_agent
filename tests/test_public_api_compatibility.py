@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -271,3 +272,70 @@ def test_root_entrypoint_loads_by_absolute_path_outside_project_sys_path() -> No
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {"agent": "ReasoningAgent"}
+
+
+def test_root_only_runtime_executes_with_minimum_client_contract(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    runtime_root = tmp_path / "root-only-runtime"
+    runtime_root.mkdir()
+    for source in project_root.glob("*.py"):
+        shutil.copy2(source, runtime_root / source.name)
+
+    assert not (runtime_root / "math_agent").exists()
+    probe = textwrap.dedent(
+        """
+        import importlib.util
+        import json
+        from pathlib import Path
+        import sys
+
+        entrypoint = Path(sys.argv[1]).resolve()
+        spec = importlib.util.spec_from_file_location("_root_only_user_agent", entrypoint)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("unable to load root-only entrypoint")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class MinimumClient:
+            def __init__(self):
+                self.calls = []
+
+            def chat(self, messages, temperature, max_tokens):
+                self.calls.append({
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                })
+                serialized = json.dumps(messages, ensure_ascii=False)
+                if "VERDICT" in serialized:
+                    return "VERDICT: A"
+                return "最终答案：4\\n因为 2+2=4。"
+
+        client = MinimumClient()
+        result = module.ReasoningAgent(client=client).solve(
+            "计算 2+2", {"idx": "probe"}
+        )
+        print(json.dumps({
+            "calls": len(client.calls),
+            "keys": [sorted(call) for call in client.calls],
+            "final": result["final_response"].splitlines()[-1],
+        }))
+        """
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", probe, str(runtime_root / "user_agent.py")],
+        cwd=runtime_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["calls"] == 6
+    assert payload["final"] == "最终答案：4"
+    assert payload["keys"] == [
+        ["max_tokens", "messages", "temperature"]
+    ] * 6

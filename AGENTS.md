@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. `math_agent/` is the only runtime implementation; root `user_agent.py` is the official compatibility facade. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the normative P1-S6 change and regression baseline; it must not be used as a second architecture description. `docs/OFFICIAL_MATERIALS_REGISTER.md` is the provenance, conflict, and missing-contract register for official files and messages.
+This repository is the XH-202627 competition math agent. The single runtime implementation is split across root-level Python modules; root `user_agent.py` is the official compatibility facade and `agent.py` is the sole public type source. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the normative P1-S6 change and regression baseline; it must not be used as a second architecture description. `docs/OFFICIAL_MATERIALS_REGISTER.md` is the provenance, conflict, and missing-contract register for official files and messages.
 
 ## Non-negotiable contracts
 
@@ -21,8 +21,8 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
 - Treat JSONL records and `idx` as untrusted input. Output paths must stay inside the requested output directory.
 - Keep per-problem state in `SolveContext`. Model response text and metadata must return atomically through `ModelGateway`; do not reintroduce process/thread/context-local "last response" side channels.
-- Keep `math_agent/agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class. The root facade must remain loadable by absolute path from an isolated interpreter without relying on the current working directory.
-- Keep `math_agent/math_tools.py` as an import-compatibility facade. Restricted parsing belongs in `math_parsing.py`, implementations in `tool_implementations.py`, schemas/dispatch in `tool_registry.py`, and the model loop in `tool_loop.py`.
+- Keep root `agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class. The root facade must remain loadable by absolute path from an isolated interpreter using root files alone, without relying on the current working directory or a package subdirectory.
+- Keep root `math_tools.py` as an import-compatibility facade. Restricted parsing belongs in `math_parsing.py`, implementations in `tool_implementations.py`, schemas/dispatch in `tool_registry.py`, and the model loop in `tool_loop.py`.
 - Keep offline evaluation grouped under `evaluation/data`, `evaluation/scoring`, and `evaluation/experiments`. Use `evaluation/io_utils.py` for JSON/JSONL, hashing, and atomic writes; do not add `sys.path` mutation to evaluation modules.
 - Keep dependency inputs and locks paired: edit `requirements*.txt`, regenerate the affected `requirements*.lock` with exact versions and SHA-256 hashes, then validate installation with `--require-hashes`. A lock shared across Python minors must include target-only dependency markers and be installed by the lowest supported real interpreter; cross-target pip dry-runs alone are insufficient.
 - Do not remove required checks from `scripts/run_quality_gates.py`, weaken the coverage floor, broaden release file allowlists, or bypass the clean-commit/quality-report rules merely to make CI or packaging pass.
@@ -46,7 +46,7 @@ This repository is the XH-202627 competition math agent. `math_agent/` is the on
 
 ## Relevant files
 
-- Runtime pipeline: compatibility facade `user_agent.py`, lifecycle `math_agent/agent.py`, orchestration `math_agent/solver.py`, focused candidate/response modules, and adapters `main.py`/`demo.py`.
+- Runtime pipeline: compatibility facade `user_agent.py`, lifecycle `agent.py`, orchestration `solver.py`, focused root-level candidate/response modules, and adapters `main.py`/`demo.py`.
 - Offline checks: `tests/`.
 - Quality and delivery: `scripts/run_quality_gates.py`, `scripts/check_lock_closure.py`, `scripts/check_secrets.py`, `scripts/check_markdown_links.py`, `scripts/build_release.py`, dependency locks, and `.github/workflows/offline-quality.yml`.
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
@@ -89,4 +89,4 @@ Run focused tests first while iterating, then the complete gate. `pip-audit` may
 - Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.
 - Flag changes that contradict a rule ID, omit a regression for a listed historical failure, or silently turn a pending/unresolved item into a success claim.
 - Flag any injected-client integration that depends on methods or fields beyond the public `chat()` contract, including private protocol markers or request kwargs beyond the three-argument minimum, even when an official-looking fake happens to expose them.
-- Flag any public trace that can retain free-form problem, prompt, response, answer, tool, or exception text, and any root-entrypoint test that imports only from the repository working directory.
+- Flag any public trace that can retain free-form problem, prompt, response, answer, tool, or exception text, and any root-entrypoint test that imports only from the repository working directory or silently relies on a package subdirectory.

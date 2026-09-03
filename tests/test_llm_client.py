@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from agent import llm_client
+import llm_client
 from competition_policy import FORMAL_COMPETITION_MODEL, OFFICIAL_API_BASE
 from llm_client import InternChatClient
 

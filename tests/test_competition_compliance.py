@@ -57,10 +57,8 @@ def test_competition_policy_fails_closed() -> None:
 def test_runtime_network_scan_allows_only_registered_evidence_urls(
     tmp_path: Path,
 ) -> None:
-    package = tmp_path / "math_agent"
-    package.mkdir()
     registered_url = next(iter(OFFICIAL_EVIDENCE_URLS.values()))
-    (package / "competition_policy.py").write_text(
+    (tmp_path / "competition_policy.py").write_text(
         f'EVIDENCE_URL = "{registered_url}"\n',
         encoding="utf-8",
     )

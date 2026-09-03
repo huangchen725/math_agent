@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from project_utils import PROJECT_ROOT
+from .project_utils import PROJECT_ROOT
 
 
 SKIPPED_DIRECTORIES = {

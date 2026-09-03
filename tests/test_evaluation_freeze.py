@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from evaluation.experiments.freeze_experiment import RUNTIME_FILES, build_manifest, file_sha256
+from scripts.build_release import ROOT_FILES
 
 
 def _record(idx: str, problem: str, *, split: str = "test") -> dict:
@@ -55,17 +56,21 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert "candidate_evaluation.py" in RUNTIME_FILES
     assert "candidate_selection.py" in RUNTIME_FILES
     assert "trace_sanitizer.py" in RUNTIME_FILES
-    assert "agent_types.py" not in RUNTIME_FILES
+    assert "agent_types.py" in RUNTIME_FILES
+    assert not any(path.startswith("math_agent/") for path in RUNTIME_FILES)
 
 
-def test_runtime_fingerprint_includes_every_package_module() -> None:
+def test_runtime_fingerprint_includes_every_root_module() -> None:
     root = Path(__file__).resolve().parents[1]
-    package_files = {
+    root_modules = {
         path.relative_to(root).as_posix()
         for path in (root).glob("*.py")
     }
 
-    assert package_files <= set(RUNTIME_FILES)
+    assert root_modules <= set(RUNTIME_FILES)
+    assert set(RUNTIME_FILES) == {
+        path for path in ROOT_FILES if path.endswith(".py")
+    }
 
 
 def test_test_manifest_detects_cross_dataset_template_leakage(tmp_path):

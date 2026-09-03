@@ -26,8 +26,8 @@ from competition_policy import (
     OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
 )
 
-from check_secrets import scan_paths
-from project_utils import (
+from .check_secrets import scan_paths
+from .project_utils import (
     PROJECT_ROOT,
     atomic_write_bytes,
     canonical_json_bytes,
@@ -37,7 +37,7 @@ from project_utils import (
     sha256_bytes,
     sha256_file,
 )
-from run_quality_gates import EVALUATION_MODULES
+from .run_quality_gates import EVALUATION_MODULES
 
 
 MAX_RELEASE_FILE_BYTES = 5 * 1024 * 1024
@@ -56,8 +56,27 @@ ROOT_FILES = {
     "SECURITY.md",
     "SUBMISSION_INFO.md",
     "THIRD_PARTY_NOTICES.md",
+    "agent.py",
+    "agent_config.py",
+    "agent_prompts.py",
+    "agent_types.py",
+    "answer_equivalence.py",
+    "budget.py",
+    "candidate_evaluation.py",
+    "candidate_generation.py",
+    "candidate_selection.py",
+    "competition_policy.py",
+    "context.py",
     "demo.py",
+    "deterministic_verifier.py",
+    "domain_prompts.py",
+    "domain_router.py",
+    "llm_client.py",
     "main.py",
+    "math_parsing.py",
+    "math_tools.py",
+    "model_calls.py",
+    "model_gateway.py",
     "pyproject.toml",
     "requirements-demo.lock",
     "requirements-demo.txt",
@@ -65,6 +84,15 @@ ROOT_FILES = {
     "requirements-dev.txt",
     "requirements.lock",
     "requirements.txt",
+    "response_processing.py",
+    "solver.py",
+    "task_router.py",
+    "tool_executor.py",
+    "tool_implementations.py",
+    "tool_loop.py",
+    "tool_registry.py",
+    "trace_sanitizer.py",
+    "truncation.py",
     "user_agent.py",
     "verify_math.py",
     "创新点说明.md",
@@ -75,7 +103,6 @@ ALLOWED_PREFIXES = (
     ".github/",
     "docs/",
     "evaluation/",
-    "",
     "sample_data/",
     "scripts/",
     "tests/",
@@ -97,7 +124,8 @@ REQUIRED_RELEASE_FILES = {
     "docs/COMPETITION_COMPLIANCE.md",
     "docs/ENGINEERING_SPECIFICATION.md",
     "docs/OFFICIAL_MATERIALS_REGISTER.md",
-    "__init__.py",
+    "agent.py",
+    "agent_config.py",
     "competition_policy.py",
     "requirements-dev.lock",
     "requirements.lock",

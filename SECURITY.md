@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-当前安全维护范围是 `main` 分支上的唯一运行实现 `math_agent/`，以及竞赛兼容入口 `user_agent.py`、批处理入口 `main.py` 和 Demo 入口 `demo.py`。根兼容入口不得复制或分叉包内实现。
+当前安全维护范围是 `main` 分支根目录中的唯一分层运行实现，以及竞赛兼容入口 `user_agent.py`、批处理入口 `main.py` 和 Demo 入口 `demo.py`。`user_agent.py` 只能重导出唯一的 `agent.py` 公开类型，不得复制或分叉实现；正式发布白名单只接纳登记过的根运行模块。
 
 ## 报告问题
 

@@ -17,6 +17,7 @@ from competition_policy import (
 from scripts.build_release import (
     REQUIRED_QUALITY_CHECKS,
     ReleaseError,
+    _is_release_path,
     build_release,
 )
 from scripts.project_utils import atomic_write_json, git_snapshot, sha256_file
@@ -44,7 +45,6 @@ def _git_bytes(root: Path, *args: str) -> bytes:
 
 def _repository(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
-    (root / "math_agent").mkdir(parents=True)
     files = {
         ".gitignore": ".quality/\ndist/\n",
         "ARCHITECTURE.md": "# Architecture\n",
@@ -53,8 +53,9 @@ def _repository(tmp_path: Path) -> Path:
         "docs/OFFICIAL_MATERIALS_REGISTER.md": "# Official materials\n",
         "LICENSE": "All rights reserved.\n",
         "README.md": "# Project\n",
-        "math_agent/__init__.py": "class AgentConfig:\n    pass\n",
-        "math_agent/competition_policy.py": "FORMAL_COMPETITION_MODEL = 'intern-s1'\n",
+        "agent.py": "VALUE = 1\n",
+        "agent_config.py": "class AgentConfig:\n    pass\n",
+        "competition_policy.py": "FORMAL_COMPETITION_MODEL = 'intern-s1'\n",
         "requirements.lock": "sample==1.0 --hash=sha256:" + "a" * 64 + "\n",
         "requirements-dev.lock": "sample-dev==1.0 --hash=sha256:" + "b" * 64 + "\n",
         "scripts/check_competition_compliance.py": "VALUE = 1\n",
@@ -88,6 +89,13 @@ def _quality_report(root: Path) -> Path:
     path = root / ".quality" / "quality-report.json"
     atomic_write_json(path, report)
     return path
+
+
+def test_release_allowlist_includes_known_flat_runtime_only() -> None:
+    assert _is_release_path("agent.py")
+    assert _is_release_path("model_gateway.py")
+    assert not _is_release_path("private.py")
+    assert not _is_release_path("math_agent/private.py")
 
 
 def test_formal_release_is_deterministic_and_contains_provenance(tmp_path: Path) -> None:
@@ -191,7 +199,7 @@ def test_draft_release_scans_untracked_source_for_secrets(tmp_path: Path) -> Non
     root = _repository(tmp_path)
     quality = _quality_report(root)
     token = "sk-" + "B" * 24
-    (root / "math_agent" / "unsafe.py").write_text(
+    (root / "model_gateway.py").write_text(
         f'TOKEN = "{token}"\n',
         encoding="utf-8",
     )
@@ -210,7 +218,7 @@ def test_draft_release_scans_untracked_source_for_secrets(tmp_path: Path) -> Non
 def test_draft_release_rejects_unscannable_source(tmp_path: Path) -> None:
     root = _repository(tmp_path)
     quality = _quality_report(root)
-    (root / "math_agent" / "unscannable.py").write_bytes(b"\0binary")
+    (root / "model_gateway.py").write_bytes(b"\0binary")
 
     with pytest.raises(ReleaseError, match="binary content"):
         build_release(
@@ -244,10 +252,10 @@ def test_draft_release_scans_embedded_quality_report(tmp_path: Path) -> None:
 def test_draft_release_excludes_gitignored_source(tmp_path: Path) -> None:
     root = _repository(tmp_path)
     quality = _quality_report(root)
-    ignored = root / "math_agent" / "private.py"
+    ignored = root / "model_gateway.py"
     ignored.write_text("TOKEN = 'private local material'\n", encoding="utf-8")
     with (root / ".gitignore").open("a", encoding="utf-8") as file:
-        file.write("math_agent/private.py\n")
+        file.write("model_gateway.py\n")
 
     archive, _, _ = build_release(
         root,
@@ -258,7 +266,7 @@ def test_draft_release_excludes_gitignored_source(tmp_path: Path) -> None:
     )
 
     with zipfile.ZipFile(archive) as zipped:
-        assert "math_agent/private.py" not in zipped.namelist()
+        assert "model_gateway.py" not in zipped.namelist()
 
 
 def test_release_rejects_external_quality_report(tmp_path: Path) -> None:
