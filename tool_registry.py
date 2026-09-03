@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .math_parsing import (
+from math_parsing import (
     DEFAULT_TOOL_TIMEOUT_SECONDS,
     MAX_TOOL_ARGUMENT_CHARS,
     bounded_result,
 )
-from .tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
-from .tool_implementations import (
+from tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
+from tool_implementations import (
     binomial,
     calculate,
     differentiate,

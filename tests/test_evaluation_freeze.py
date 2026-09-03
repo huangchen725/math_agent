@@ -46,15 +46,15 @@ def test_freeze_manifest_records_dataset_code_and_agent_config(tmp_path):
     assert len(manifest["code"]["runtime_sha256"]) == 64
     assert manifest["agent_config_sha256"]
     assert manifest["runner"] == {"repetitions": 3, "local_max_concurrency": 1}
-    assert "math_agent/task_router.py" in RUNTIME_FILES
-    assert "math_agent/deterministic_verifier.py" in RUNTIME_FILES
-    assert "math_agent/context.py" in RUNTIME_FILES
-    assert "math_agent/model_gateway.py" in RUNTIME_FILES
-    assert "math_agent/solver.py" in RUNTIME_FILES
-    assert "math_agent/candidate_generation.py" in RUNTIME_FILES
-    assert "math_agent/candidate_evaluation.py" in RUNTIME_FILES
-    assert "math_agent/candidate_selection.py" in RUNTIME_FILES
-    assert "math_agent/trace_sanitizer.py" in RUNTIME_FILES
+    assert "task_router.py" in RUNTIME_FILES
+    assert "deterministic_verifier.py" in RUNTIME_FILES
+    assert "context.py" in RUNTIME_FILES
+    assert "model_gateway.py" in RUNTIME_FILES
+    assert "solver.py" in RUNTIME_FILES
+    assert "candidate_generation.py" in RUNTIME_FILES
+    assert "candidate_evaluation.py" in RUNTIME_FILES
+    assert "candidate_selection.py" in RUNTIME_FILES
+    assert "trace_sanitizer.py" in RUNTIME_FILES
     assert "agent_types.py" not in RUNTIME_FILES
 
 
@@ -62,7 +62,7 @@ def test_runtime_fingerprint_includes_every_package_module() -> None:
     root = Path(__file__).resolve().parents[1]
     package_files = {
         path.relative_to(root).as_posix()
-        for path in (root / "math_agent").glob("*.py")
+        for path in (root).glob("*.py")
     }
 
     assert package_files <= set(RUNTIME_FILES)

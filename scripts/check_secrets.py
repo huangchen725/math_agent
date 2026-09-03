@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .project_utils import PROJECT_ROOT, run_git
+from project_utils import PROJECT_ROOT, run_git
 
 
 MAX_SCANNED_FILE_BYTES = 5 * 1024 * 1024

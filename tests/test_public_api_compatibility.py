@@ -4,8 +4,8 @@ import subprocess
 import sys
 import textwrap
 
-from math_agent import AgentConfig as PackageAgentConfig
-from math_agent import ReasoningAgent as PackageReasoningAgent
+from agent import AgentConfig as PackageAgentConfig
+from agent import ReasoningAgent as PackageReasoningAgent
 from user_agent import AgentConfig, ReasoningAgent
 
 

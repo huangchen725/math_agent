@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from .answer_equivalence import format_answer_for_output
+from answer_equivalence import format_answer_for_output
 
 
 def build_response(content: str, answer: str) -> str:

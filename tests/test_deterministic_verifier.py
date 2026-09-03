@@ -1,4 +1,4 @@
-from math_agent.deterministic_verifier import (
+from deterministic_verifier import (
     verify_binomial_value,
     verify_derivative,
     verify_equation_solution,
@@ -12,7 +12,7 @@ from math_agent.deterministic_verifier import (
     verify_symbolic_equivalence,
     verify_task_plan,
 )
-from math_agent.task_router import VerificationPlan
+from task_router import VerificationPlan
 
 
 def test_symbolic_and_calculus_verifiers():

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from math_agent.competition_policy import (
+from competition_policy import (
     COMPETITION_MANUAL_SHA256,
     FORMAL_COMPETITION_MODEL,
     FORMAL_COMPETITION_MODELS,
@@ -24,10 +24,10 @@ from math_agent.competition_policy import (
     OFFICIAL_API_BASE,
     validate_official_api_base,
 )
-from math_agent.llm_client import DEFAULT_API_BASE, DEFAULT_MODEL
+from llm_client import DEFAULT_API_BASE, DEFAULT_MODEL
 
-from .build_release import REQUIRED_RELEASE_FILES, _is_release_path
-from .project_utils import PROJECT_ROOT
+from build_release import REQUIRED_RELEASE_FILES, _is_release_path
+from project_utils import PROJECT_ROOT
 
 
 _RUNTIME_ROOT_FILES = ("main.py", "demo.py", "user_agent.py", "verify_math.py")
@@ -35,7 +35,7 @@ _URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+")
 _NETWORK_MODULES = frozenset(
     {"aiohttp", "httpx", "requests", "socket", "urllib.request", "websocket", "websockets"}
 )
-_NETWORK_IMPORT_ALLOWLIST = {"math_agent/llm_client.py": frozenset({"requests"})}
+_NETWORK_IMPORT_ALLOWLIST = {"llm_client.py": frozenset({"requests"})}
 _PRIVATE_ARTIFACTS = (
     ".env",
     ".quality/quality-report.json",
@@ -80,7 +80,7 @@ class _RecordingClient:
 
 
 def _runtime_paths(root: Path) -> list[Path]:
-    paths = sorted((root / "math_agent").glob("*.py"))
+    paths = sorted((root).glob("*.py"))
     paths.extend(root / name for name in _RUNTIME_ROOT_FILES)
     return [path for path in paths if path.is_file()]
 
@@ -116,7 +116,7 @@ def _check_runtime_network_boundary(root: Path) -> list[str]:
         text = path.read_text(encoding="utf-8")
         evidence_urls = (
             frozenset(OFFICIAL_EVIDENCE_URLS.values())
-            if relative == "math_agent/competition_policy.py"
+            if relative == "competition_policy.py"
             else frozenset()
         )
         for match in _URL_PATTERN.finditer(text):
@@ -128,7 +128,7 @@ def _check_runtime_network_boundary(root: Path) -> list[str]:
 
 def _check_answer_isolation_and_json() -> list[str]:
     from main import solve_item
-    from math_agent import AgentConfig, ReasoningAgent
+    from agent import AgentConfig, ReasoningAgent
 
     sentinel_answer = "DO_NOT_FORWARD_REFERENCE_7F2A"
     item = {
@@ -367,7 +367,7 @@ def check_competition_compliance(root: Path = PROJECT_ROOT) -> dict[str, Any]:
         "docs/COMPETITION_COMPLIANCE.md",
         "docs/ENGINEERING_SPECIFICATION.md",
         "docs/OFFICIAL_MATERIALS_REGISTER.md",
-        "math_agent/competition_policy.py",
+        "competition_policy.py",
         "scripts/check_competition_compliance.py",
     }
     missing_compliance_files = sorted(

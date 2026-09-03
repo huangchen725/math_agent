@@ -1,4 +1,4 @@
-from math_agent.domain_prompts import DOMAIN_PROMPTS
+from domain_prompts import DOMAIN_PROMPTS
 import verify_math
 from verify_math import parse_fewshot_examples, run_verification, verify_answer, verify_string
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .agent_types import ModelCallResult
-from .context import SolveContext
+from agent_types import ModelCallResult
+from context import SolveContext
 
 
 def call_model_result(

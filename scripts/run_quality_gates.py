@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .project_utils import PROJECT_ROOT, atomic_write_json, git_snapshot
+from project_utils import PROJECT_ROOT, atomic_write_json, git_snapshot
 
 
 EVALUATION_MODULES = (
@@ -55,7 +55,7 @@ def build_checks(
                 "-m",
                 "compileall",
                 "-q",
-                "math_agent",
+                "agent.py",
                 "evaluation",
                 "scripts",
                 "tests",
@@ -73,7 +73,7 @@ def build_checks(
                 "bandit",
                 "-q",
                 "-r",
-                "math_agent",
+                "agent.py",
                 "evaluation",
                 "scripts",
                 "main.py",

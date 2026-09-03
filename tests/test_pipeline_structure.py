@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from math_agent import AgentConfig, ReasoningAgent
-from math_agent.candidate_evaluation import CandidateEvaluator
-from math_agent.candidate_generation import CandidateGenerator
-from math_agent.solver import SolveOrchestrator
+from agent import AgentConfig, ReasoningAgent
+from candidate_evaluation import CandidateEvaluator
+from candidate_generation import CandidateGenerator
+from solver import SolveOrchestrator
 
 
 def test_agent_composes_focused_pipeline_components() -> None:
@@ -30,8 +30,8 @@ def test_agent_composes_focused_pipeline_components() -> None:
 
 
 def test_agent_config_keeps_one_public_type_after_module_split() -> None:
-    from math_agent.agent import AgentConfig as AgentModuleConfig
-    from math_agent.agent_config import AgentConfig as ConfigModuleConfig
+    from agent import AgentConfig as AgentModuleConfig
+    from agent_config import AgentConfig as ConfigModuleConfig
     from user_agent import AgentConfig as RootConfig
 
     assert AgentModuleConfig is ConfigModuleConfig

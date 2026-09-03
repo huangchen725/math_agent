@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .agent_types import Candidate
-from .budget import ExecutionBudget
+from agent_types import Candidate
+from budget import ExecutionBudget
 
 
 def select_candidate(

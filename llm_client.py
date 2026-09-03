@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 
 import requests
 
-from .competition_policy import (
+from competition_policy import (
     FORMAL_COMPETITION_MODEL,
     OFFICIAL_API_BASE,
     competition_mode_enabled,

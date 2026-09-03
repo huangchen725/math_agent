@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from math_agent.budget import ExecutionBudget
-from math_agent.math_tools import (
+from budget import ExecutionBudget
+from math_tools import (
     binomial,
     calculate,
     differentiate,
@@ -18,7 +18,7 @@ from math_agent.math_tools import (
     run_tool_loop,
     solve_equation,
 )
-from math_agent.model_gateway import ModelGateway
+from model_gateway import ModelGateway
 
 
 def test_calculate_supports_common_math_syntax():

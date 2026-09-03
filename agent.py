@@ -10,29 +10,29 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from .agent_config import AgentConfig
-from .agent_prompts import (
+from agent_config import AgentConfig
+from agent_prompts import (
     CRITIC_PROMPT,
     POLICY_NO_TOOL_PROMPT,
     POLICY_PROMPT,
     REFLECTION_PROMPT,
     VERIFIER_PROMPT,
 )
-from .agent_types import Candidate, ModelCallResult, Verification
-from .answer_equivalence import normalize_answer, numeric_value
-from .budget import BudgetExceeded, ExecutionBudget
-from .candidate_generation import (
+from agent_types import Candidate, ModelCallResult, Verification
+from answer_equivalence import normalize_answer, numeric_value
+from budget import BudgetExceeded, ExecutionBudget
+from candidate_generation import (
     is_proof_like,
     model_result_trace,
     reasoning_instruction,
     reasoning_target_tokens,
 )
-from .candidate_selection import record_final_source, select_candidate
-from .context import SolveContext
-from .domain_router import DOMAIN_KEYWORDS, detect_domain
-from .model_calls import call_model_result, call_model_text
-from .model_gateway import ModelGateway
-from .response_processing import (
+from candidate_selection import record_final_source, select_candidate
+from context import SolveContext
+from domain_router import DOMAIN_KEYWORDS, detect_domain
+from model_calls import call_model_result, call_model_text
+from model_gateway import ModelGateway
+from response_processing import (
     build_response,
     extract_answer,
     extract_first_line_answer,
@@ -40,9 +40,9 @@ from .response_processing import (
     review_excerpt,
     validate_response,
 )
-from .solver import SolveOrchestrator
-from .trace_sanitizer import sanitize_trace
-from .truncation import contain_pending_truncations, mark_truncation
+from solver import SolveOrchestrator
+from trace_sanitizer import sanitize_trace
+from truncation import contain_pending_truncations, mark_truncation
 
 
 class ReasoningAgent:

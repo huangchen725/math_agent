@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from math_agent import math_tools
-from math_agent.tool_implementations import calculate
-from math_agent.tool_loop import run_tool_loop
-from math_agent.tool_registry import TOOL_DEFINITIONS, TOOL_IMPLEMENTATIONS
+from agent import math_tools
+from tool_implementations import calculate
+from tool_loop import run_tool_loop
+from tool_registry import TOOL_DEFINITIONS, TOOL_IMPLEMENTATIONS
 
 
 def test_math_tools_is_a_compatibility_facade_for_focused_modules() -> None:

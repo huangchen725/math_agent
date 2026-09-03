@@ -6,8 +6,8 @@ from threading import Lock
 
 import pytest
 
-from math_agent.budget import BudgetExceeded, ExecutionBudget
-from math_agent.llm_client import InternChatClient
+from budget import BudgetExceeded, ExecutionBudget
+from llm_client import InternChatClient
 from user_agent import AgentConfig, ReasoningAgent
 
 

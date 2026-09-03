@@ -10,7 +10,7 @@ from typing import Any
 
 from ..data.audit_dataset import load_jsonl
 from ..io_utils import configure_utf8_stdout, read_json_object, write_json
-from .judge import judge_answer
+from judge import judge_answer
 
 
 def rescore_report(

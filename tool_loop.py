@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from .agent_types import ModelCallResult
-from .math_parsing import (
+from agent_types import ModelCallResult
+from math_parsing import (
     DEFAULT_TOOL_TIMEOUT_SECONDS,
     MAX_TOOL_CALLS_PER_ROUND,
 )
-from .model_gateway import ModelGateway
-from .tool_registry import TOOL_DEFINITIONS, execute_tool_call
+from model_gateway import ModelGateway
+from tool_registry import TOOL_DEFINITIONS, execute_tool_call
 
 
 def run_tool_loop(

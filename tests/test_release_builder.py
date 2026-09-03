@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from math_agent.competition_policy import (
+from competition_policy import (
     FORMAL_COMPETITION_MODEL,
     FORMAL_COMPETITION_MODELS,
     OFFICIAL_BASELINE_COMMIT,

@@ -13,11 +13,11 @@ from typing import Any
 
 import sympy as sp
 
-from .agent_types import Verification
-from .answer_equivalence import equivalent_answers, normalize_answer
-from .math_parsing import parse_matrix, parse_symbol, safe_parse
-from .task_router import VerificationPlan
-from .tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
+from agent_types import Verification
+from answer_equivalence import equivalent_answers, normalize_answer
+from math_parsing import parse_matrix, parse_symbol, safe_parse
+from task_router import VerificationPlan
+from tool_executor import ToolProcessError, ToolTimeoutError, run_with_timeout
 
 
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 5.0

@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .agent_types import ModelCallResult
-from .budget import ExecutionBudget
-from .llm_client import InternChatClient
+from agent_types import ModelCallResult
+from budget import ExecutionBudget
+from llm_client import InternChatClient
 
 
 _PUBLIC_CHAT_KWARGS = ("temperature", "max_tokens")

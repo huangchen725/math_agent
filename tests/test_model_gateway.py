@@ -3,9 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from math_agent.budget import ExecutionBudget
-from math_agent.llm_client import InternChatClient
-from math_agent.model_gateway import ModelGateway
+from budget import ExecutionBudget
+from llm_client import InternChatClient
+from model_gateway import ModelGateway
 
 
 class AtomicClient(InternChatClient):

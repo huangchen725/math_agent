@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sympy as sp
 
-from .math_parsing import (
+from math_parsing import (
     MAX_BINOMIAL_N,
     bounded_result,
     parse_integer,

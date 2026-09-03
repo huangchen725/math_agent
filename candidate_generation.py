@@ -5,15 +5,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .agent_config import AgentConfig
-from .agent_prompts import POLICY_NO_TOOL_PROMPT
-from .agent_types import ModelCallResult
-from .answer_equivalence import format_answer_for_output
-from .budget import BudgetExceeded
-from .context import SolveContext
-from .model_calls import call_model_result, call_model_text
-from .response_processing import extract_answer, extract_first_line_answer
-from .truncation import mark_truncation
+from agent_config import AgentConfig
+from agent_prompts import POLICY_NO_TOOL_PROMPT
+from agent_types import ModelCallResult
+from answer_equivalence import format_answer_for_output
+from budget import BudgetExceeded
+from context import SolveContext
+from model_calls import call_model_result, call_model_text
+from response_processing import extract_answer, extract_first_line_answer
+from truncation import mark_truncation
 
 
 @dataclass

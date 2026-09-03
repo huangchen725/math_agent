@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from math_agent import InternChatClient, ReasoningAgent
+from agent import InternChatClient, ReasoningAgent
 
 
 def _positive_env_int(name: str, default: int) -> int:

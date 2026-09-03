@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from .agent_config import AgentConfig
-from .agent_types import Candidate, ModelCallResult
-from .answer_equivalence import build_answer
-from .candidate_evaluation import CandidateEvaluator
-from .candidate_generation import CandidateGenerator, is_proof_like, reasoning_target_tokens
-from .candidate_selection import select_candidate
-from .context import SolveContext
-from .domain_prompts import get_domain_prompt
-from .domain_router import detect_domain
-from .response_processing import build_response, extract_answer
+from agent_config import AgentConfig
+from agent_types import Candidate, ModelCallResult
+from answer_equivalence import build_answer
+from candidate_evaluation import CandidateEvaluator
+from candidate_generation import CandidateGenerator, is_proof_like, reasoning_target_tokens
+from candidate_selection import select_candidate
+from context import SolveContext
+from domain_prompts import get_domain_prompt
+from domain_router import detect_domain
+from response_processing import build_response, extract_answer
 
 
 class SolveOrchestrator:

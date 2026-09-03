@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from .agent_config import AgentConfig
-from .agent_prompts import VERIFIER_PROMPT
-from .agent_types import ModelCallResult, Verification
-from .budget import BudgetExceeded
-from .context import SolveContext
-from .model_calls import call_model_result
-from .response_processing import parse_verdict, review_excerpt
-from .truncation import mark_truncation
+from agent_config import AgentConfig
+from agent_prompts import VERIFIER_PROMPT
+from agent_types import ModelCallResult, Verification
+from budget import BudgetExceeded
+from context import SolveContext
+from model_calls import call_model_result
+from response_processing import parse_verdict, review_excerpt
+from truncation import mark_truncation
 
 
 class CandidateEvaluator:

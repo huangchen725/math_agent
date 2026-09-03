@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from math_agent import AgentConfig
-from math_agent.competition_policy import (
+from agent import AgentConfig
+from competition_policy import (
     COMPETITION_MANUAL_SHA256,
     FORMAL_COMPETITION_MODEL,
     FORMAL_COMPETITION_MODELS,
@@ -26,8 +26,8 @@ from math_agent.competition_policy import (
     OFFICIAL_WEB_EVIDENCE_VERIFIED_ON,
 )
 
-from .check_secrets import scan_paths
-from .project_utils import (
+from check_secrets import scan_paths
+from project_utils import (
     PROJECT_ROOT,
     atomic_write_bytes,
     canonical_json_bytes,
@@ -37,7 +37,7 @@ from .project_utils import (
     sha256_bytes,
     sha256_file,
 )
-from .run_quality_gates import EVALUATION_MODULES
+from run_quality_gates import EVALUATION_MODULES
 
 
 MAX_RELEASE_FILE_BYTES = 5 * 1024 * 1024
@@ -75,7 +75,7 @@ ALLOWED_PREFIXES = (
     ".github/",
     "docs/",
     "evaluation/",
-    "math_agent/",
+    "",
     "sample_data/",
     "scripts/",
     "tests/",
@@ -97,8 +97,8 @@ REQUIRED_RELEASE_FILES = {
     "docs/COMPETITION_COMPLIANCE.md",
     "docs/ENGINEERING_SPECIFICATION.md",
     "docs/OFFICIAL_MATERIALS_REGISTER.md",
-    "math_agent/__init__.py",
-    "math_agent/competition_policy.py",
+    "__init__.py",
+    "competition_policy.py",
     "requirements-dev.lock",
     "requirements.lock",
     "scripts/check_competition_compliance.py",

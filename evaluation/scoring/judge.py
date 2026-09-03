@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from math_agent.answer_equivalence import equivalent_answers
-from math_agent.deterministic_verifier import verify_symbolic_equivalence
+from answer_equivalence import equivalent_answers
+from deterministic_verifier import verify_symbolic_equivalence
 
 
 JudgeStatus = Literal["correct", "wrong", "unknown", "no_answer"]

@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .budget import ExecutionBudget
-from .model_gateway import ModelGateway
+from budget import ExecutionBudget
+from model_gateway import ModelGateway
 
 
 @dataclass

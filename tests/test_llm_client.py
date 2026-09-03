@@ -1,9 +1,9 @@
 import pytest
 import requests
 
-from math_agent import llm_client
-from math_agent.competition_policy import FORMAL_COMPETITION_MODEL, OFFICIAL_API_BASE
-from math_agent.llm_client import InternChatClient
+from agent import llm_client
+from competition_policy import FORMAL_COMPETITION_MODEL, OFFICIAL_API_BASE
+from llm_client import InternChatClient
 
 
 @pytest.fixture(autouse=True)

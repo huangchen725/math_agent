@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from math_agent.competition_policy import (
+from competition_policy import (
     FORMAL_COMPETITION_MODEL,
     FORMAL_COMPETITION_MODELS,
     OFFICIAL_BASELINE_COMMIT,
@@ -18,7 +18,7 @@ from scripts.check_competition_compliance import (
     _check_runtime_network_boundary,
     check_competition_compliance,
 )
-from math_agent.trace_sanitizer import sanitize_trace
+from trace_sanitizer import sanitize_trace
 
 
 ROOT = Path(__file__).resolve().parents[1]
