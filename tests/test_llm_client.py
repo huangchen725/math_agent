@@ -1,8 +1,8 @@
 import pytest
 import requests
 
-import llm_client
-from llm_client import InternChatClient
+from math_agent import llm_client
+from math_agent.llm_client import InternChatClient
 
 
 def _http_response(status: int, payload=None) -> requests.Response:
@@ -98,7 +98,7 @@ def test_client_returns_text_when_tool_calls_is_empty(monkeypatch):
     assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
 
 
-def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
+def test_client_returns_usage_atomically_without_changing_text_contract(monkeypatch):
     monkeypatch.setenv("INTERN_API_KEY", "test-key")
     payload = {
         "id": "request-1",
@@ -109,9 +109,14 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
     monkeypatch.setattr(llm_client.requests, "post", lambda *a, **k: _http_response(200, payload))
     client = InternChatClient(retry=1)
 
-    assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
-    assert client.get_last_response_meta()["usage"]["total_tokens"] == 5
-    assert client.get_last_response_meta()["finish_reason"] == "length"
+    response, metadata = client.chat_with_metadata(
+        [{"role": "user", "content": "hello"}]
+    )
+
+    assert response == "ok"
+    assert metadata["usage"]["total_tokens"] == 5
+    assert metadata["finish_reason"] == "length"
+    assert not hasattr(client, "get_last_response_meta")
 
 
 @pytest.mark.parametrize("kwargs", [{"stream": True}, {"n": 2}])

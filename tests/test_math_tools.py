@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from math_tools import (
+from math_agent.budget import ExecutionBudget
+from math_agent.math_tools import (
     binomial,
     calculate,
     differentiate,
@@ -17,6 +18,7 @@ from math_tools import (
     run_tool_loop,
     solve_equation,
 )
+from math_agent.model_gateway import ModelGateway
 
 
 def test_calculate_supports_common_math_syntax():
@@ -127,3 +129,38 @@ def test_tool_loop_replies_to_calls_over_the_execution_limit():
     )
 
     assert response == "最终答案：2"
+
+
+def test_tool_loop_uses_the_budget_bound_to_model_gateway():
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "calculate",
+                            "arguments": '{"expression": "1+1"}',
+                        },
+                    }],
+                }
+            return "最终答案：2"
+
+    budget = ExecutionBudget(timeout_seconds=10)
+    gateway = ModelGateway(Client(), budget)
+
+    response, _ = run_tool_loop(
+        gateway,
+        [{"role": "user", "content": "1+1"}],
+        max_rounds=2,
+    )
+
+    assert response == "最终答案：2"
+    assert budget.snapshot()["tool_calls"] == 1
