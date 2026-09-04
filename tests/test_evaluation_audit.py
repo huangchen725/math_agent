@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.audit_dataset import (
+from evaluation.data.audit_dataset import (
     ReferenceProblem,
     audit_dataset,
     normalize_problem,
@@ -72,7 +72,7 @@ def test_rule_of_three_is_only_reported_for_zero_observed_failures():
 
 
 def test_benchmark_schema_requires_provenance_and_split():
-    schema_path = Path(__file__).parents[1] / "evaluation" / "benchmark.schema.json"
+    schema_path = Path(__file__).parents[1] / "evaluation" / "data" / "benchmark.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
     assert {"source", "license", "split", "level"} <= set(schema["required"])

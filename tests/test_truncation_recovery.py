@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextvars import ContextVar
 
 import pytest
 
-from budget import BudgetExceeded, ExecutionBudget
+from math_agent.budget import BudgetExceeded, ExecutionBudget
 from user_agent import AgentConfig, ReasoningAgent
 
 
@@ -14,19 +13,19 @@ class SequenceClient:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = []
-        self.meta = {}
 
     def chat(self, **kwargs):
+        response, _ = self.chat_with_metadata(**kwargs)
+        return response
+
+    def chat_with_metadata(self, **kwargs):
         self.calls.append(kwargs)
         text, finish_reason = self.responses.pop(0)
-        self.meta = {
+        metadata = {
             "finish_reason": finish_reason,
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
-        return text
-
-    def get_last_response_meta(self):
-        return dict(self.meta)
+        return text, metadata
 
 
 def config(**overrides):
@@ -235,9 +234,11 @@ def test_recovery_requests_obey_their_own_limit_and_shared_token_budget():
 
 
 class ConcurrentClient:
-    _meta: ContextVar[dict] = ContextVar("test_concurrent_meta", default={})
-
     def chat(self, **kwargs):
+        response, _ = self.chat_with_metadata(**kwargs)
+        return response
+
+    def chat_with_metadata(self, **kwargs):
         content = kwargs["messages"][-1]["content"]
         if "题A" in content and "上一次解答被截断" not in content and "截断回复" not in content:
             finish_reason = "length"
@@ -250,18 +251,15 @@ class ConcurrentClient:
             finish_reason = "stop"
             text = "最终答案：2\n题B完整"
             time.sleep(0.01)
-        self._meta.set({"finish_reason": finish_reason, "usage": {"total_tokens": 5}})
-        return text
-
-    def get_last_response_meta(self):
-        return dict(self._meta.get())
+        return text, {"finish_reason": finish_reason, "usage": {"total_tokens": 5}}
 
 
-def test_concurrent_problem_metadata_does_not_cross_contaminate():
+def test_concurrent_solves_on_same_agent_do_not_cross_contaminate():
     shared_client = ConcurrentClient()
+    shared_agent = ReasoningAgent(shared_client, config())
 
     def run(problem):
-        return ReasoningAgent(shared_client, config()).solve(problem, {})
+        return shared_agent.solve(problem, {})
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         result_a, result_b = list(executor.map(run, ["题A：计算", "题B：计算"]))

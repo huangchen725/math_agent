@@ -1,5 +1,5 @@
-from evaluation.judge import judge_answer
-from evaluation.rescore_report import rescore_report
+from evaluation.scoring.judge import judge_answer
+from evaluation.scoring.rescore_report import rescore_report
 
 
 def test_judge_rejects_substring_false_positive():

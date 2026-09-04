@@ -1,6 +1,6 @@
 import pytest
 
-from evaluation.paired_compare import compare_reports, exact_mcnemar
+from evaluation.experiments.paired_compare import compare_reports, exact_mcnemar
 
 
 def _report(correct_ids, *, total=12):

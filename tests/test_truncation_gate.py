@@ -1,4 +1,4 @@
-from evaluation.truncation_gate import (
+from evaluation.scoring.truncation_gate import (
     combine_summaries,
     evaluate_truncation_gate,
     wilson_upper_one_sided,

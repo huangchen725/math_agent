@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASET = ROOT / "evaluation" / "truncation_stress.jsonl"
-MANIFEST = ROOT / "evaluation" / "truncation_stress_manifest.json"
+DATASET = ROOT / "evaluation" / "data" / "truncation_stress.jsonl"
+MANIFEST = ROOT / "evaluation" / "data" / "truncation_stress_manifest.json"
 
 
 def test_truncation_stress_set_is_frozen_and_balanced():
