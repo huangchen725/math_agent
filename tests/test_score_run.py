@@ -1,6 +1,6 @@
 import json
 
-from evaluation.scoring.score_run import extract_final_answer, score_run
+from evaluation.score_run import extract_final_answer, score_run
 
 
 def test_extract_final_answer_uses_last_canonical_line():
@@ -24,20 +24,7 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
                 "trace": [
                     {
                         "step": "budget_summary",
-                        "content": {
-                            "model_requests": 3,
-                            "total_tokens": 100,
-                            "truncated_responses": 1,
-                            "requests_by_stage": {"policy_plain": 2, "verifier": 1},
-                            "truncated_by_stage": {"policy_plain": 1},
-                            "truncation_recovery": {
-                                "required": 1,
-                                "handled": 1,
-                                "succeeded": 1,
-                                "failed": 0,
-                            },
-                            "truncated_fragments_in_final": 0,
-                        },
+                        "content": {"model_requests": 3, "total_tokens": 100},
                     }
                 ],
             }
@@ -67,56 +54,4 @@ def test_score_run_counts_judgments_errors_missing_and_usage(tmp_path):
     assert scored["summary"]["error"] == 1
     assert scored["summary"]["missing"] == 1
     assert scored["summary"]["usage"]["model_requests"] == 3
-    assert scored["summary"]["usage"]["truncated_responses"] == 1
-    truncation = scored["summary"]["truncation"]
-    assert truncation["truncation_rate"] == 1 / 3
-    assert truncation["by_stage"]["policy_plain"]["truncated_count"] == 1
-    assert truncation["problems_with_truncation"] == 1
-    assert truncation["recovery"]["coverage"] == 1.0
-    assert truncation["valid_answer_rate_after_truncation"] == 1.0
     assert scored["by_subject"]["数论"]["total"] == 3
-
-
-def test_manual_benchmark_stays_unknown_until_blind_adjudication(tmp_path):
-    dataset = [
-        {
-            "idx": "proof-1",
-            "problem": "prove it",
-            "answer": "manual",
-            "subject": "分析",
-            "grading_mode": "manual_blind",
-        }
-    ]
-    (tmp_path / "proof-1.json").write_text(
-        json.dumps(
-            {
-                "status": "success",
-                "final_response": "A proof attempt.\n最终答案：成立",
-                "trace": [],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    automatic = score_run(dataset, tmp_path)
-    reviewed = score_run(
-        dataset,
-        tmp_path,
-        {
-            "proof-1": {
-                "idx": "proof-1",
-                "status": "correct",
-                "reviewer_id": "reviewer-1",
-                "blind": True,
-                "score": 8,
-            }
-        },
-    )
-
-    assert automatic["summary"]["unknown"] == 1
-    assert automatic["results"][0]["method"] == "manual_review_required"
-    assert reviewed["summary"]["correct"] == 1
-    assert reviewed["summary"]["adjudicated"] == 1
-    assert reviewed["results"][0]["auto_status"] == "unknown"
-    assert reviewed["results"][0]["human_score"] == 8

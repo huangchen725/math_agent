@@ -3,27 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 
 VerificationStatus = Literal["pass", "fail", "unknown"]
-
-
-@dataclass(frozen=True)
-class ModelCallResult:
-    """Text plus non-sensitive metadata for one model request."""
-
-    text: str
-    stage: str
-    finish_reason: str = ""
-    usage: Mapping[str, Any] = field(default_factory=dict)
-    candidate_id: int | None = None
-    request_id: int | None = None
-    raw_response: Any = None
-
-    @property
-    def truncated(self) -> bool:
-        return self.finish_reason.casefold() in {"length", "max_tokens"}
 
 
 @dataclass(frozen=True)
@@ -57,3 +40,4 @@ class Candidate:
     raw_confidence: float
     verifications: list[Verification] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+

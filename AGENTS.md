@@ -2,77 +2,49 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. The single runtime implementation is split across root-level Python modules; root `user_agent.py` is the official compatibility facade and `agent.py` is the sole public type source. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the normative P1-S6 change and regression baseline; it must not be used as a second architecture description. `docs/OFFICIAL_MATERIALS_REGISTER.md` is the provenance, conflict, and missing-contract register for official files and messages.
+This repository is the XH-202627 competition math agent. `user_agent.py::ReasoningAgent` and its flat-module dependencies are the only runtime architecture. `ARCHITECTURE.md` is the sole architecture source of truth.
 
 ## Non-negotiable contracts
 
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.
-- Preserve the official constructor signature surface `__init__(self, client, *args, **kwargs)` and the normal call `ReasoningAgent(client=official_client)`. Platform extras are opaque compatibility inputs and must not become hidden solving context or a path around explicit `AgentConfig`; accept a positional or keyword config only when it is actually an `AgentConfig` instance.
-- Keep the client injected by the caller. Unknown injected clients may receive only `messages`, `temperature`, and `max_tokens` through public `chat()`; do not pass `thinking_mode`, `tools`, `tool_choice`, or other project extensions, and do not probe a protocol marker, private field, or similarly named method. Extended arguments and atomic metadata are allowed only for the project-owned `InternChatClient` nominal type. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
-- Keep the current formal compatibility core on one request protocol: three plain-text candidates, one compact verifier per eligible candidate, majority/confidence selection, and bounded truncation recovery. The normal path is exactly six public model calls. Legacy candidate/verifier counts and tools/critic/reflection/deterministic flags remain constructible but must not alter this sequence or activate a second formal path; restore any strategy field only as a separately tested single-variable change.
+- Keep the client injected by the caller. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
 - `final_response` contains the selected reasoning and ends with exactly one canonical `最终答案：...` line. The answer body must not contain an explanatory sentence.
-- Public `trace` is metadata only. It must not contain the problem, prompts, model/candidate/verifier/critic/tool text, final answer, or exception messages; unknown trace fields fail closed at the public boundary.
-- Keep an outer `solve()` contract guard around preflight, budget creation, pipeline execution, finalization, and trace projection. It must return a JSON-safe non-empty result for ordinary exceptions without issuing an unbudgeted model request.
-- Keep `final_response` independently judgeable: necessary proof or conclusion-supporting steps must remain there because current official material is inconsistent about whether `trace` contributes to judging.
 - The competition endpoint rejects `stream=True` and `n != 1`.
-- Formal runtime may access only the official injected client/API and local bounded tools. Dependencies must be installed before solving; never add runtime downloads, external online calculators/APIs, GPU assumptions, or cross-problem persistence.
-- Treat the published 1200-second per-problem process limit, six-hour Agent-stage limit, and at-most-three independent problem processes as outer platform limits, not targets. Preserve the lower local soft deadline and do not rely on `finally` running after a platform kill.
 - Do not change candidate counts, temperatures, thinking mode, or token budgets without an evaluation plan that isolates one variable and records the dataset/commit/config.
 - Keep model-produced tool arguments untrusted. Do not reintroduce unrestricted `eval`, `exec`, `sympify`, or `parse_expr`; preserve parser allowlists and resource bounds.
 - Treat JSONL records and `idx` as untrusted input. Output paths must stay inside the requested output directory.
-- Keep per-problem state in `SolveContext`. Model response text and metadata must return atomically through `ModelGateway`; do not reintroduce process/thread/context-local "last response" side channels.
-- Keep root `agent.py` as the lifecycle and compatibility boundary. Put stage behavior in `solver.py` and the focused candidate/response modules; do not rebuild a monolithic Agent class. The root facade must remain loadable by absolute path from an isolated interpreter using root files alone, without relying on the current working directory or a package subdirectory.
-- Keep root `math_tools.py` as an import-compatibility facade. Restricted parsing belongs in `math_parsing.py`, implementations in `tool_implementations.py`, schemas/dispatch in `tool_registry.py`, and the model loop in `tool_loop.py`.
-- Keep offline evaluation grouped under `evaluation/data`, `evaluation/scoring`, and `evaluation/experiments`. Use `evaluation/io_utils.py` for JSON/JSONL, hashing, and atomic writes; do not add `sys.path` mutation to evaluation modules.
-- Keep dependency inputs and locks paired: edit `requirements*.txt`, regenerate the affected `requirements*.lock` with exact versions and SHA-256 hashes, then validate installation with `--require-hashes`. A lock shared across Python minors must include target-only dependency markers and be installed by the lowest supported real interpreter; cross-target pip dry-runs alone are insufficient.
-- Do not remove required checks from `scripts/run_quality_gates.py`, weaken the coverage floor, broaden release file allowlists, or bypass the clean-commit/quality-report rules merely to make CI or packaging pass.
-- Formal release archives must come from Git blobs of a clean commit. Dirty workspaces may produce only explicitly marked draft archives.
-- Treat `docs/COMPETITION_COMPLIANCE.md` as the repository's competition-policy record and `docs/OFFICIAL_MATERIALS_REGISTER.md` as its evidence ledger. Formal competition runs use the official injected client or official Intern endpoint and local bounded tools only. Current official FAQ permits Intern-S models and recommends `intern-s2-preview`; formal code accepts only the documented IDs `intern-s1`, `intern-s1-pro`, and `intern-s2-preview`, with `intern-s1` retained only as the local default. Do not restore an S1-only rule or infer that “397” names an exact API ID.
-- Never add per-question human answer overrides, accept post-evaluation filled results as model output, fabricate or rewrite source logs, forward reference-answer fields to the Agent, or route solving through an unauthorized external closed service.
-- A model outside the documented Intern-S allowlist must set `COMPETITION_MODE=0`, be labelled as a non-submission experiment, and remain in a draft artifact. Add a new formal model only from an archived page or organizer answer that includes the exact API ID, date, applicable batch, and source evidence; every actual submission must separately record the model selected on AtomGit.
-- Absence of an official parameter, resource, response, Judge, or runner rule is not permission. Keep every `OFFICIAL-GAP-*` item unresolved until the exact written evidence named in the register exists; a fake client, successful request, or historical score cannot close it.
-- Preserve every hard rule and fixed-stage boundary in `docs/ENGINEERING_SPECIFICATION.md`. A change that intentionally alters one must name its rule ID, isolate the variable, update the specification and architecture/compliance documents actually affected, and add regression evidence before merge.
-- Never call capability improvement, online compatibility, truncation recovery, or competition compliance "proven" when the corresponding issue remains `待验证`, `未解决`, or `条件性缺口` in the engineering specification.
 
 ## Start of work
 
 1. Inspect `git status` and preserve unrelated user changes. In particular, submission documents and generated report artifacts may be under active editing.
 2. Read `README.md`. For architecture changes, also read `ARCHITECTURE.md` and the relevant current source files.
-3. Read `docs/ENGINEERING_SPECIFICATION.md`, identify the affected rule IDs and known-problem IDs, and preserve unresolved status unless new evidence closes it.
-4. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
-5. Also use `.agents/skills/property-based-testing/SKILL.md` when changing parsers, canonicalizers, normalizers, validators, numeric equivalence, serialization, or state-machine invariants. It supplements the project skill and never overrides repository rules. Adding Hypothesis or another test dependency remains a separate dependency decision and requires updated inputs, hashes, and lock verification.
-6. For competition-facing changes, read `docs/COMPETITION_COMPLIANCE.md` and `docs/OFFICIAL_MATERIALS_REGISTER.md`; name any affected `INFO-CONFLICT-*` and `OFFICIAL-GAP-*` IDs, then preserve fail-closed model, endpoint, answer-isolation, logging, and release controls.
-7. For an official evaluation submission, require the team repository as the `atomgit` remote and synchronize `main`, click “提交作品” before the 12:00/24:00 batch, then freeze `main` until the platform pull completes. GitHub-only push and a locally recorded commit SHA do not enter the queue. Before the final deadline, also send the required final ZIP/materials email and retain its delivery evidence; neither channel replaces the other.
+3. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
 
 ## Relevant files
 
-- Runtime pipeline: compatibility facade `user_agent.py`, lifecycle `agent.py`, orchestration `solver.py`, focused root-level candidate/response modules, and adapters `main.py`/`demo.py`.
+- Runtime pipeline: `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`.
 - Offline checks: `tests/`.
-- Quality and delivery: `scripts/run_quality_gates.py`, `scripts/check_lock_closure.py`, `scripts/check_secrets.py`, `scripts/check_markdown_links.py`, `scripts/build_release.py`, dependency locks, and `.github/workflows/offline-quality.yml`.
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
-- Offline evaluation: `python -m evaluation.data.audit_dataset` audits provenance and prompt/sample overlap; `evaluation.scoring.judge` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
+- Offline evaluation: `evaluation/audit_dataset.py` audits provenance and prompt/sample overlap; `evaluation/judge.py` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
 - Generated outputs: `outputs/`; never use them as committed source.
-- Normative engineering baseline: `docs/ENGINEERING_SPECIFICATION.md`; historical evidence remains in `docs/AUDIT_AND_OPTIMIZATION.md` and `docs/evaluations/`.
-- Official evidence ledger: `docs/OFFICIAL_MATERIALS_REGISTER.md`; do not commit raw chat screenshots or personal contact data to remember a rule.
 
 ## Verification
 
-Use a Python 3.10+ environment with the hash-locked development dependencies installed.
+Use a Python 3.10+ environment with `requirements-dev.txt` installed.
 
 ```bash
-python -m pip install --require-hashes -r requirements-dev.lock
-python -m scripts.run_quality_gates
+python -m pytest -q
+python -m compileall -q .
+python -m ruff check .
 ```
 
-Run focused tests first while iterating, then the complete gate. `pip-audit` may query the public vulnerability service; `--skip-dependency-audit` is suitable for a disconnected diagnostic but its report cannot authorize a formal release. Do not call the real model API as part of ordinary tests. If a live evaluation is necessary, state the expected request count and obtain the user's authorization before spending quota.
+Run focused tests first while iterating, then all offline checks. Do not call the real model API as part of ordinary tests. If a live evaluation is necessary, state the expected request count and obtain the user's authorization before spending quota.
 
 ## Documentation rules
 
 - Update `README.md` when setup, environment variables, entrypoints, output behavior, or directory layout changes.
 - Update `ARCHITECTURE.md` when component boundaries, data flow, contracts, tool limits, or runtime behavior changes. Do not create another architecture document.
 - Update `docs/AUDIT_AND_OPTIMIZATION.md` when closing or discovering a material defect.
-- Update `docs/ENGINEERING_SPECIFICATION.md` when a P1-S6 invariant, hard rule, acceptance gate, or known-problem status changes. Do not copy runtime component descriptions into it.
-- Update `docs/OFFICIAL_MATERIALS_REGISTER.md` by append-only source/conflict entries whenever a new official file, message, FAQ, baseline commit, model selection, or platform announcement is supplied. Record a file/transcript hash before changing policy; for dynamic pages record the URL, visible modification time, and verification date. Never erase an older contradictory statement.
 - Keep claims about accuracy, score, latency, cost, and platform limits tied to a recorded experiment or existing project evidence.
 - Use `AGENTS.md` for durable repository rules and the project skill for task-specific maintenance workflow. Avoid duplicating long architecture material in either file.
 
@@ -83,10 +55,6 @@ Run focused tests first while iterating, then the complete gate. `pip-audit` may
 - Flag model/tool outputs copied into logs or prompts without size limits.
 - Flag a checkpoint as complete only when it is valid JSON with `status == "success"` and a non-empty `final_response`.
 - Flag additions to runtime dependencies that are not imported directly or justified by an entrypoint.
-- Flag lock entries without exact versions or hashes, GitHub Actions not pinned to full commit SHAs, and formal packages whose quality evidence refers to another commit/tree.
 - Flag tests that require a real API key or depend on stochastic model output.
 - Flag benchmark records without source, license, split, and calibrated level metadata; flag any test/dev item that overlaps prompt few-shots or public samples.
 - Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.
-- Flag changes that contradict a rule ID, omit a regression for a listed historical failure, or silently turn a pending/unresolved item into a success claim.
-- Flag any injected-client integration that depends on methods or fields beyond the public `chat()` contract, including private protocol markers or request kwargs beyond the three-argument minimum, even when an official-looking fake happens to expose them.
-- Flag any public trace that can retain free-form problem, prompt, response, answer, tool, or exception text, and any root-entrypoint test that imports only from the repository working directory or silently relies on a package subdirectory.

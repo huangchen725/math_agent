@@ -1,6 +1,6 @@
-from agent_types import Candidate, Verification
+from agent_types import Candidate
 from answer_equivalence import build_answer, equivalent_answers, format_answer_for_output
-from user_agent import AgentConfig, POLICY_PROMPT, ReasoningAgent
+from user_agent import POLICY_PROMPT, ReasoningAgent
 
 
 def test_active_response_keeps_reasoning_and_final_marker():
@@ -12,16 +12,6 @@ def test_active_response_keeps_reasoning_and_final_marker():
 def test_active_response_adds_final_marker_when_missing():
     agent = ReasoningAgent(client=object())
     assert agent._build_response("推理步骤", "42") == "推理步骤\n最终答案：42"
-
-
-def test_answer_first_candidate_is_rendered_with_one_final_answer_at_tail():
-    agent = ReasoningAgent(client=object())
-    content = "最终答案：42\n推理步骤"
-
-    response = agent._build_response(content, agent._extract_answer(content))
-
-    assert response == "推理步骤\n最终答案：42"
-    assert response.count("最终答案：") == 1
 
 
 def test_active_response_rewrites_final_line_to_stable_answer_body():
@@ -56,12 +46,6 @@ def test_output_formatter_uses_ascii_safe_math_notation():
     assert format_answer_for_output("16πi") == "16*pi*i"
     assert format_answer_for_output("160°") == "160"
     assert "只写答案本体" in POLICY_PROMPT
-    assert "第一行先写" in POLICY_PROMPT
-
-
-def test_extractor_does_not_treat_truncated_reasoning_tail_as_answer():
-    assert ReasoningAgent._extract_answer("解题思路\n所以还需要继续计算") == ""
-    assert ReasoningAgent._extract_answer("当前答案尚未计算完成") == ""
 
 
 def test_output_formatter_keeps_exact_form_and_removes_root_labels():
@@ -73,14 +57,6 @@ def test_output_formatter_keeps_exact_form_and_removes_root_labels():
 def test_fallback_response_adds_final_marker():
     agent = ReasoningAgent(client=object())
     assert agent._build_response("", "42") == "最终答案：42"
-
-
-def test_valid_solve_contains_gateway_construction_failure() -> None:
-    result = ReasoningAgent(client=object()).solve("计算 1+1", {})
-
-    assert result["final_response"] == "未解出"
-    assert any(event["step"] == "global_error" for event in result["trace"])
-    assert result["trace"][-1]["step"] == "budget_summary"
 
 
 def test_normalize_equivalent_numeric_forms():
@@ -100,74 +76,6 @@ def test_aggregate_returns_content_from_majority_answer_group():
 
     assert answer == "2"
     assert "最终答案：2" in content
-
-
-def test_aggregate_never_selects_candidate_marked_as_truncated():
-    agent = ReasoningAgent(client=object())
-    scored = [
-        Candidate(
-            "截断残句\n最终答案：999",
-            "plain",
-            build_answer("999"),
-            9.0,
-            1.0,
-            metadata={"truncated": True},
-        ),
-        Candidate("完整推理\n最终答案：2", "plain", build_answer("2"), 0.3, 0.0),
-    ]
-
-    answer, content = agent._aggregate(scored, [])
-
-    assert answer == "2"
-    assert "截断残句" not in content
-
-
-def test_formal_selector_keeps_model_majority_when_legacy_deterministic_flag_is_set():
-    class SequenceClient:
-        def __init__(self):
-            self.responses = [
-                "最终答案：5\n错误候选一",
-                "最终答案：5\n错误候选二",
-                "最终答案：4\n正确候选",
-            ]
-
-        def chat(self, **kwargs):
-            if self.responses:
-                return self.responses.pop(0)
-            return "VERDICT: A"
-
-    config = AgentConfig(
-        tool_candidates=0,
-        plain_candidates=3,
-        verifier_voting_times=0,
-        enable_critic=False,
-        enable_reflection=False,
-        enable_deterministic_verification=True,
-    )
-    result = ReasoningAgent(SequenceClient(), config).solve("计算 3^100 除以 7 的余数", {})
-
-    assert result["final_response"].endswith("最终答案：5")
-    assert not any(event["step"] == "deterministic_selection" for event in result["trace"])
-    summary = next(
-        event["content"] for event in result["trace"] if event["step"] == "budget_summary"
-    )
-    assert summary["tool_calls"] == 0
-
-
-def test_selector_ignores_legacy_deterministic_evidence():
-    evidence = [Verification("deterministic:test", "pass", 1.0)]
-    candidates = [
-        Candidate("候选 A", "plain", build_answer("1"), 0.8, 0.8, evidence),
-        Candidate("候选 B", "plain", build_answer("2"), 0.7, 0.7, evidence),
-        Candidate("候选 C", "plain", build_answer("2"), 0.6, 0.6),
-    ]
-    trace = []
-
-    answer, content = ReasoningAgent(client=object())._aggregate(candidates, trace)
-
-    assert answer == "2"
-    assert content == "候选 B"
-    assert not any(event["step"] == "deterministic_selection" for event in trace)
 
 
 def test_review_excerpt_keeps_final_answer_at_tail():

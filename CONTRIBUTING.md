@@ -6,43 +6,27 @@
 
 ```bash
 python -m venv .venv
-python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install -r requirements-dev.txt
 ```
 
-先阅读 `AGENTS.md` 和 `docs/ENGINEERING_SPECIFICATION.md`；在变更说明中列出受影响的硬规则 ID、历史问题 ID 和保持不变的策略参数。涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`；涉及正式比赛、模型、日志或提交时，同时读取 `docs/COMPETITION_COMPLIANCE.md` 与 `docs/OFFICIAL_MATERIALS_REGISTER.md`，并列出受影响的 `INFO-CONFLICT-*`/`OFFICIAL-GAP-*`。
+先阅读 `AGENTS.md`；涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`。
 
 ## 修改原则
 
 - 每次改动解决一个可说明、可验证的问题。
 - 不把 API key、`.env`、私有数据集、运行输出或个人信息加入提交。
 - 不在同一次实验中同时修改候选数、温度、token 预算与 prompt。
-- 新增或升级依赖时先更新对应 `requirements*.txt`，再用 `pip-compile --generate-hashes --strip-extras` 重新生成受影响的 `.lock`，并在全新环境用 `--require-hashes` 验证安装；共享锁必须在最低支持 Python 上真实安装，不能只依赖另一解释器的 `--python-version` 干运行。不要手工编辑锁内版本或哈希。
+- 新增运行依赖时同步更新对应 requirements 文件和 README。
 - 修复缺陷时优先在现有测试文件中补回归测试；只有没有自然归属时才新建测试文件。
-- 修改解析器、答案归一化、等价判定、validator、序列化或状态机不变量时，同时使用 `.agents/skills/property-based-testing/SKILL.md` 设计幂等、往返、oracle 或状态保持性质。第三方 Skill 只提供测试方法；增加 Hypothesis 等依赖仍须单独说明、更新输入规格与哈希锁并完成最低 Python 验证。
 - 不把真实 API 调用放进默认测试。
-- 未知注入 client 只能调用 `chat(messages, temperature, max_tokens)`；不得传 `thinking_mode/tools/tool_choice`、读取私有协议标记/字段或调用同名扩展。客户端改动必须用不含 `**kwargs` 的三参数 fake，入口改动必须从仓库外以绝对路径隔离加载 `user_agent.py` 验证。
-- 平台额外构造参数全部按不透明输入处理；只有真正的 `AgentConfig` 实例可成为配置。入口测试必须覆盖伪 `config` 字典和首请求前异常，并确认 `solve()` 返回 JSON 可序列化的非空结果且不绕过预算发请求。
-- 对外 `trace` 只允许结构化元数据；不得包含题面、prompt、模型/候选/验证/工具正文、最终答案或异常消息。修改 trace、序列化或投影规则时须验证失败关闭、幂等和 JSON 可序列化。
-- 不通过删除回归测试、降低覆盖率、扩大发布白名单、切换 allowlist 外模型或依赖平台私有接口来绕过失败。formal 默认 `intern-s1` 不得描述成官方唯一模型；当前允许 `intern-s1`、`intern-s1-pro`、`intern-s2-preview`，实际选择仍须留 AtomGit 页面回执。
-- 新官方文件、截图、FAQ、baseline 或提交页信息必须先计算原件 SHA-256，再向证据登记册追加来源、事实、冲突和缺口状态；动态页面没有不可变版本时记录 URL、核验日期、页面更新时间、关键事实和可用快照。不得覆盖旧口径，也不得提交含个人信息的原始群截图。
-- 正式评测代码必须通过名为 `atomgit` 的远程同步到队伍仓库 `main` 并在作品页点击“提交作品”。点击后到 12:00/24:00 批次抓取完成前冻结分支，抓取后用远端 SHA 对账；截止前还要发送规定的最终 ZIP/材料邮件。GitHub 推送、本地发布包、AtomGit 点击和邮件归档不能互相替代。
-- 不把结构测试通过、一次随机分数或内部合成集满分写成解题能力已经提高；声明口径按工程规范第 8 节执行。
 
 ## 提交前检查
 
 ```bash
-python -m scripts.run_quality_gates
+python -m pytest -q
+python -m compileall -q .
+python -m ruff check .
 ```
-
-完整门禁不调用模型 API，但其中 `pip-audit` 会查询公开漏洞数据库。完全断网时可以临时添加 `--skip-dependency-audit` 做其余诊断；该结果不能用于正式发布。提交前还应确认 `git diff --check` 通过。
-
-正式交付包只能在干净提交上、使用同一提交通过的完整质量报告生成：
-
-```bash
-python -m scripts.build_release --output-dir dist
-```
-
-工作中的预览只能使用 `--allow-dirty`，产物会标为 `draft`。不得放宽发布白名单、大小限制、敏感信息扫描或质量证据校验来绕过失败。
 
 如果改动影响真实推理结果，还需记录：代码提交、配置、模型、输入数据标识、请求数、错误数、耗时和评分。随机模型的一次结果不能单独证明优化有效。
 
@@ -55,9 +39,3 @@ python -m scripts.build_release --output-dir dist
 3. 如何验证；
 4. 是否影响竞赛接口、调用量、超时风险或输出格式；
 5. 是否仍有未解决风险。
-
-还应列出：
-
-6. 受影响的工程规范规则 ID；
-7. 关联的历史问题 ID 及其状态是否改变；
-8. 若状态由“待验证/未解决”改为“已修复”，对应的冻结证据和回归测试在哪里。

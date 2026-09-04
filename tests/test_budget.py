@@ -1,26 +1,23 @@
 import pytest
 
 from budget import BudgetExceeded, ExecutionBudget
-from llm_client import InternChatClient
 from user_agent import AgentConfig, ReasoningAgent
 
 
-class TextClient(InternChatClient):
+class TextClient:
     def __init__(self):
         self.calls = 0
 
     def chat(self, **kwargs):
-        response, _ = self.chat_with_metadata(**kwargs)
-        return response
-
-    def chat_with_metadata(self, **kwargs):
         self.calls += 1
         system = kwargs["messages"][0].get("content", "")
         if "验证器" in system:
-            response = "VERDICT: A"
-        else:
-            response = "推理\n最终答案：2"
-        return response, {
+            return "VERDICT: A"
+        return "推理\n最终答案：2"
+
+    @staticmethod
+    def get_last_response_meta():
+        return {
             "usage": {
                 "prompt_tokens": 10,
                 "completion_tokens": 5,
@@ -45,30 +42,31 @@ def test_execution_budget_enforces_request_and_tool_limits():
         budget.consume_tool_call()
 
 
-def test_execution_budget_records_truncated_responses():
-    budget = ExecutionBudget(timeout_seconds=10)
-
-    budget.record_response_meta({"finish_reason": "length", "usage": {}})
-    budget.record_response_meta({"finish_reason": "stop", "usage": {}})
-
-    assert budget.snapshot()["truncated_responses"] == 1
-
-
 def test_agent_records_per_problem_budget_usage():
     client = TextClient()
-    config = AgentConfig()
+    config = AgentConfig(
+        tool_candidates=0,
+        plain_candidates=1,
+        enable_critic=False,
+        max_model_requests=2,
+    )
     result = ReasoningAgent(client, config).solve("1+1", {})
 
     assert result["final_response"].endswith("最终答案：2")
     summary = result["trace"][-1]
     assert summary["step"] == "budget_summary"
-    assert summary["content"]["model_requests"] == 6
-    assert summary["content"]["total_tokens"] == 90
+    assert summary["content"]["model_requests"] == 2
+    assert summary["content"]["total_tokens"] == 30
 
 
 def test_agent_stops_before_exceeding_model_request_budget():
     client = TextClient()
-    config = AgentConfig(max_model_requests=1)
+    config = AgentConfig(
+        tool_candidates=0,
+        plain_candidates=2,
+        enable_critic=False,
+        max_model_requests=1,
+    )
     result = ReasoningAgent(client, config).solve("1+1", {})
 
     assert result["final_response"] == "未解出"

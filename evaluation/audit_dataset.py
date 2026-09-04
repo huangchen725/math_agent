@@ -7,6 +7,7 @@ import json
 import math
 import re
 import statistics
+import sys
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
@@ -14,13 +15,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Iterable
 
-from ..io_utils import (
-    PROJECT_ROOT,
-    configure_utf8_stdout,
-    read_jsonl_objects,
-    write_json,
-)
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 REQUIRED_PROVENANCE_FIELDS = ("source", "license", "split", "level")
 
 
@@ -46,7 +44,19 @@ def normalize_template(text: str) -> str:
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    return read_jsonl_objects(path, required_nonempty_strings=("problem",))
+    records = []
+    with path.open("r", encoding="utf-8-sig") as file:
+        for line_number, line in enumerate(file, start=1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError(f"line {line_number} is not a JSON object")
+            problem = record.get("problem")
+            if not isinstance(problem, str) or not problem.strip():
+                raise ValueError(f"line {line_number} has no non-empty problem")
+            records.append(record)
+    return records
 
 
 def default_references() -> list[ReferenceProblem]:
@@ -56,7 +66,7 @@ def default_references() -> list[ReferenceProblem]:
         ReferenceProblem("prompt_fewshot", item["domain"], item["problem"])
         for item in parse_fewshot_examples()
     ]
-    sample_path = PROJECT_ROOT / "sample_data" / "dev.jsonl"
+    sample_path = ROOT / "sample_data" / "dev.jsonl"
     if sample_path.is_file():
         references.extend(
             ReferenceProblem(
@@ -67,18 +77,6 @@ def default_references() -> list[ReferenceProblem]:
             for item in load_jsonl(sample_path)
         )
     return references
-
-
-def references_from_dataset(path: Path) -> list[ReferenceProblem]:
-    """Load another JSONL split as overlap-only references."""
-    return [
-        ReferenceProblem(
-            f"reference_dataset:{path.name}",
-            str(item.get("subject", "")),
-            str(item["problem"]),
-        )
-        for item in load_jsonl(path)
-    ]
 
 
 def _match_problem(
@@ -213,13 +211,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("dataset", type=Path, help="JSONL benchmark to audit")
     parser.add_argument("--successes", type=int, help="Observed correct count")
     parser.add_argument("--near-threshold", type=float, default=0.82)
-    parser.add_argument(
-        "--reference-dataset",
-        type=Path,
-        action="append",
-        default=[],
-        help="Additional JSONL split to check for cross-dataset leakage.",
-    )
     parser.add_argument("--output", type=Path, help="Optional JSON report path")
     parser.add_argument("--quiet", action="store_true", help="Write JSON without printing it")
     return parser.parse_args()
@@ -227,14 +218,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    configure_utf8_stdout()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     records = load_jsonl(args.dataset)
-    references = default_references()
-    for reference_path in args.reference_dataset:
-        references.extend(references_from_dataset(reference_path))
     report = audit_dataset(
         records,
-        references,
+        default_references(),
         successes=args.successes,
         near_threshold=args.near_threshold,
     )
@@ -242,7 +231,8 @@ def main() -> None:
     if not args.quiet:
         print(serialized)
     if args.output:
-        write_json(args.output, report)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(serialized + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

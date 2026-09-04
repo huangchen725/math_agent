@@ -22,7 +22,7 @@
 | 重复次数 / 本地并发 | 1 / 1 |
 | Agent 策略 | 2 个工具候选 + 1 个纯推理候选；策略温度 0.6；`thinking_mode=False` |
 
-题集由 `evaluation/data/generate_internal_benchmark.py` 确定性生成，声明为 `project-authored-synthetic-v1`、`internal-evaluation-only`、`test`。题集及逐题输出位于被 Git 忽略的本地 `outputs/private_eval_35b_v1/`，公开仓库只保留生成器、评测方法和脱敏汇总，不提交题面、模型原始响应或本地密钥。
+题集由 `evaluation/generate_internal_benchmark.py` 确定性生成，声明为 `project-authored-synthetic-v1`、`internal-evaluation-only`、`test`。题集及逐题输出位于被 Git 忽略的本地 `outputs/private_eval_35b_v1/`，公开仓库只保留生成器、评测方法和脱敏汇总，不提交题面、模型原始响应或本地密钥。
 
 ## 结果
 

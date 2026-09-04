@@ -1,21 +1,14 @@
 import json
 import os
 import time
+from contextvars import ContextVar
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 import requests
 
-from competition_policy import (
-    FORMAL_COMPETITION_MODEL,
-    OFFICIAL_API_BASE,
-    competition_mode_enabled,
-    validate_official_api_base,
-    validate_runtime_model,
-)
 
-
-DEFAULT_API_BASE = OFFICIAL_API_BASE
-DEFAULT_MODEL = FORMAL_COMPETITION_MODEL
+DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
+DEFAULT_MODEL = "intern-s2-preview"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 4096
 _RATE_LIMIT_CODES = {"rate_limit_error", "rate_limit_exceeded", "too_many_requests"}
@@ -30,6 +23,10 @@ _RATE_LIMIT_MESSAGE_MARKERS = (
 
 ChatMessage = Dict[str, Any]
 ChatResponse = Union[str, ChatMessage]
+_LAST_RESPONSE_META: ContextVar[Dict[str, Any]] = ContextVar(
+    "last_intern_response_meta",
+    default={},
+)
 
 
 class InternChatClient:
@@ -52,14 +49,8 @@ class InternChatClient:
         self.authorization = (
             raw_api_key if raw_api_key.startswith("Bearer ") else f"Bearer {raw_api_key}"
         )
-        self.competition_mode = competition_mode_enabled()
-        self.api_base = validate_official_api_base(
-            os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
-        )
-        self.model = validate_runtime_model(
-            os.environ.get("INTERN_MODEL", DEFAULT_MODEL),
-            competition_mode=self.competition_mode,
-        )
+        self.api_base = os.environ.get("INTERN_API_BASE", DEFAULT_API_BASE)
+        self.model = os.environ.get("INTERN_MODEL", DEFAULT_MODEL)
         self.timeout = timeout
         self.retry = retry
         self.default_args = dict(default_args or {})
@@ -75,33 +66,12 @@ class InternChatClient:
         tools: Optional[List[Dict[str, Any]]] = None,
         **request_args: Any,
     ) -> ChatResponse:
-        """Create a chat completion while preserving the original response contract."""
-        response, _ = self.chat_with_metadata(
-            messages,
-            temperature,
-            max_tokens,
-            thinking_mode=thinking_mode,
-            tools=tools,
-            **request_args,
-        )
-        return response
-
-    def chat_with_metadata(
-        self,
-        messages: List[ChatMessage],
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        *,
-        thinking_mode: Optional[bool] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        **request_args: Any,
-    ) -> tuple[ChatResponse, Dict[str, Any]]:
-        """Create a completion and return its metadata in the same call.
+        """Create a chat completion.
 
         Extra request arguments are passed through to the HTTP API. Arguments
         supplied to ``chat`` override client-wide ``default_args``.
 
-        Text completions are returned as strings inside the first tuple item.
+        Text completions are returned as strings for backwards compatibility.
         When the model requests a tool call, the complete assistant message is
         returned so that callers can read ``tool_calls`` and append the message
         to the next request.
@@ -145,20 +115,18 @@ class InternChatClient:
                 )
                 response.raise_for_status()
                 data = response.json()
-                choice = data["choices"][0]
-                message = choice["message"]
+                message = data["choices"][0]["message"]
                 usage = data.get("usage")
-                metadata = {
+                _LAST_RESPONSE_META.set({
                     "id": data.get("id"),
                     "model": data.get("model", self.model),
-                    "finish_reason": choice.get("finish_reason"),
                     "usage": usage if isinstance(usage, dict) else {},
                     "elapsed_ms": round((time.monotonic() - request_started) * 1000),
                     "attempts": attempt + 1,
-                }
+                })
                 if message.get("tool_calls"):
-                    return message, metadata
-                return message["content"], metadata
+                    return message
+                return message["content"]
             except Exception as exc:
                 last_error = exc
                 if attempt + 1 < self.retry and self._is_retryable(exc):
@@ -167,6 +135,11 @@ class InternChatClient:
                     break
 
         raise RuntimeError(f"Chat completion failed: {last_error}") from last_error
+
+    @staticmethod
+    def get_last_response_meta() -> Dict[str, Any]:
+        """Return response metadata for the current thread/context without secrets."""
+        return dict(_LAST_RESPONSE_META.get())
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:

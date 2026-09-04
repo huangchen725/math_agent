@@ -12,12 +12,14 @@
 import argparse
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
 from answer_equivalence import normalize_answer as normalize_core_answer
-from domain_prompts import DOMAIN_PROMPTS
 from llm_client import InternChatClient
+from domain_prompts import DOMAIN_PROMPTS
 
 
 # ==================== 解析器：从 domain_prompts.py 提取 few-shot ====================

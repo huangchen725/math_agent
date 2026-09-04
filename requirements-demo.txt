@@ -1,4 +1,3 @@
 -r requirements.txt
 
-# Optional UI profile: Python 3.12+ so patched Pillow releases remain available.
 gradio>=4.0.0

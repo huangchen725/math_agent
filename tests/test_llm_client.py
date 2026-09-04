@@ -2,15 +2,7 @@ import pytest
 import requests
 
 import llm_client
-from competition_policy import FORMAL_COMPETITION_MODEL, OFFICIAL_API_BASE
 from llm_client import InternChatClient
-
-
-@pytest.fixture(autouse=True)
-def _formal_client_environment(monkeypatch):
-    monkeypatch.setenv("COMPETITION_MODE", "1")
-    monkeypatch.setenv("INTERN_MODEL", FORMAL_COMPETITION_MODEL)
-    monkeypatch.setenv("INTERN_API_BASE", OFFICIAL_API_BASE)
 
 
 def _http_response(status: int, payload=None) -> requests.Response:
@@ -106,25 +98,19 @@ def test_client_returns_text_when_tool_calls_is_empty(monkeypatch):
     assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
 
 
-def test_client_returns_usage_atomically_without_changing_text_contract(monkeypatch):
+def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
     monkeypatch.setenv("INTERN_API_KEY", "test-key")
     payload = {
         "id": "request-1",
         "model": "test-model",
-        "choices": [{"message": {"content": "ok"}, "finish_reason": "length"}],
+        "choices": [{"message": {"content": "ok"}}],
         "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
     }
     monkeypatch.setattr(llm_client.requests, "post", lambda *a, **k: _http_response(200, payload))
     client = InternChatClient(retry=1)
 
-    response, metadata = client.chat_with_metadata(
-        [{"role": "user", "content": "hello"}]
-    )
-
-    assert response == "ok"
-    assert metadata["usage"]["total_tokens"] == 5
-    assert metadata["finish_reason"] == "length"
-    assert not hasattr(client, "get_last_response_meta")
+    assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
+    assert client.get_last_response_meta()["usage"]["total_tokens"] == 5
 
 
 @pytest.mark.parametrize("kwargs", [{"stream": True}, {"n": 2}])
@@ -133,41 +119,3 @@ def test_client_rejects_competition_incompatible_options(monkeypatch, kwargs):
     client = InternChatClient(retry=1)
     with pytest.raises(ValueError):
         client.chat([{"role": "user", "content": "hello"}], **kwargs)
-
-
-def test_client_allows_documented_s2_model_in_competition_mode(monkeypatch):
-    monkeypatch.setenv("INTERN_API_KEY", "test-key")
-    monkeypatch.setenv("INTERN_MODEL", "intern-s2-preview")
-
-    client = InternChatClient(retry=1)
-
-    assert client.model == "intern-s2-preview"
-    assert client.competition_mode is True
-
-
-def test_client_rejects_undocumented_model_in_competition_mode(monkeypatch):
-    monkeypatch.setenv("INTERN_API_KEY", "test-key")
-    monkeypatch.setenv("INTERN_MODEL", "unrelated-model")
-
-    with pytest.raises(RuntimeError, match="documented Intern-S models"):
-        InternChatClient(retry=1)
-
-
-def test_client_allows_explicit_non_submission_model_experiment(monkeypatch):
-    monkeypatch.setenv("INTERN_API_KEY", "test-key")
-    monkeypatch.setenv("COMPETITION_MODE", "0")
-    monkeypatch.setenv("INTERN_MODEL", "intern-s2-preview")
-
-    client = InternChatClient(retry=1)
-
-    assert client.model == "intern-s2-preview"
-    assert client.competition_mode is False
-
-
-def test_client_rejects_non_official_api_base_even_for_experiments(monkeypatch):
-    monkeypatch.setenv("INTERN_API_KEY", "test-key")
-    monkeypatch.setenv("COMPETITION_MODE", "0")
-    monkeypatch.setenv("INTERN_API_BASE", "https://example.invalid/chat")
-
-    with pytest.raises(RuntimeError, match="official Intern API endpoint"):
-        InternChatClient(retry=1)

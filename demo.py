@@ -6,15 +6,19 @@
 运行：python demo.py
 """
 import os
+import sys
 from collections import defaultdict
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE)
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BASE, ".env"))
 
-from agent import ReasoningAgent
+import gradio as gr
+
 from llm_client import InternChatClient
+from user_agent import ReasoningAgent
 
 
 def _classify_step(step_name: str) -> str:
@@ -71,44 +75,30 @@ def solve_problem(problem: str):
     return final_response, "\n".join(lines), stats
 
 
-def create_demo():
-    """Build the optional Gradio UI without making a model request."""
-    try:
-        import gradio as gr
-    except ImportError as exc:
-        raise RuntimeError(
-            "Gradio demo dependencies are missing; "
-            "install them with: python -m pip install -r requirements-demo.txt"
-        ) from exc
+with gr.Blocks(title="数学智能体推理 Demo") as demo:
+    gr.Markdown("# 数学智能体推理 Demo")
+    gr.Markdown("输入数学题，查看智能体完整的推理链路（领域路由 → 工具调用 → 验证投票 → 答案聚合）。")
 
-    with gr.Blocks(title="数学智能体推理 Demo") as app:
-        gr.Markdown("# 数学智能体推理 Demo")
-        gr.Markdown(
-            "输入数学题，查看智能体完整的推理链路"
-            "（领域路由 → 工具调用 → 验证投票 → 答案聚合）。"
+    with gr.Row():
+        problem_input = gr.Textbox(
+            label="题目",
+            lines=4,
+            placeholder="例如：设函数 f(z)=1/((z-1)(z-2)^2)，求 f(z) 在 z=1 处的留数。",
         )
+    with gr.Row():
+        solve_btn = gr.Button("求解", variant="primary")
+    with gr.Row():
+        answer_output = gr.Textbox(label="最终答案（final_response）", lines=3)
+    with gr.Row():
+        stats_output = gr.Textbox(label="统计", lines=1)
+    trace_output = gr.Markdown("推理过程将显示在这里")
 
-        with gr.Row():
-            problem_input = gr.Textbox(
-                label="题目",
-                lines=4,
-                placeholder="例如：设函数 f(z)=1/((z-1)(z-2)^2)，求 f(z) 在 z=1 处的留数。",
-            )
-        with gr.Row():
-            solve_btn = gr.Button("求解", variant="primary")
-        with gr.Row():
-            answer_output = gr.Textbox(label="最终答案（final_response）", lines=3)
-        with gr.Row():
-            stats_output = gr.Textbox(label="统计", lines=1)
-        trace_output = gr.Markdown("推理过程将显示在这里")
-
-        solve_btn.click(
-            solve_problem,
-            inputs=[problem_input],
-            outputs=[answer_output, trace_output, stats_output],
-        )
-    return app
+    solve_btn.click(
+        solve_problem,
+        inputs=[problem_input],
+        outputs=[answer_output, trace_output, stats_output],
+    )
 
 
 if __name__ == "__main__":
-    create_demo().launch(server_name="127.0.0.1", server_port=7860)
+    demo.launch(server_name="127.0.0.1", server_port=7860)

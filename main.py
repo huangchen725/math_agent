@@ -16,8 +16,8 @@ try:
 except ImportError:
     pass
 
-from agent import ReasoningAgent
 from llm_client import InternChatClient
+from user_agent import ReasoningAgent
 
 
 def _positive_env_int(name: str, default: int) -> int:

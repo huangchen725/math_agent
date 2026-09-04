@@ -19,8 +19,6 @@ venv/
 .coverage
 coverage.xml
 htmlcov/
-.quality/
-dist/
 
 # IDE
 .vscode/
