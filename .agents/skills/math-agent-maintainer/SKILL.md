@@ -9,7 +9,9 @@ Maintain the single active runtime while the repository is recovering from repea
 
 ## Establish scope
 
-Read `AGENTS.md`, inspect `git status`, and preserve unrelated changes. Read `docs/ENGINEERING_SPECIFICATION.md` before changing code. For runtime or component changes, read `ARCHITECTURE.md`; for competition-facing work, also read `docs/COMPETITION_COMPLIANCE.md` and `docs/OFFICIAL_MATERIALS_REGISTER.md`.
+Read `AGENTS.md`, `.agents/policies/HARD_RULES.md`, this Skill's `PROJECT_POLICY.md`, and inspect `git status` before planning edits. Run `python .agents/policy_guard.py --paths <intended paths>` and add `--actions <actions>` for policy-sensitive commands or external effects; report the triggered rule IDs plus recovery phase in the first work update. Preserve unrelated changes. Read `docs/ENGINEERING_SPECIFICATION.md` before changing code. For runtime or component changes, read `ARCHITECTURE.md`; for competition-facing work, also read `docs/COMPETITION_COMPLIANCE.md` and `docs/OFFICIAL_MATERIALS_REGISTER.md`.
+
+When the guard or manual review finds a blocker, emit `[POLICY BLOCK] <RULE-ID>` with the exact proposed action, consequence, and safe alternative before any mutation. Stop only the violating sub-action and continue safe in-scope work. Never execute first and explain afterward.
 
 The active runtime is the recovery snapshot matching the last officially scored commit `350a267f`. The S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7` for selective reintroduction. Do not describe archived modules as current architecture.
 
@@ -57,6 +59,14 @@ python -m compileall -q .
 python -m ruff check .
 python verify_math.py
 ```
+
+Before those checks and before every commit, run:
+
+```bash
+python .agents/policy_guard.py --changed
+```
+
+Before a submission, run `--anchor-canary` for the unmodified R0 anchor or `--formal` for a later changed runtime. A nonzero guard exit blocks the submission and must be reported with its rule ID.
 
 These checks do not establish official compatibility or mathematical improvement. After S5 quality tooling is selectively restored, use its complete gate only after adapting it to the active runtime; do not copy archived green reports or weaken checks.
 

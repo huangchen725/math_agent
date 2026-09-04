@@ -227,3 +227,4 @@ MAT-007～MAT-009 页面均显示“部分内容可能由 AI 生成”。本项�
 - 只有直接原文可以写成“官方明确”；推断必须标注为推断。
 - 变更模型、客户端、输出或运行边界时，同步更新 `COMPETITION_COMPLIANCE.md`、`ENGINEERING_SPECIFICATION.md`、项目 Skill、离线回归和发布 manifest。
 - 原始附件不得直接加入公开仓库，除非完成隐私审查并确认有权公开分发。
+- 处理官方材料前必须触发 `.agents/policy_guard.py --paths`。工作 agent 要显式报告 `OFFICIAL-001` 与相关 `OFFICIAL-GAP-*`；证据不足时先阻断规则变更，不得用群聊转述、内部复现、第三方结论或“没有禁止”补齐契约。

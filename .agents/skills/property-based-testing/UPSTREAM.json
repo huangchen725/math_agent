@@ -6,6 +6,33 @@
   "license": "CC-BY-SA-4.0",
   "license_source_path": "LICENSE",
   "installed_date": "2026-09-01",
+  "project_overlays": [
+    {
+      "path": "PROJECT_POLICY.md",
+      "origin": "local",
+      "purpose": "Define XH-202627 hard-rule handling separately from the imported upstream material."
+    }
+  ],
+  "local_modifications": [
+    {
+      "path": "SKILL.md",
+      "upstream_sha256": "9448cacb65c6237a7c22dc59602667177ecae405524079ae9ff92240590b995a",
+      "current_sha256": "d8a37e85410a801320bb9e9747874a8cf5ee085474960d49c409a0e9dd66d01f",
+      "changes": [
+        "Remove the unsupported effort frontmatter key.",
+        "Require the project policy gate before applying the Skill."
+      ]
+    },
+    {
+      "path": "agents/openai.yaml",
+      "upstream_sha256": "11a851b1841f3e828e7609045d91e0632cac07dfc008b2740f487cee83a5efd1",
+      "current_sha256": "a29ff770406effd145e667f2839478af65058f6cc9917029667512147e8f966b",
+      "changes": [
+        "Add project-aware display and routing text.",
+        "Require rule reporting and blocker handling in the default prompt."
+      ]
+    }
+  ],
   "files": {
     "README.md": "ffbe30eec09cc64fb1eae836b07ca1d82939bda3f1e6f0dceadcdd78793a3112",
     "SKILL.md": "9448cacb65c6237a7c22dc59602667177ecae405524079ae9ff92240590b995a",

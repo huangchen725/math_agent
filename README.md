@@ -86,10 +86,13 @@ python demo.py
 默认检查不访问外部 API：
 
 ```bash
+python .agents/policy_guard.py --changed
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
 ```
+
+所有仓库任务在修改前还必须运行 `python .agents/policy_guard.py --paths <预计路径...>`；不改文件的真实 API、推送、提交、发布等动作使用 `--actions`。守卫会列出本次触发的规则 ID；出现 `[POLICY BLOCK]` 时，工作 agent 必须在执行前报告具体动作、风险和安全替代，并停止触线子动作。完整流程见 [.agents/policies/HARD_RULES.md](.agents/policies/HARD_RULES.md)。当前 R0 官方定锚使用 `--anchor-canary`；改动版的 `--formal` 必须等规则阶段正式进入 R1 后使用。
 
 对本地 JSONL 题集做题量、领域分布、来源字段、内部重复和 prompt/sample 重合审计，同样不会访问 API：
 
@@ -138,6 +141,8 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── sample_data/               # 可公开的小型输入样例
 ├── tests/                     # 无网络回归测试
 ├── .agents/skills/            # 仓库级 Codex skill
+├── .agents/policies/          # 工作红线触发协议与机器规则清单
+├── .agents/policy_guard.py    # 修改前后与正式候选规则守卫
 ├── docs/                      # 审计与优化路线
 └── ARCHITECTURE.md            # 唯一架构文档
 ```
@@ -149,6 +154,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 - 不根据单次随机结果修改候选数、温度或 token 预算；先固定数据集并保留实验记录。
 - 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
 - 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
+- 每个项目 Skill 都有 `PROJECT_POLICY.md`；使用第三方 Skill 也不能绕过全局红线和授权边界。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
 - 任何重新拆分必须保持根入口真实声明 `ReasoningAgent`，禁止用可碰撞的通用模块类身份开启私有 client 能力，并通过官方预加载顺序、严格三参数 client、隔离导入和模块污染矩阵。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

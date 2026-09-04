@@ -4,6 +4,8 @@
 
 > **恢复期状态**：2026-09-04 活动运行时恢复到 `350a267f` 兼容性定锚。下文记载的三参数投影、trace 脱敏、锁、CI 和发布器等后续控制保存在 `archive/s1-s6-1fc98b7`，尚未全部重新进入活动运行时。除一次原样官方定锚外，当前不得制作 formal 发布或声称这些自动控制已经生效；恢复顺序见 `ENGINEERING_SPECIFICATION.md`。
 
+所有赛事相关工作先运行 `python .agents/policy_guard.py --paths <预计路径...>`，并由工作 agent 报告命中的 `OFFICIAL-001`、`SUBMIT-001`、`API-AUTH-001`、`RELEASE-001` 等规则。缺少书面契约、外部动作授权、远端/模型回执或干净发布证据时，必须在执行前输出 `[POLICY BLOCK]` 并停止相应提交、调用或发布动作。
+
 ## 规则来源与适用口径
 
 - 正式方案：`XH-202627_基于Intern-S1的数学智能体设计与推理创新(1).pdf`，13 页，SHA-256 `ece081cd4a0c4f496943b3e3c7d79716d8ffd1d9a6249e11bb3ed5c4a39902d7`

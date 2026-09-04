@@ -1,10 +1,13 @@
 ---
 name: property-based-testing
-effort: low
 description: "Writes, reviews, and debugs property-based tests — Hypothesis, fast-check, proptest, jqwik, rapid, and Echidna or Medusa for Solidity invariants. Use whenever tests should cover a whole input domain instead of a hand-picked list of examples: encode/decode and serialize/deserialize pairs, parsers, canonicalizers and normalizers, validators, numeric and Decimal types, comparators and sort order, data structures, and smart-contract state invariants. Also use when adding cases to an existing @given, fast-check, or proptest suite, when judging whether existing property tests assert anything real, and when a generator has shrunk a counterexample and you need to tell a wrong property from a genuine bug. Not for coverage-guided binary fuzzing (libFuzzer, AFL), mutation-testing campaigns, static analysis, benchmarking, or end-to-end UI tests."
 ---
 
 # Property-Based Testing
+
+## Project gate
+
+When used in this repository, first read `PROJECT_POLICY.md` and the linked hard-rule protocol. Run the required policy preflight, report every triggered rule ID, and stop any sub-action that emits `[POLICY BLOCK]` before generating cases, changing tests, adding dependencies, or touching runtime code.
 
 An example test asserts one point. A property asserts a rule over the whole input
 domain and lets the generator hunt for the counterexample. That trade is worth making

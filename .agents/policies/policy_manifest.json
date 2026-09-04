@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "policy_version": "2026-09-04.1",
+  "phase": "R0",
+  "authoritative_spec": "docs/ENGINEERING_SPECIFICATION.md",
+  "human_protocol": ".agents/policies/HARD_RULES.md",
+  "anchor_commit": "350a267f",
+  "archive_ref": "archive/s1-s6-1fc98b7",
+  "always_rules": [
+    "WORK-001",
+    "WORK-002",
+    "WORK-003"
+  ],
+  "runtime_files": [
+    "user_agent.py",
+    "agent_types.py",
+    "answer_equivalence.py",
+    "budget.py",
+    "domain_prompts.py",
+    "math_tools.py",
+    "tool_executor.py",
+    "llm_client.py",
+    "main.py",
+    "demo.py",
+    "deterministic_verifier.py",
+    "verify_math.py"
+  ],
+  "generic_module_stems": [
+    "agent",
+    "context",
+    "solver",
+    "budget",
+    "client",
+    "llm_client",
+    "gateway",
+    "model_gateway"
+  ],
+  "project_prefix": "xh202627_",
+  "required_rule_ids": [
+    "WORK-001",
+    "WORK-002",
+    "WORK-003",
+    "ANCHOR-001",
+    "IMPORT-001",
+    "IMPORT-002",
+    "CLIENT-001",
+    "CLIENT-002",
+    "ENTRY-001",
+    "ENTRY-002",
+    "TEST-IMPORT-001",
+    "TEST-CLIENT-001",
+    "CHANGE-001",
+    "EVIDENCE-001",
+    "PBT-001",
+    "DATA-001",
+    "EVAL-001",
+    "API-AUTH-001",
+    "OFFICIAL-001",
+    "SUPPLY-001",
+    "RELEASE-001",
+    "SUBMIT-001",
+    "POLICY-001",
+    "DOC-001",
+    "SKILL-001",
+    "SECURITY-001"
+  ],
+  "surface_rules": [
+    {
+      "name": "client-entry",
+      "patterns": ["user_agent.py", "llm_client.py", "*client*.py", "*gateway*.py"],
+      "rules": ["ANCHOR-001", "IMPORT-001", "IMPORT-002", "CLIENT-001", "CLIENT-002", "ENTRY-001", "ENTRY-002", "TEST-IMPORT-001", "TEST-CLIENT-001"]
+    },
+    {
+      "name": "strategy",
+      "patterns": ["domain_prompts.py", "math_tools.py", "deterministic_verifier.py", "answer_equivalence.py", "user_agent.py"],
+      "rules": ["ANCHOR-001", "CHANGE-001", "EVAL-001", "EVIDENCE-001", "PBT-001", "SECURITY-001"]
+    },
+    {
+      "name": "evaluation",
+      "patterns": ["evaluation/**", "tests/**", "sample_data/**", "docs/evaluations/**"],
+      "rules": ["DATA-001", "EVAL-001", "EVIDENCE-001", "PBT-001"]
+    },
+    {
+      "name": "architecture-policy",
+      "patterns": ["AGENTS.md", "ARCHITECTURE.md", "README.md", "CONTRIBUTING.md", "SECURITY.md", "docs/**", ".agents/**"],
+      "rules": ["POLICY-001", "DOC-001", "SKILL-001", "EVIDENCE-001"]
+    },
+    {
+      "name": "supply-release",
+      "patterns": ["requirements*.txt", "requirements*.lock", "pyproject.toml", ".github/**", "scripts/**", "SUBMISSION_INFO.md"],
+      "rules": ["SUPPLY-001", "RELEASE-001", "SUBMIT-001", "API-AUTH-001"]
+    },
+    {
+      "name": "official-evidence",
+      "patterns": ["docs/COMPETITION_COMPLIANCE.md", "docs/OFFICIAL_MATERIALS_REGISTER.md", "SUBMISSION_INFO.md"],
+      "rules": ["OFFICIAL-001", "EVIDENCE-001", "SUBMIT-001"]
+    }
+  ],
+  "action_rules": {
+    "architecture": ["CHANGE-001", "IMPORT-001", "ENTRY-001", "DOC-001"],
+    "benchmark": ["DATA-001", "EVAL-001", "EVIDENCE-001"],
+    "dependency-change": ["SUPPLY-001", "SECURITY-001", "RELEASE-001"],
+    "git-commit": ["POLICY-001", "RELEASE-001"],
+    "official-material": ["OFFICIAL-001", "EVIDENCE-001", "DOC-001"],
+    "official-submit": ["SUBMIT-001", "RELEASE-001", "API-AUTH-001", "OFFICIAL-001", "EVIDENCE-001"],
+    "push": ["SUBMIT-001", "RELEASE-001", "SECURITY-001"],
+    "real-api": ["API-AUTH-001", "DATA-001", "EVAL-001", "SECURITY-001"],
+    "release": ["RELEASE-001", "SUPPLY-001", "SUBMIT-001", "SECURITY-001"]
+  },
+  "forbidden_runtime_patterns": [
+    {
+      "rule": "IMPORT-002",
+      "pattern": "(?:isinstance|issubclass)\\s*\\([^\\n]*InternChatClient",
+      "message": "Injected client classification by InternChatClient identity is forbidden."
+    },
+    {
+      "rule": "CLIENT-002",
+      "pattern": "chat_with_metadata",
+      "message": "Private client metadata calls are forbidden in the formal runtime."
+    },
+    {
+      "rule": "CLIENT-001",
+      "pattern": "get_last_response_meta",
+      "message": "Last-response metadata side channels are forbidden in changed formal runtime."
+    }
+  ],
+  "required_skill_overlays": [
+    ".agents/skills/math-agent-maintainer/PROJECT_POLICY.md",
+    ".agents/skills/property-based-testing/PROJECT_POLICY.md"
+  ],
+  "agent_integration": {
+    "root_file": "AGENTS.md",
+    "root_tokens": [
+      ".agents/policies/HARD_RULES.md",
+      ".agents/policy_guard.py --paths",
+      "--actions",
+      ".agents/policy_guard.py --changed",
+      "[POLICY BLOCK]"
+    ],
+    "skill_tokens": [
+      "PROJECT_POLICY.md"
+    ],
+    "overlay_tokens": [
+      "HARD_RULES.md",
+      ".agents/policy_guard.py --paths",
+      "--actions",
+      ".agents/policy_guard.py --changed",
+      "[POLICY BLOCK]"
+    ]
+  }
+}

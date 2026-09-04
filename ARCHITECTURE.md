@@ -164,3 +164,5 @@ python -m ruff check .
 可维护架构可以重新引入，但顺序受 `docs/ENGINEERING_SPECIFICATION.md` 约束：先取得恢复锚点的正式非零请求，再加固最小 client/入口契约，随后建立可信能力基线，最后单独验证物理模块结构。根 `user_agent.py` 必须真实声明入口类；新正式模块优先使用 `xh202627_*` 一类唯一前缀，不得使用 `agent`、`context`、`solver`、`budget`、`llm_client` 等通用顶层名。正式网关不得根据 client 的类身份、同名方法或动态属性启用私有能力。
 
 结构迁移必须满足四项等价门禁：官方 `llm_client` 先加载、严格三参数 client、完整 `sys.modules` 污染矩阵、仓库外隔离导入。迁移前后使用同一 fake 响应序列，且正式评测中不能同时改变 prompt、候选数、温度、模型、工具或聚合策略。
+
+任何架构工作在修改前必须由 `.agents/policy_guard.py --paths` 显示 `IMPORT-*`、`CLIENT-*`、`ENTRY-*`、`CHANGE-001` 和 `DOC-001` 等实际触发项，修改后用 `--changed` 复核。出现 blocker 时，工作 agent 必须先显式报告规则和安全替代，再停止触线子动作；架构便利不能作为豁免理由。

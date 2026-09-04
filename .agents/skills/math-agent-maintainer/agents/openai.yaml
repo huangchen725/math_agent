@@ -1,4 +1,4 @@
 interface:
   display_name: "Math Agent Maintainer"
-  short_description: "Audit and maintain the competition math agent"
-  default_prompt: "Use $math-agent-maintainer to audit and improve this math agent safely."
+  short_description: "Maintain the agent with hard-rule preflight"
+  default_prompt: "Use $math-agent-maintainer, load the project policy overlay, report triggered rule IDs before edits, and maintain this math agent safely."

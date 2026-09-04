@@ -7,10 +7,10 @@
 - 发榜单位：上海人工智能实验室
 - 队伍名称：（待填，个人参赛可填个人名）
 - 负责人姓名：（待填）
-- 联系电话：13826011382
+- 联系电话：（仅在私密最终材料填写，不进入公开仓库）
 
 ## 仓库信息
-- 仓库平台：GitHub + AtomGit（已同步）
+- 仓库平台：GitHub + AtomGit（提交前重新核验远程和同步状态）
 - GitHub 地址：https://github.com/huangchen725/math-agent-xh202627
 - AtomGit 地址：（导入后的 AtomGit 仓库地址，待填）
 - 最终分支名称：main
@@ -19,6 +19,14 @@
 ## 选用模型
 - 模型名称：intern-s2-preview（书生 Intern-S2 预览版）
 - 备选模型：intern-s1、intern-s1-pro
+
+## 当前恢复与提交阻断状态
+
+- 活动运行时为 `350a267f` 内容的 R0 兼容性定锚；S1～S6 存档于 `archive/s1-s6-1fc98b7`。
+- 只有 `python .agents/policy_guard.py --anchor-canary` 通过，且用户明确授权推送/提交后，才可提交该原样定锚。
+- 改动版必须先由工程规范正式进入 R1，并通过 `python .agents/policy_guard.py --formal`；R0 期间 `--formal` 失败是预期阻断。
+- 每次提交前，工作 agent 必须报告 `SUBMIT-001`、`API-AUTH-001`、`RELEASE-001` 的状态，核对身份、远程、分支、远端 SHA、提交页模型回执和 12:00/24:00 抓取窗口。
+- 点击“提交作品”到平台抓取完成期间冻结 `main`；GitHub 推送、AtomGit 推送、点击提交和最终 ZIP 邮件是不同动作，不能互相替代。
 
 ## 系统简介
 本智能体基于官方 baseline（InternLM/Challenge-Cup-2026）增强，采用“领域路由-生成-验证-反思-聚合”流水线。完整且唯一的当前架构说明见 `ARCHITECTURE.md`：
