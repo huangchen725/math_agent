@@ -5,48 +5,67 @@ description: Maintain and audit the XH-202627 competition math-agent repository 
 
 # Math Agent Maintainer
 
-Maintain the repository's single runtime architecture and its competition contract.
+Maintain the single active runtime while the repository is recovering from repeated official request-before-send failures.
 
 ## Establish scope
 
-Read `AGENTS.md` and inspect `git status` before editing. Preserve unrelated working-tree changes.
+Read `AGENTS.md`, inspect `git status`, and preserve unrelated changes. Read `docs/ENGINEERING_SPECIFICATION.md` before changing code. For runtime or component changes, read `ARCHITECTURE.md`; for competition-facing work, also read `docs/COMPETITION_COMPLIANCE.md` and `docs/OFFICIAL_MATERIALS_REGISTER.md`.
 
-Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The runtime path is `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`, and `demo.py`.
+The active runtime is the recovery snapshot matching the last officially scored commit `350a267f`. The S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7` for selective reintroduction. Do not describe archived modules as current architecture.
 
-## Preserve active contracts
+## Preserve the recovery anchor
 
 - Keep `ReasoningAgent(client).solve(problem, metadata)` returning a non-empty `final_response` string and a trace list.
-- Keep the API client injected and secrets environment-only.
-- Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
-- Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
-- Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
+- Until the first official anchor evaluation completes, do not change runtime files, prompts, candidates, temperatures, token budgets, tools, aggregation, or client calls. Documentation and offline tests may change without claiming that the historical runtime is already hardened.
+- Treat the exact `350a267f` runtime as a one-time compatibility canary, not a final design. Its historical extensions, trace behavior, and truncation behavior must not be copied into a post-anchor version.
+- Do not call a real API unless the user authorizes the expected request count and cost.
 
-## Make changes from evidence
+## Enforce the incident bottom line
 
-For correctness, prompt, candidate, temperature, thinking-mode, or token changes, first read the relevant history in `技术报告.md` and the current contract in `ARCHITECTURE.md`. Define a fixed dataset and record commit, model, configuration, request count, errors, runtime, and score. Change one experimental variable at a time.
+`IMPORT-001`, `IMPORT-002`, `CLIENT-001`, and `TEST-IMPORT-001` in the engineering specification are absolute release blockers.
 
-For tool changes, keep an explicit registry, JSON-schema definition, bounded arguments/results, restricted SymPy namespace, killable child-process timeout, and malformed-call behavior. Add an offline test for successful calculation and rejected hostile, excessive, or timed-out input.
+- Treat `sys.modules`, `sys.path`, the judge working directory, and preloaded modules as hostile integration state.
+- Never infer that `from llm_client import InternChatClient` resolves to a project-owned class. Never use such a class in `isinstance`/`issubclass` to unlock `chat_with_metadata`, tools, extra kwargs, metadata, or any privileged path.
+- A post-anchor formal entrypoint must treat every injected client as external and call only `chat(messages=..., temperature=..., max_tokens=...)`.
+- Put project-private client features behind an explicit local adapter outside the formal import graph. Do not probe markers, fields, same-name methods, signatures, or attributes.
+- Keep a real `ReasoningAgent` declaration in root `user_agent.py`. Use project-prefixed formal module names; do not add generic top-level names such as `agent`, `context`, `solver`, `budget`, or `llm_client`.
+- Before editing an injected-client boundary, first reproduce the official load order: preload a foreign `llm_client`, then import `user_agent`. Also test a strict three-parameter fake without `**kwargs`, a private-attribute trap, isolated path loading, and the complete `sys.modules` pollution matrix.
+- A local A/B may prove a deterministic code defect. It cannot close `OFFICIAL-GAP-CLIENT`, `OFFICIAL-GAP-ERROR`, `OFFICIAL-GAP-RUNNER`, or `OFFICIAL-GAP-CHANGE` without the required official evidence.
 
-For runner changes, validate JSONL shape and indexes, keep atomic writes, retry invalid/error checkpoints, and test that paths cannot escape the output directory.
+## Reintroduce changes in order
 
-For client changes, retry only transient network/service errors and never log authorization headers or keys.
+Follow the recovery stages in `docs/ENGINEERING_SPECIFICATION.md`:
 
-For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
+1. R0 official compatibility anchor.
+2. R1 minimum public contract hardening, one variable per official run.
+3. Q0 frozen university-competition ability baseline.
+4. Q1 truncation, deterministic evidence, routing, verifier calibration, then advanced strategies.
+5. A1 maintainable architecture, importing low-risk quality assets before runtime topology.
+6. Q2 paired and repeated evidence of ability improvement.
 
-Keep synthetic benchmarks labeled as internal. Freeze their generator version, seed, SHA-256, code commit, model, Agent configuration, concurrency and repetition count before a live run. Store private questions and raw responses only under ignored outputs; commit only aggregate reports without question text.
+For architecture work, preserve one implementation and explicit state. Prefer uniquely prefixed root modules until package loading receives a dedicated official success result. A physical package is not forbidden, but package topology must be the only changed variable in its evaluation.
 
-## Verify
+For parser, canonicalizer, normalizer, validator, numeric-equivalence, serialization, or recovery-state work, also apply `.agents/skills/property-based-testing/SKILL.md`. Name a concrete property and keep a fixed example for every historical failure.
 
-Use the smallest focused offline test during iteration, then run:
+## Verification
+
+Run focused tests first, then the recovery baseline checks:
 
 ```bash
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
+python verify_math.py
 ```
 
-`python verify_math.py` is a safe dry-run. Do not pass `--execute`, or run `main.py`/`demo.py` against the real endpoint, unless the user authorizes quota/cost. State the planned request budget before a live run.
+These checks do not establish official compatibility or mathematical improvement. After S5 quality tooling is selectively restored, use its complete gate only after adapting it to the active runtime; do not copy archived green reports or weaken checks.
 
-## Keep documentation aligned
+## Documentation
 
-Update `README.md` for changed setup, environment variables, entrypoints, layout, or output behavior. Update `ARCHITECTURE.md` for changed contracts, components, data flow, tool limits, or failure behavior. Update `docs/AUDIT_AND_OPTIMIZATION.md` when a material finding is discovered, fixed, downgraded, or accepted. Do not create a second architecture document.
+- `ARCHITECTURE.md` is the only current architecture source.
+- `docs/ENGINEERING_SPECIFICATION.md` defines hard rules and the rebuild sequence.
+- `docs/AUDIT_AND_OPTIMIZATION.md` records incidents and decisions.
+- `docs/OFFICIAL_MATERIALS_REGISTER.md` is append-only for official evidence and unresolved contract gaps.
+- `docs/evaluations/` stores immutable experiment and official-log summaries.
+
+Update claims with their commit, model, configuration, dataset hash, request/error counts, and evidence limits. Never turn a request recovery, offline test, synthetic benchmark, or engineering improvement into an unsupported accuracy claim.

@@ -2,6 +2,10 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
+> **恢复状态（2026-09-04）**：活动运行时代码已以前向提交恢复到最后一个官方有分版本 `350a267f` 的完整内容树。该版本历史结果为 112 题、1082 次请求、23 题正确（20.54%），本次恢复只用于重新建立平台兼容锚点，不代表最终正确率目标。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，待请求链恢复后按单变量逐项引入。
+
+最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
+
 ## 核心接口
 
 ```python
@@ -13,6 +17,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
 - `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
+- 官方文件、消息、冲突口径和未公开契约见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)；赛事红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
 ## 环境与安装
 
@@ -145,4 +150,5 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 - 评测集必须记录来源、许可、数据划分和难度；进入正式盲测前必须排除与 prompt few-shot、样例和开发集的重合。
 - 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
+- 任何重新拆分必须保持根入口真实声明 `ReasoningAgent`，禁止用可碰撞的通用模块类身份开启私有 client 能力，并通过官方预加载顺序、严格三参数 client、隔离导入和模块污染矩阵。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

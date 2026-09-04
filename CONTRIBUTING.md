@@ -9,7 +9,7 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 ```
 
-先阅读 `AGENTS.md`；涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`。
+先阅读 `AGENTS.md` 和 `docs/ENGINEERING_SPECIFICATION.md`；涉及组件边界、数据流或接口时，再阅读并更新唯一架构文档 `ARCHITECTURE.md`。当前恢复锚点和 `archive/s1-s6-1fc98b7` 工程线不得混为同一活动架构。
 
 ## 修改原则
 
@@ -19,6 +19,8 @@ python -m pip install -r requirements-dev.txt
 - 新增运行依赖时同步更新对应 requirements 文件和 README。
 - 修复缺陷时优先在现有测试文件中补回归测试；只有没有自然归属时才新建测试文件。
 - 不把真实 API 调用放进默认测试。
+- 不使用通用裸模块类身份判断注入 client，也不调用其私有方法；任何入口或模块拆分必须通过官方预加载顺序、严格三参数 client、隔离导入和模块污染矩阵。
+- 正式评测一次只改变一个变量；结构迁移不得同时修改 prompt、模型设置、候选数、工具或聚合。
 
 ## 提交前检查
 

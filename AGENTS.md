@@ -2,12 +2,16 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. `user_agent.py::ReasoningAgent` and its flat-module dependencies are the only runtime architecture. `ARCHITECTURE.md` is the sole architecture source of truth.
+This repository is the XH-202627 competition math agent. The active runtime is the recovery snapshot whose tracked runtime content matches the last officially scored commit `350a267f`; the later S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7`. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the binding recovery, regression, and rebuild standard, not a second architecture document.
 
 ## Non-negotiable contracts
 
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.
 - Keep the client injected by the caller. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
+- Treat `sys.modules`, `sys.path`, the current working directory, and all judge-preloaded modules as untrusted. Never use a class imported from a collision-prone top-level module to classify the injected client and unlock private methods or extended request arguments. In particular, never recreate the `from llm_client import InternChatClient` + `isinstance(...)` + `chat_with_metadata` failure chain recorded as `IMPORT-001`/`IMPORT-002`.
+- Every post-anchor formal runtime must call an unknown injected client only through public `chat(messages=..., temperature=..., max_tokens=...)`. Project-only metadata or extensions require an explicit local adapter outside the formal import graph; capability probing, same-name methods, private markers, and signature guessing are forbidden.
+- Root `user_agent.py` must physically declare the public `ReasoningAgent`. New formal modules must use a project-unique prefix rather than generic names such as `agent`, `context`, `solver`, `budget`, or `llm_client`, until a package layout has passed an isolated single-variable official evaluation.
+- The unmodified `350a267f` runtime is a one-time compatibility canary and may retain historical request extensions only until its first official anchor run. Do not copy that exception into a changed version.
 - `final_response` contains the selected reasoning and ends with exactly one canonical `最终答案：...` line. The answer body must not contain an explanatory sentence.
 - The competition endpoint rejects `stream=True` and `n != 1`.
 - Do not change candidate counts, temperatures, thinking mode, or token budgets without an evaluation plan that isolates one variable and records the dataset/commit/config.
@@ -18,7 +22,9 @@ This repository is the XH-202627 competition math agent. `user_agent.py::Reasoni
 
 1. Inspect `git status` and preserve unrelated user changes. In particular, submission documents and generated report artifacts may be under active editing.
 2. Read `README.md`. For architecture changes, also read `ARCHITECTURE.md` and the relevant current source files.
-3. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
+3. Read `docs/ENGINEERING_SPECIFICATION.md` and keep `OFFICIAL-GAP-CLIENT`, `OFFICIAL-GAP-ERROR`, `OFFICIAL-GAP-RUNNER`, and `OFFICIAL-GAP-CHANGE` unresolved unless the required official evidence exists.
+4. Use the repository skill at `.agents/skills/math-agent-maintainer/SKILL.md` for maintenance, audit, reliability, security, prompt, tool, or runner work.
+5. Use `.agents/skills/property-based-testing/SKILL.md` for parser, normalization, equivalence, serialization, or state-machine invariant work.
 
 ## Relevant files
 
@@ -27,6 +33,9 @@ This repository is the XH-202627 competition math agent. `user_agent.py::Reasoni
 - Live API experiment: `verify_math.py`; it is dry-run by default, while `--execute` is manual and may incur cost.
 - Offline evaluation: `evaluation/audit_dataset.py` audits provenance and prompt/sample overlap; `evaluation/judge.py` keeps unverifiable equivalence as `unknown`; generated internal benchmarks must never be described as official or pretraining-independent results.
 - Generated outputs: `outputs/`; never use them as committed source.
+- Incident evidence: `docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md`.
+- Recovery and rebuild rules: `docs/ENGINEERING_SPECIFICATION.md`.
+- Official evidence ledger: `docs/OFFICIAL_MATERIALS_REGISTER.md`.
 
 ## Verification
 
@@ -45,6 +54,8 @@ Run focused tests first while iterating, then all offline checks. Do not call th
 - Update `README.md` when setup, environment variables, entrypoints, output behavior, or directory layout changes.
 - Update `ARCHITECTURE.md` when component boundaries, data flow, contracts, tool limits, or runtime behavior changes. Do not create another architecture document.
 - Update `docs/AUDIT_AND_OPTIMIZATION.md` when closing or discovering a material defect.
+- Update `docs/ENGINEERING_SPECIFICATION.md` when an integration bottom line, recovery gate, or rebuild stage changes.
+- Update `docs/OFFICIAL_MATERIALS_REGISTER.md` only from a new official source; internal reproductions do not close an official contract gap.
 - Keep claims about accuracy, score, latency, cost, and platform limits tied to a recorded experiment or existing project evidence.
 - Use `AGENTS.md` for durable repository rules and the project skill for task-specific maintenance workflow. Avoid duplicating long architecture material in either file.
 
@@ -58,3 +69,5 @@ Run focused tests first while iterating, then all offline checks. Do not call th
 - Flag tests that require a real API key or depend on stochastic model output.
 - Flag benchmark records without source, license, split, and calibrated level metadata; flag any test/dev item that overlaps prompt few-shots or public samples.
 - Flag judges that accept substring matches, unrestricted symbolic parsing, or semantic guesses as correct.
+- Flag generic bare runtime module names, client nominal-type checks, private client method access, or tests that do not preload the official `llm_client` name before importing the entrypoint.
+- Flag any architecture migration that also changes prompts, model settings, candidate counts, tool policy, or aggregation in the same official evaluation.
