@@ -2,7 +2,7 @@ from collections import Counter
 
 import hashlib
 
-from evaluation.generate_internal_benchmark import (
+from evaluation.data.generate_internal_benchmark import (
     dataset_sha256,
     generate_records,
     serialize_records,

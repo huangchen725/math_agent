@@ -92,13 +92,13 @@ Putnam 题包含证明和开放表达，不能用字符串包含或同源模型 
 从固定 PutnamBench checkout 生成公开基准：
 
 ```powershell
-python evaluation/import_putnam_bench.py outputs/putnam_bench_source/informal/putnam.json `
+python -m evaluation.data.import_putnam_bench outputs/putnam_bench_source/informal/putnam.json `
   --source-commit 34eba93650f2fa803ca6aae6dfd2c9f22d46c00d `
   --output outputs/ability_baseline_v1/public_putnam_120.jsonl `
   --manifest outputs/ability_baseline_v1/public_putnam_120_source_manifest.json `
   --count 120 --answer-target-count 72 --recent-from-year 2022 --recent-count 36
 ```
 
-实验前使用 `freeze_experiment.py` 生成旧版和新版各自的冻结 manifest。运行和评分后，使用 `blind_review.py create/resolve` 生成盲审裁决，再由 `paired_compare.py` 读取三份旧版报告、三份新版报告、两份冻结 manifest 和新版截断门禁报告。
+实验前使用 `python -m evaluation.experiments.freeze_experiment` 生成旧版和新版各自的冻结 manifest。运行和评分后，使用 `python -m evaluation.experiments.blind_review create/resolve` 生成盲审裁决，再由 `python -m evaluation.experiments.paired_compare` 读取三份旧版报告、三份新版报告、两份冻结 manifest 和新版截断门禁报告。
 
-协议的机器可读版本为 `evaluation/ability_protocol_v1.json`。
+协议的机器可读版本为 `evaluation/experiments/ability_protocol_v1.json`。
