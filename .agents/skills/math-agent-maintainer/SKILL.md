@@ -11,7 +11,7 @@ Maintain the repository's single runtime architecture and its competition contra
 
 Read `AGENTS.md` and inspect `git status` before editing. Preserve unrelated working-tree changes.
 
-Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The runtime path is `user_agent.py`, `agent_types.py`, `answer_equivalence.py`, `budget.py`, `domain_prompts.py`, `math_tools.py`, `tool_executor.py`, `llm_client.py`, `main.py`, and `demo.py`.
+Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runtime behavior, tools, configuration, or entrypoints. The only runtime implementation is the `math_agent/` package. Root `user_agent.py` is the competition compatibility facade; `main.py` and `demo.py` are adapters and must import the package public API.
 
 ## Preserve active contracts
 
@@ -20,6 +20,12 @@ Read `ARCHITECTURE.md` when a task changes component boundaries, contracts, runt
 - Preserve the response behavior: selected reasoning followed by exactly one canonical `最终答案：...` line whose body contains no explanation.
 - Keep `stream=False`, `n=1`, three-way local concurrency by default, and platform-compatible tool messages.
 - Treat problems, indexes, model output, tool calls, tool parameters, HTTP responses, and checkpoint files as untrusted.
+- Pass per-problem budget, trace, and model access through `SolveContext`; keep response metadata atomically bound by `ModelGateway` and never restore a last-response side channel.
+- Keep `agent.py` limited to lifecycle, validation, error containment, and compatibility delegates. Route, generate, evaluate, recover, select, and format through their focused modules instead of adding stage logic back to the Agent class.
+- Keep `math_tools.py` as a compatibility facade. Put restricted parsing, concrete tools, registry/dispatch, and the tool-calling loop in `math_parsing.py`, `tool_implementations.py`, `tool_registry.py`, and `tool_loop.py` respectively.
+- Keep evaluation code importable as packages under `evaluation.data`, `evaluation.scoring`, and `evaluation.experiments`. Reuse `evaluation.io_utils` for structured file I/O and never repair imports with `sys.path` mutation.
+- Treat `requirements*.txt` as dependency inputs and `requirements*.lock` as installation artifacts. Regenerate exact versions and SHA-256 hashes together, explicitly retain dependencies conditional on another supported Python minor, and verify shared locks with the lowest supported real interpreter plus `scripts.check_lock_closure`. Never relax `--require-hashes` to hide a resolution problem.
+- Preserve the complete quality-check list, coverage floor, secret/link checks, SHA-pinned CI actions, release path/size allowlists, and clean-commit provenance checks.
 
 ## Make changes from evidence
 
@@ -33,6 +39,8 @@ For client changes, retry only transient network/service errors and never log au
 
 For evaluation changes, audit dataset size and per-domain distribution, require source/license/split/level metadata, and check overlap against prompt few-shots and public samples. Never use substring containment as correctness evidence. Keep semantic or unproved symbolic equivalence as `unknown`, and do not describe a test set as held out when its provenance or split is missing.
 
+Invoke evaluation CLIs with `python -m evaluation.<group>.<module>` so package imports behave the same in tests and command-line use.
+
 Keep synthetic benchmarks labeled as internal. Freeze their generator version, seed, SHA-256, code commit, model, Agent configuration, concurrency and repetition count before a live run. Store private questions and raw responses only under ignored outputs; commit only aggregate reports without question text.
 
 ## Verify
@@ -40,12 +48,12 @@ Keep synthetic benchmarks labeled as internal. Freeze their generator version, s
 Use the smallest focused offline test during iteration, then run:
 
 ```bash
-python -m pytest -q
-python -m compileall -q .
-python -m ruff check .
+python -m scripts.run_quality_gates
 ```
 
-`python verify_math.py` is a safe dry-run. Do not pass `--execute`, or run `main.py`/`demo.py` against the real endpoint, unless the user authorizes quota/cost. State the planned request budget before a live run.
+The complete gate never calls the model endpoint. Its dependency audit may query a public vulnerability service; a report produced with `--skip-dependency-audit` is diagnostic only and cannot authorize a formal release. `python verify_math.py` is a safe dry-run. Do not pass `--execute`, or run `main.py`/`demo.py` against the real endpoint, unless the user authorizes quota/cost. State the planned request budget before a live run.
+
+For delivery, run the complete gate on a clean commit and then `python -m scripts.build_release`. A dirty workspace may use `--allow-dirty` only for a draft. Never convert a draft to formal status or expand the archive allowlist to include `.env`, outputs, private datasets, caches, or virtual environments.
 
 ## Keep documentation aligned
 

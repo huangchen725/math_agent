@@ -1,6 +1,6 @@
 import json
 
-from evaluation.score_run import extract_final_answer, score_run
+from evaluation.scoring.score_run import extract_final_answer, score_run
 
 
 def test_extract_final_answer_uses_last_canonical_line():
