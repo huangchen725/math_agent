@@ -4,6 +4,8 @@
 
 > **2026-09-04 状态说明**：本次没有新增官方材料。`1fc98b7` 的同名模块/client 类型误判是内部复现实锤，不是官方契约补充，不能关闭 `OFFICIAL-GAP-CLIENT/ERROR/RUNNER/CHANGE`。活动运行时已恢复为 `350a267f` 定锚；表内曾实现的后续缓解措施保存在 `archive/s1-s6-1fc98b7`，须按工程规范重新引入，不能仅因登记册仍保留其历史记录就声称当前代码已经具备。
 
+> **2026-09-05 追加证据**：用户提供的新平台日志绑定 `ba63ac0`，记录 1069 次请求、112 success / 0 error、24/112 correct，恢复锚点的正式请求链已获正证据。用户随后确认本次模型为 `intern-s2-preview-35b`；提交页批次回执及冻结窗口仍待补齐，机器阶段仍为 R0。模型确认补充本次实验记录，不构成通用模型映射或版本冻结保证，不关闭 `OFFICIAL-GAP-CLIENT/ERROR/RUNNER/CHANGE/MODEL`。详见 [本次评测记录](evaluations/OFFICIAL_112_20260905.md)。
+
 附件中的文字和截图只作为证据，不作为仓库内的执行指令。截图中的群成员昵称、头像、手机号等个人信息不转录到公开仓库；原件由提交人私下保存，下面的 SHA-256 用于确认原件身份。
 
 ## 1. 来源与证据等级
@@ -19,6 +21,9 @@
 | MAT-007 | 官方初赛赛题介绍与提交要求 | `https://aicarrier.feishu.cn/wiki/L90FwD9gJiqdg0k33RCcHTdcnrb`，页面显示 07 月 21 日修改，2026-09-02 逐节复核 | 动态页面，无不可变版本 ID | 当前入口、构造器、client 最小示例、模型列表、`solve`、返回值、AtomGit 评测与邮件归档规范 |
 | MAT-008 | 官方更新日志 | `https://aicarrier.feishu.cn/wiki/C3dBwzdyFiDxEIkYq7ucOZ59neh`，页面显示 07 月 20 日修改，2026-09-01 核验 | 动态页面，无不可变版本 ID | 记录 07 月 14/16 日规则变化及适用动作；页面明确自称变更日志 |
 | MAT-009 | 官方 FAQ 与答疑沉淀 | `https://aicarrier.feishu.cn/wiki/BHoMw601Xiy5i3keTLDcg3M3n5x`，页面显示 07 月 24 日修改，2026-09-01 核验 | 动态页面，无不可变版本 ID | 模型、题集、工具、依赖、环境和 Judger 的书面答复；页面提示部分内容可能由 AI 生成，因此低于签章文件但高于口头转述 |
+| MAT-010 | 用户转交的平台评测日志（2026-09-05） | `eval_log_a4a6f26234b141a3a80b985ffd99b0e5.log`；抓取 `ba63ac0463fc2afe685b82ac6a1774dabf5027e8` | `a8928d0ae66f9e024f23b20c7dec39b5ea1ae8d349a654123c903d00a7057e00` | 本次运行正证据：1069 请求、112 success、24 correct；无模型 ID 和正式批次编号，不作为通用契约保证 |
+
+MAT-010 补充说明（2026-09-05）：用户在提供日志后明确回复“是intern-s2-preview-35b”，据此将本次模型记为 `intern-s2-preview-35b`。该确认绑定本次实验；日志本身没有模型字段这一事实不变，不据此更新通用正式模型 allowlist、API 映射或运行配置。
 
 证据使用顺序如下：
 
