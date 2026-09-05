@@ -7,7 +7,7 @@ import json
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from agent_types import Candidate, Verification
 from answer_equivalence import (
@@ -17,8 +17,7 @@ from answer_equivalence import (
     numeric_value,
 )
 from budget import BudgetExceeded, ExecutionBudget
-from llm_client import InternChatClient
-from math_tools import run_tool_loop, TOOL_DEFINITIONS
+from math_tools import run_tool_loop
 from domain_prompts import get_domain_prompt
 
 
@@ -88,7 +87,7 @@ class AgentConfig:
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
-    # thinking mode（v13: False——thinking导致截断）
+    # thinking mode（v13: False——thinking导致截断；R1-1 三参数投影后不再发送）
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
     critic_thinking_mode: bool = False
@@ -110,12 +109,13 @@ class AgentConfig:
 class ReasoningAgent:
     """领域路由、工具增强、验证、反思与聚合智能体。"""
 
-    def __init__(self, client: InternChatClient, config: AgentConfig | None = None) -> None:
+    def __init__(self, client: Any, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
         self.client = client
 
-    def _chat(self, system_prompt: str, user_content: str, **kwargs) -> str:
-        """调用 client.chat，返回文本。"""
+    def _chat(self, system_prompt: str, user_content: str,
+              temperature: float, max_tokens: int) -> str:
+        """调用 client.chat，返回文本。仅使用三参数公开协议（CLIENT-001）。"""
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -123,9 +123,9 @@ class ReasoningAgent:
         budget = _ACTIVE_BUDGET.get()
         if budget is not None:
             budget.consume_model_request()
-        resp = self.client.chat(messages=messages, **kwargs)
-        if budget is not None and hasattr(self.client, "get_last_response_meta"):
-            budget.record_response_meta(self.client.get_last_response_meta())
+        resp = self.client.chat(
+            messages=messages, temperature=temperature, max_tokens=max_tokens
+        )
         return resp if isinstance(resp, str) else str(resp.get("content", ""))
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
@@ -318,7 +318,6 @@ class ReasoningAgent:
             response, tt = run_tool_loop(
                 self.client, messages,
                 max_rounds=self.config.max_tool_rounds,
-                thinking_mode=self.config.policy_thinking_mode,
                 temperature=self.config.policy_temperature,
                 max_tokens=self.config.max_tokens,
                 tool_timeout_seconds=self.config.tool_timeout_seconds,
@@ -346,8 +345,7 @@ class ReasoningAgent:
             prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
             return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
                               temperature=self.config.policy_temperature,
-                              max_tokens=self.config.max_tokens,
-                              thinking_mode=self.config.policy_thinking_mode)
+                              max_tokens=self.config.max_tokens)
         except BudgetExceeded:
             raise
         except Exception:
@@ -366,8 +364,7 @@ class ReasoningAgent:
                 verdict = self._chat(VERIFIER_PROMPT,
                     f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
                     temperature=self.config.verifier_temperature,
-                    max_tokens=self.config.verifier_max_tokens,
-                    thinking_mode=self.config.verifier_thinking_mode)
+                    max_tokens=self.config.verifier_max_tokens)
                 passed = self._is_correct(verdict)
                 votes.append(passed)
                 verifications.append(Verification(
@@ -396,8 +393,7 @@ class ReasoningAgent:
             criticism = self._chat(CRITIC_PROMPT,
                 f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n请找出错误或改进点。",
                 temperature=self.config.critic_temperature,
-                max_tokens=self.config.critic_max_tokens,
-                thinking_mode=self.config.critic_thinking_mode)
+                max_tokens=self.config.critic_max_tokens)
             trace.append({"step": "critic", "content": criticism[:500]})
             return criticism
         except BudgetExceeded:
@@ -415,8 +411,7 @@ class ReasoningAgent:
             )
             resp = self._chat(POLICY_PROMPT, prompt,
                               temperature=self.config.reflection_temperature,
-                              max_tokens=self.config.max_tokens,
-                              thinking_mode=self.config.policy_thinking_mode)
+                              max_tokens=self.config.max_tokens)
             trace.append({"step": "reflection", "content": resp[:1000]})
             return resp
         except BudgetExceeded:
@@ -523,7 +518,7 @@ class ReasoningAgent:
         try:
             resp = self._chat(POLICY_NO_TOOL_PROMPT,
                 f"{problem}\n\n请直接给出最终答案，不要详细推导。单独一行按“最终答案：XXX”输出，XXX 只写答案本体。",
-                temperature=0.0, max_tokens=self.config.fallback_max_tokens, thinking_mode=False)
+                temperature=0.0, max_tokens=self.config.fallback_max_tokens)
             ans = self._extract_answer(resp)
             trace.append({"step": "fallback_result", "content": ans[:100]})
             return ans or resp.strip()[:200]

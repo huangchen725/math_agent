@@ -286,8 +286,14 @@ def evaluate(
         for path in runtime_paths:
             blockers.extend(_scan_python(path, manifest))
 
-    topology_changed = "ARCHITECTURE.md" in normalized or any(
-        path.endswith(".py") and not _anchor_contains(path, manifest) for path in normalized
+    # DOC-001 强制运行时变更同步 ARCHITECTURE.md，因此架构文档的出现不能
+    # 作为拓扑迁移信号；物理拓扑信号是新增顶层正式模块（根目录 .py 且
+    # 不在锚点中），tests/、.agents/、evaluation/ 等支持目录不构成拓扑。
+    topology_changed = any(
+        "/" not in path
+        and path.endswith(".py")
+        and not _anchor_contains(path, manifest)
+        for path in normalized
     )
     strategy_paths = {
         "domain_prompts.py",

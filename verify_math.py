@@ -119,7 +119,6 @@ def ask_api(client: InternChatClient, problem: str, temperature: float = 0.0) ->
         ],
         temperature=temperature,
         max_tokens=2048,
-        thinking_mode=False,
     )
     return resp
 

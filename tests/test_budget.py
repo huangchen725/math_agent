@@ -15,16 +15,6 @@ class TextClient:
             return "VERDICT: A"
         return "推理\n最终答案：2"
 
-    @staticmethod
-    def get_last_response_meta():
-        return {
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-            }
-        }
-
 
 def test_execution_budget_enforces_request_and_tool_limits():
     budget = ExecutionBudget(
@@ -56,7 +46,9 @@ def test_agent_records_per_problem_budget_usage():
     summary = result["trace"][-1]
     assert summary["step"] == "budget_summary"
     assert summary["content"]["model_requests"] == 2
-    assert summary["content"]["total_tokens"] == 30
+    # R1-1 三参数投影移除了 last-response getter 读取（CLIENT-001），
+    # usage token 记账降级为 0，待 R1-2 显式本地适配器恢复。
+    assert summary["content"]["total_tokens"] == 0
 
 
 def test_agent_stops_before_exceeding_model_request_budget():

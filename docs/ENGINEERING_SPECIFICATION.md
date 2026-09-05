@@ -107,6 +107,8 @@ S1～S6 的代码、测试、CI、评测和交付成果没有丢失，完整保�
 
 按独立提交逐项完成：三参数投影、宽构造器、公开 trace 脱敏、完整生命周期兜底、截断响应隔离。每项都先添加失败回归；不改变模型、prompt、候选数、温度和聚合。
 
+进展（2026-09-05）：R1-1 三参数投影已完成——`user_agent.py`、`math_tools.py`、`verify_math.py` 的全部 `client.chat` 调用收敛为 `messages/temperature/max_tokens` 三参数；移除 `thinking_mode`、`tools`、`tool_choice` 发送与 `get_last_response_meta` 读取；根入口不再 import `llm_client`（IMPORT-001 碰撞面消除）；严格三参数 fake 回归（`tests/test_client_projection.py`）先行。已知降级：usage token 记账暂缺（R1-2 经显式本地适配器恢复）；正式平台工具候选暂退化为纯推理请求（R1-2 恢复本地工具路径）。工具定义、执行与安全边界未变。
+
 退出条件：严格 client、官方预加载、污染矩阵、根文件闭包和隔离入口全部通过；第二次正式运行保持请求链有效。
 
 ### Q0：可信能力基线

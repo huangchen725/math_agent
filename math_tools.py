@@ -514,11 +514,14 @@ def execute_tool_call(
 
 
 def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
-                  thinking_mode: bool = True, temperature: float = 0.6,
+                  temperature: float = 0.6,
                   max_tokens: int = 8192,
                   tool_timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
                   budget=None) -> tuple[str, List[Dict]]:
     """工具调用循环：调 client.chat → 若返回 tool_calls 则执行并回灌 → 直到文本回复。
+
+    R1-1 三参数投影：请求只使用 messages/temperature/max_tokens（CLIENT-001）。
+    循环结构保留，以处理仍返回 tool_calls 的响应。
 
     返回 (最终文本回复, 工具调用trace)
     """
@@ -530,14 +533,9 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
             budget.consume_model_request()
         response = client.chat(
             messages=current_messages,
-            tools=TOOL_DEFINITIONS,
-            tool_choice="auto",
             temperature=temperature,
             max_tokens=max_tokens,
-            thinking_mode=thinking_mode,
         )
-        if budget is not None and hasattr(client, "get_last_response_meta"):
-            budget.record_response_meta(client.get_last_response_meta())
 
         # 文本回复 → 结束
         if isinstance(response, str):
@@ -608,10 +606,7 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
         messages=current_messages,
         temperature=0.0,
         max_tokens=1024,
-        thinking_mode=False,
     )
-    if budget is not None and hasattr(client, "get_last_response_meta"):
-        budget.record_response_meta(client.get_last_response_meta())
     if isinstance(response, str):
         return response, trace
     return str(response)[:500], trace

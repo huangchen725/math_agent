@@ -152,7 +152,56 @@ def test_entrypoint_must_physically_declare_reasoning_agent() -> None:
     assert "ENTRY-001" in {finding.rule for finding in blockers}
 
 
-def test_anchor_canary_matches_last_scored_runtime() -> None:
+def test_new_test_file_with_strategy_edit_is_not_topology_change() -> None:
     manifest = guard.load_manifest()
 
-    assert guard._anchor_canary(manifest) == []
+    # 新增 tests/ 下的测试文件不算正式拓扑变更，不应触发 CHANGE-001 误报
+    triggers, blockers = guard.evaluate(
+        ["math_tools.py", "tests/test_client_projection.py"], manifest, planned=True
+    )
+
+    rules = {finding.rule for finding in blockers}
+    assert "CHANGE-001" not in rules
+
+
+def test_doc_sync_with_strategy_edit_is_not_topology_change() -> None:
+    manifest = guard.load_manifest()
+
+    # DOC-001 强制的架构文档同步不得触发 CHANGE-001 误报
+    triggers, blockers = guard.evaluate(
+        [
+            "ARCHITECTURE.md",
+            "README.md",
+            "docs/ENGINEERING_SPECIFICATION.md",
+            "math_tools.py",
+            "user_agent.py",
+        ],
+        manifest,
+        planned=False,
+    )
+
+    rules = {finding.rule for finding in blockers}
+    assert "CHANGE-001" not in rules
+    assert rules == set()
+
+
+def test_new_formal_module_with_strategy_edit_is_topology_change() -> None:
+    manifest = guard.load_manifest()
+
+    # 新增正式根模块 + 修改策略文件仍必须触发 CHANGE-001
+    triggers, blockers = guard.evaluate(
+        ["domain_prompts.py", "xh202627_helper.py"], manifest, planned=True
+    )
+
+    rules = {finding.rule for finding in blockers}
+    assert "CHANGE-001" in rules
+
+
+def test_anchor_canary_reports_r1_runtime_divergence() -> None:
+    manifest = guard.load_manifest()
+
+    # R1 加固开始后，运行时合法偏离 350a267f 锚点，canary 必须如实
+    # 报告偏离而不是通过；该检查只适用于未改动的历史锚点。
+    rules = {finding.rule for finding in guard._anchor_canary(manifest)}
+    assert manifest["phase"] == "R1"
+    assert "ANCHOR-001" in rules
