@@ -7,7 +7,7 @@ import requests
 
 
 DEFAULT_API_BASE = "https://chat.intern-ai.org.cn/api/v1/chat/completions"
-DEFAULT_MODEL = "intern-s2-preview"
+DEFAULT_MODEL = "intern-s2-preview-397b"
 DEFAULT_TEMPERATURE = 0.2
 DEFAULT_MAX_TOKENS = 4096
 _RATE_LIMIT_CODES = {"rate_limit_error", "rate_limit_exceeded", "too_many_requests"}
