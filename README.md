@@ -2,7 +2,7 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
-> **恢复状态（2026-09-04）**：活动运行时代码已以前向提交恢复到最后一个官方有分版本 `350a267f` 的完整内容树。该版本历史结果为 112 题、1082 次请求、23 题正确（20.54%），本次恢复只用于重新建立平台兼容锚点，不代表最终正确率目标。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，待请求链恢复后按单变量逐项引入。
+> **恢复状态（2026-09-05）**：活动运行时代码已恢复到最后一个官方有分版本 `350a267f` 的完整内容树，并于 2026-09-05 完成原样官方定锚评测：平台抓取 `ba63ac0`，112 题全部成功运行、1069 次请求、答对 24 题（21.43%），请求链恢复已获正式正证据。当前阶段为 R1 最小契约加固，按独立提交逐项完成三参数投影、宽构造器、trace 脱敏、生命周期兜底与截断隔离，不改变模型、prompt、候选数、温度和聚合。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，按单变量逐项重新验证后引入。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
@@ -92,7 +92,7 @@ python -m compileall -q .
 python -m ruff check .
 ```
 
-所有仓库任务在修改前还必须运行 `python .agents/policy_guard.py --paths <预计路径...>`；不改文件的真实 API、推送、提交、发布等动作使用 `--actions`。守卫会列出本次触发的规则 ID；出现 `[POLICY BLOCK]` 时，工作 agent 必须在执行前报告具体动作、风险和安全替代，并停止触线子动作。完整流程见 [.agents/policies/HARD_RULES.md](.agents/policies/HARD_RULES.md)。当前 R0 官方定锚使用 `--anchor-canary`；改动版的 `--formal` 必须等规则阶段正式进入 R1 后使用。
+所有仓库任务在修改前还必须运行 `python .agents/policy_guard.py --paths <预计路径...>`；不改文件的真实 API、推送、提交、发布等动作使用 `--actions`。守卫会列出本次触发的规则 ID；出现 `[POLICY BLOCK]` 时，工作 agent 必须在执行前报告具体动作、风险和安全替代，并停止触线子动作。完整流程见 [.agents/policies/HARD_RULES.md](.agents/policies/HARD_RULES.md)。阶段已于 2026-09-05 进入 R1：改动版正式检查使用 `--formal`；`--anchor-canary` 仅用于核对历史锚点内容，不能为改动版背书。
 
 对本地 JSONL 题集做题量、领域分布、来源字段、内部重复和 prompt/sample 重合审计，同样不会访问 API：
 

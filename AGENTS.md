@@ -13,7 +13,7 @@ This section applies to every repository task, including documentation, tests, S
 3. In the next work update, state the current phase and every triggered rule ID. Do not leave a triggered rule implicit.
 4. If a planned action violates a blocker, report `[POLICY BLOCK] <RULE-ID>` with the exact action, consequence, and safe alternative before executing it. Stop the violating sub-action; continue safe in-scope work where possible.
 5. Run `python .agents/policy_guard.py --changed` after edits and again before commit. A nonzero result blocks commit, push, formal evaluation, and release.
-6. Before official submission, run `--anchor-canary` for the untouched R0 anchor or `--formal` after the documented move to R1. Never use the anchor exception for a changed runtime.
+6. Since the documented move to R1 on 2026-09-05, run `--formal` for changed formal candidates. `--anchor-canary` only verifies the untouched historical anchor and must never justify a changed runtime. Never carry the historical request-extension exception into a new version.
 
 User authorization for cost, network, or push does not waive competition, security, secret, data, client-contract, or release blockers. Update a blocker only through a separate evidence-backed policy change with matching tests. Never weaken a rule, remove a test, or change status wording merely to let the current task pass.
 

@@ -56,14 +56,14 @@ python .agents/policy_guard.py --changed
 正式候选还必须二选一：
 
 ```bash
-# 当前唯一允许的历史定锚检查
+# 仅核对历史锚点内容（R0 已于 2026-09-05 完成并消耗定锚例外）
 python .agents/policy_guard.py --anchor-canary
 
-# R1 以后改动版的完整正式检查
+# R1 起改动版的完整正式检查
 python .agents/policy_guard.py --formal
 ```
 
-`--anchor-canary` 只验证活动运行时仍与 `350a267f` 一致，不证明旧请求参数、trace 或截断边界安全。`--formal` 在 R0 必须失败；只有规则阶段更新到 R1 以后才可作为正式改动版门禁。
+`--anchor-canary` 只验证活动运行时仍与 `350a267f` 一致，不证明旧请求参数、trace 或截断边界安全；运行时在 R1 加固中偏离锚点后，该检查即不再适用。`--formal` 自 2026-09-05 阶段进入 R1 起作为正式改动版门禁；改动版必须先完成 `CLIENT-001` 三参数投影等加固项才能通过。
 
 ## 证据不足时
 

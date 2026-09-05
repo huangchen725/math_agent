@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-09-04.1",
-  "phase": "R0",
+  "policy_version": "2026-09-05.1",
+  "phase": "R1",
   "authoritative_spec": "docs/ENGINEERING_SPECIFICATION.md",
   "human_protocol": ".agents/policies/HARD_RULES.md",
   "anchor_commit": "350a267f",

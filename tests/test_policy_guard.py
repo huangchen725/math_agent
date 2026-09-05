@@ -66,13 +66,25 @@ def test_upstream_skill_files_match_recorded_current_hashes() -> None:
     assert mismatches == []
 
 
-def test_r0_preflight_blocks_runtime_change_before_mutation() -> None:
+def test_r1_preflight_allows_planned_runtime_change() -> None:
     manifest = guard.load_manifest()
 
     triggers, blockers = guard.evaluate(["user_agent.py"], manifest, planned=True)
 
     assert "ANCHOR-001" in triggers["user_agent.py"]
-    assert "ANCHOR-001" in {finding.rule for finding in blockers}
+    assert manifest["phase"] == "R1"
+    assert blockers == []
+
+
+def test_r1_changed_runtime_is_scanned_for_client_contract() -> None:
+    manifest = guard.load_manifest()
+
+    triggers, blockers = guard.evaluate(["user_agent.py"], manifest, planned=False)
+
+    assert "CLIENT-001" in triggers["user_agent.py"]
+    rules = {finding.rule for finding in blockers}
+    assert "DOC-001" in rules
+    assert "ANCHOR-001" not in rules
 
 
 def test_document_only_preflight_is_allowed() -> None:
