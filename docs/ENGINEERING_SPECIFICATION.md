@@ -111,6 +111,8 @@ S1～S6 的代码、测试、CI、评测和交付成果没有丢失，完整保�
 
 进展（2026-09-05）：R1-2 宽构造器已完成——`ReasoningAgent(client, config, local_adapter=...)` 显式接受本地适配器（`local_support/xh202627_local_adapter.py`，CLIENT-002：正式入口导入图之外），适配器提供三参数同形的 `chat`（内部 `meta_sink` 记账）、`chat_with_tools`（本地工具恢复）与 `read_usage`。`llm_client.py` 删除 ContextVar 与 `get_last_response_meta` 静态方法，`chat` 新增 `meta_sink` 回调（不进 HTTP payload）。R1-1 的两项降级均已恢复：本地 usage 记账、本地工具路径；正式平台行为不变（无适配器即纯三参数，无能力探测）。`--formal` 全量门禁通过（运行时契约零 blocker）；守卫同时修正两处启发式误报（CHANGE-001 拓扑信号收敛为“新增顶层正式模块”、DOC-001 变更伴随检查不适用于 `--formal` 全量审计语义），均配测试固化。
 
+进展（2026-09-05）：R1-3 公开 trace 脱敏已完成——`user_agent.py` 新增 `_clip_for_trace`（300 字符统一上限 + 显式截断标记）与 `_clip_trace_item`（嵌套工具循环记录），全部 trace 写入点（候选、工具循环、验证、批评、反思、回退、错误与预算摘要的错误文本）统一走该辅助；回归断言 trace 字符串上限与序列化后不含凭据类标记。求解行为与聚合规则不变。
+
 退出条件：严格 client、官方预加载、污染矩阵、根文件闭包和隔离入口全部通过；第二次正式运行保持请求链有效。
 
 ### Q0：可信能力基线

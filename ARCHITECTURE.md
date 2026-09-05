@@ -26,7 +26,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
 - `client` 必须提供公开 `chat(messages=..., temperature=..., max_tokens=...)`（R1-1 三参数投影），由调用方注入，运行时一律按外部对象处理。
 - `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理，并以唯一一行 `最终答案：...` 结尾。该行只含规范化答案体，不含解释性句子；常见 Unicode/LaTeX 表示转换为稳定记号，已有精确形式时优先保留精确形式。
-- `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要。
+- `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要；R1-3 起所有字符串内容经统一脱敏截断（300 字符上限 + 显式截断标记），不含凭据类材料。
 - `ReasoningAgent.solve()` 捕获全局异常并尝试低成本回退；`main.py` 将空答案和 `未解出` 视为失败记录。
 
 R1-1（2026-09-05）已完成该收敛：运行时对所有注入 client 只调用三参数公开 `chat`，不再发送 `thinking_mode`、`tools`、`tool_choice`，也不再读取最近响应 getter；根入口已不再 import `llm_client`（IMPORT-001 碰撞面消除）。R1-2（2026-09-05）增加宽构造器：`ReasoningAgent(client, config, local_adapter=...)` 可显式注入 `local_support/xh202627_local_adapter.py` 的本地适配器（CLIENT-002，正式入口导入图之外），为本地入口恢复 usage 记账与工具调用；正式平台不传适配器，全部请求保持三参数，运行时不做任何能力探测。

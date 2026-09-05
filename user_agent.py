@@ -26,6 +26,30 @@ _ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
     default=None,
 )
 
+# R1-3 公开 trace 脱敏：所有进入 trace 的字符串内容统一上限与截断标记。
+_TRACE_CLIP_LIMIT = 300
+
+
+def _clip_for_trace(content, limit: int = _TRACE_CLIP_LIMIT) -> str:
+    """统一截断进入 trace 的内容，附带显式截断标记。"""
+    if content is None:
+        return ""
+    if not isinstance(content, str):
+        try:
+            content = json.dumps(content, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            content = str(content)
+    if len(content) <= limit:
+        return content
+    return f"{content[:limit]}...[截断 {len(content) - limit} 字符]"
+
+
+def _clip_trace_item(item: Dict) -> Dict:
+    """对嵌套 trace 项（如工具循环记录）应用统一脱敏。"""
+    if not isinstance(item, dict):
+        return {"step": "item", "content": _clip_for_trace(item)}
+    return {"step": item.get("step", ""), "content": _clip_for_trace(item.get("content", ""))}
+
 
 # ==================== 提示词 ====================
 
@@ -196,12 +220,12 @@ class ReasoningAgent:
             try:
                 result = self._solve_impl(problem, trace)
             except BudgetExceeded as e:
-                trace.append({"step": "budget_exceeded", "content": str(e)[:300]})
+                trace.append({"step": "budget_exceeded", "content": _clip_for_trace(str(e))})
                 result = {"final_response": "未解出", "trace": trace}
             except Exception as e:
                 trace.append({
                     "step": "global_error",
-                    "content": f"{type(e).__name__}: {str(e)[:300]}",
+                    "content": _clip_for_trace(f"{type(e).__name__}: {str(e)}"),
                 })
                 try:
                     fb = self._quick_fallback(problem, trace)
@@ -210,7 +234,7 @@ class ReasoningAgent:
                 except BudgetExceeded as budget_error:
                     trace.append({
                         "step": "budget_exceeded",
-                        "content": str(budget_error)[:300],
+                        "content": _clip_for_trace(str(budget_error)),
                     })
                     result = {"final_response": "未解出", "trace": trace}
             trace.append({"step": "budget_summary", "content": budget.snapshot()})
@@ -317,13 +341,13 @@ class ReasoningAgent:
                 cand, tt = self._solve_tools(problem, i, domain_prompt)
             else:
                 cand = self._solve_plain(problem, domain_prompt)
-                tt = [{"step": f"policy_tool_{i}", "content": cand[:1000]}]
+                tt = [{"step": f"policy_tool_{i}", "content": _clip_for_trace(cand)}]
             candidates.append(cand)
             trace.extend(tt)
         for i in range(self.config.plain_candidates):
             cand = self._solve_plain(problem, domain_prompt)
             candidates.append(cand)
-            trace.append({"step": f"policy_plain_{i}", "content": cand[:1000]})
+            trace.append({"step": f"policy_plain_{i}", "content": _clip_for_trace(cand)})
         return [c for c in candidates if c], trace
 
     def _solve_tools(self, problem: str, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
@@ -342,20 +366,20 @@ class ReasoningAgent:
                 tool_client=self.local_adapter,
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
-                trace = [{"step": f"tool_solve_{cid}", "content": tt}]
+                trace = [{"step": f"tool_solve_{cid}", "content": [_clip_trace_item(item) for item in tt]}]
                 trace.append({"step": f"truncated_{cid}", "content": "截断兜底"})
                 fb = self._quick_fallback(problem, trace)
                 if fb:
                     response = fb
-                trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
+                trace.append({"step": f"policy_tool_{cid}", "content": _clip_for_trace(response)})
                 return response, trace
-            trace = [{"step": f"tool_solve_{cid}", "content": tt}]
-            trace.append({"step": f"policy_tool_{cid}", "content": response[:2000]})
+            trace = [{"step": f"tool_solve_{cid}", "content": [_clip_trace_item(item) for item in tt]}]
+            trace.append({"step": f"policy_tool_{cid}", "content": _clip_for_trace(response)})
             return response, trace
         except BudgetExceeded:
             raise
         except Exception as e:
-            trace = [{"step": f"tool_error_{cid}", "content": str(e)[:200]}]
+            trace = [{"step": f"tool_error_{cid}", "content": _clip_for_trace(str(e))}]
             return self._solve_plain(problem, domain_prompt), trace
 
     def _solve_plain(self, problem: str, domain_prompt: str) -> str:
@@ -391,7 +415,7 @@ class ReasoningAgent:
                     confidence=1.0 if passed else 0.0,
                     detail=verdict[:200],
                 ))
-                trace.append({"step": f"verify_{cid}_{vid}", "content": verdict[:200]})
+                trace.append({"step": f"verify_{cid}_{vid}", "content": _clip_for_trace(verdict)})
             except BudgetExceeded:
                 raise
             except Exception as e:
@@ -402,7 +426,7 @@ class ReasoningAgent:
                     confidence=0.0,
                     detail=f"{type(e).__name__}: {str(e)[:160]}",
                 ))
-                trace.append({"step": f"verify_err_{cid}_{vid}", "content": str(e)[:200]})
+                trace.append({"step": f"verify_err_{cid}_{vid}", "content": _clip_for_trace(str(e))})
         return (sum(votes) / len(votes) if votes else 0.0), trace, verifications
 
     def _critic(self, problem: str, candidate: str, trace: List[Dict]) -> str:
@@ -412,12 +436,12 @@ class ReasoningAgent:
                 f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n请找出错误或改进点。",
                 temperature=self.config.critic_temperature,
                 max_tokens=self.config.critic_max_tokens)
-            trace.append({"step": "critic", "content": criticism[:500]})
+            trace.append({"step": "critic", "content": _clip_for_trace(criticism)})
             return criticism
         except BudgetExceeded:
             raise
         except Exception as e:
-            trace.append({"step": "critic_error", "content": str(e)[:200]})
+            trace.append({"step": "critic_error", "content": _clip_for_trace(str(e))})
             return ""
 
     def _reflect(self, problem: str, prev: str, feedback: str, trace: List[Dict]) -> str:
@@ -430,12 +454,12 @@ class ReasoningAgent:
             resp = self._chat(POLICY_PROMPT, prompt,
                               temperature=self.config.reflection_temperature,
                               max_tokens=self.config.max_tokens)
-            trace.append({"step": "reflection", "content": resp[:1000]})
+            trace.append({"step": "reflection", "content": _clip_for_trace(resp)})
             return resp
         except BudgetExceeded:
             raise
         except Exception as e:
-            trace.append({"step": "reflect_error", "content": str(e)[:200]})
+            trace.append({"step": "reflect_error", "content": _clip_for_trace(str(e))})
             return ""
 
     def _aggregate(self, scored: List[Candidate], trace: List[Dict]) -> Tuple[str, str]:
@@ -538,7 +562,7 @@ class ReasoningAgent:
                 f"{problem}\n\n请直接给出最终答案，不要详细推导。单独一行按“最终答案：XXX”输出，XXX 只写答案本体。",
                 temperature=0.0, max_tokens=self.config.fallback_max_tokens)
             ans = self._extract_answer(resp)
-            trace.append({"step": "fallback_result", "content": ans[:100]})
+            trace.append({"step": "fallback_result", "content": _clip_for_trace(ans)})
             return ans or resp.strip()[:200]
         except BudgetExceeded:
             raise
