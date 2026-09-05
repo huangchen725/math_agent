@@ -253,8 +253,11 @@ class ReasoningAgent:
         candidates, gen_trace = self._generate_candidates(problem, domain_prompt)
         trace.extend(gen_trace)
 
-        # 截断兜底
-        if not candidates or all(not self._extract_answer(c) for c in candidates):
+        # 截断兜底（R1-5：疑似截断的候选视为无答案）
+        if not candidates or all(
+            self._is_likely_truncated(c) or not self._extract_answer(c)
+            for c in candidates
+        ):
             trace.append({"step": "truncated_fallback", "content": "所有候选被截断"})
             if self.config.enable_fallback:
                 fb = self._quick_fallback(problem, trace)
@@ -266,7 +269,7 @@ class ReasoningAgent:
         try:
             for cid, candidate in enumerate(candidates):
                 confidence, vt, verifications = self._verify(problem, candidate, cid)
-                answer = build_answer(self._extract_answer(candidate))
+                answer = self._answer_for_aggregation(candidate, cid, trace)
                 strategy = (
                     "tool"
                     if self.config.enable_tools and cid < self.config.tool_candidates
@@ -285,8 +288,8 @@ class ReasoningAgent:
             # R1-4 生命周期兜底：验证阶段预算耗尽时保留已有候选，
             # 剩余候选以无票状态进入聚合（聚合本身不消耗预算）。
             trace.append({"step": "verify_budget_exhausted", "content": _clip_for_trace(str(e))})
-            for candidate in candidates[len(scored):]:
-                answer = build_answer(self._extract_answer(candidate))
+            for cid, candidate in enumerate(candidates[len(scored):], start=len(scored)):
+                answer = self._answer_for_aggregation(candidate, cid, trace)
                 strategy = (
                     "tool"
                     if self.config.enable_tools and len(scored) < self.config.tool_candidates
@@ -579,6 +582,24 @@ class ReasoningAgent:
         head = limit // 2
         tail = limit - head
         return f"{text[:head]}\n...[中间内容已截断]...\n{text[-tail:]}"
+
+    def _is_likely_truncated(self, text: str) -> bool:
+        """R1-5 截断隔离判定：缺少答案标记且达到截断量级的响应。"""
+        if not text:
+            return False
+        if "最终答案" in text or "\\boxed" in text:
+            return False
+        return len(text) >= 3000
+
+    def _answer_for_aggregation(self, candidate: str, cid: int, trace: List[Dict]):
+        """R1-5：疑似截断的候选不提供可聚合答案，残句不得进入聚合。"""
+        if self._is_likely_truncated(candidate):
+            trace.append({
+                "step": f"truncated_isolated_{cid}",
+                "content": "长响应缺少答案标记，已隔离残句",
+            })
+            return build_answer("")
+        return build_answer(self._extract_answer(candidate))
 
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
