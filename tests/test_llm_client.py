@@ -108,9 +108,11 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
     }
     monkeypatch.setattr(llm_client.requests, "post", lambda *a, **k: _http_response(200, payload))
     client = InternChatClient(retry=1)
+    captured = {}
 
+    assert client.chat([{"role": "user", "content": "hello"}], meta_sink=captured.update) == "ok"
+    assert captured["usage"]["total_tokens"] == 5
     assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
-    assert client.get_last_response_meta()["usage"]["total_tokens"] == 5
 
 
 @pytest.mark.parametrize("kwargs", [{"stream": True}, {"n": 2}])

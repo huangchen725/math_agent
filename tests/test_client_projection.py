@@ -79,7 +79,7 @@ def test_runtime_sources_pass_client_contract_scan():
     guard = _load_guard()
     manifest = guard.load_manifest()
 
-    for path in ("user_agent.py", "math_tools.py", "verify_math.py"):
+    for path in ("user_agent.py", "math_tools.py", "verify_math.py", "llm_client.py"):
         text = (ROOT / path).read_text(encoding="utf-8")
         findings = guard.scan_python_text(path, text, manifest)
         assert findings == []

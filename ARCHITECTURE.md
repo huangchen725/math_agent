@@ -29,7 +29,7 @@ ReasoningAgent(client).solve(problem, metadata)
 - `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要。
 - `ReasoningAgent.solve()` 捕获全局异常并尝试低成本回退；`main.py` 将空答案和 `未解出` 视为失败记录。
 
-R1-1（2026-09-05）已完成该收敛：运行时对所有注入 client 只调用三参数公开 `chat`，不再发送 `thinking_mode`、`tools`、`tool_choice`，也不再读取最近响应 getter；根入口已不再 import `llm_client`（IMPORT-001 碰撞面消除）。
+R1-1（2026-09-05）已完成该收敛：运行时对所有注入 client 只调用三参数公开 `chat`，不再发送 `thinking_mode`、`tools`、`tool_choice`，也不再读取最近响应 getter；根入口已不再 import `llm_client`（IMPORT-001 碰撞面消除）。R1-2（2026-09-05）增加宽构造器：`ReasoningAgent(client, config, local_adapter=...)` 可显式注入 `local_support/xh202627_local_adapter.py` 的本地适配器（CLIENT-002，正式入口导入图之外），为本地入口恢复 usage 记账与工具调用；正式平台不传适配器，全部请求保持三参数，运行时不做任何能力探测。
 
 ## 3. 组件与数据流
 
@@ -59,6 +59,7 @@ flowchart LR
 | `tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
 | `deterministic_verifier.py` | 提供方程、导数、积分、行列式、模幂、组合数及符号等价验证原语；当前尚未接入候选选择 |
 | `llm_client.py` | 读取环境变量，发送 OpenAI 兼容 HTTP 请求，处理响应和有限重试 |
+| `local_support/xh202627_local_adapter.py` | 显式本地适配器（CLIENT-002）：包装自有 client，为本地入口提供 usage 记账与工具调用增强；不在正式入口导入图内 |
 | `main.py` | 校验 JSONL，控制并发，保存每题 checkpoint、运行摘要并支持断点续跑 |
 | `demo.py` | 将同一 `ReasoningAgent` 暴露为本地 Gradio 界面 |
 | `verify_math.py` | 人工在线检查 few-shot；不属于默认测试或生产调用链 |
@@ -72,7 +73,7 @@ flowchart LR
 
 1. **领域路由**：`_detect_domain()` 对 18 个领域的关键词做不区分 ASCII 大小写的计数，选择最高分领域；未匹配时使用通用提示。
 2. **候选生成**：默认生成 2 个工具增强候选和 1 个纯推理候选，策略温度 `0.6`、单次上限 `8192` tokens；R1-1 起不再发送 `thinking_mode` 参数。
-3. **工具循环**：每个工具候选最多 3 轮。R1-1 三参数投影后请求不再携带 API 级 `tools` 定义，工具候选暂退化为纯推理请求（循环与 tool_calls 处理结构保留）；本地工具增强待 R1-2 经正式入口导入图之外的显式本地适配器恢复。
+3. **工具循环**：每个工具候选最多 3 轮。R1-1 三参数投影后，对注入 client 的请求不再携带 API 级 `tools` 定义，工具候选退化为纯推理请求（循环与 tool_calls 处理结构保留）；R1-2 起本地入口可经显式适配器（`chat_with_tools`）恢复工具增强，正式平台保持三参数纯文本。
 4. **截断回退**：候选无可抽取答案，或长回复缺少最终答案标记时，以温度 `0.0`、最多 `512` tokens 请求直接答案。
 5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，仅接受 `VERDICT: A` 为正票；长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
 6. **批评与反思**：最佳候选原始置信度低于 `0.5` 且已有答案时，先批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。
@@ -130,7 +131,7 @@ flowchart LR
 | `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
 | `INTERN_MODEL` | `intern-s2-preview` |
 
-客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保留 `chat` 的可选扩展参数（`thinking_mode`、`tools` 等）供本地显式调用；其 `get_last_response_meta()` 静态方法仍在（R1-2 将迁入正式入口导入图之外的显式本地适配器），但 R1-1 起运行时不读取它，单题预算的 usage token 记账暂降级，请求数、工具调用与 deadline 预算不受影响。
+客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保留 `chat` 的可选扩展参数（`thinking_mode`、`tools` 等）供本地显式调用，并新增 `meta_sink` 回调（R1-2）：成功响应后以回调交付 usage 等元数据，不进入 HTTP payload。原 `get_last_response_meta()` 静态方法与 ContextVar 已删除（R1-2 迁移至显式本地适配器）。本地运行经 `LocalToolAdapter` 恢复单题 usage 记账；正式平台无适配器时 usage 记账为 0，请求数、工具调用与 deadline 预算不受影响。
 
 `main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。`未解出` 保存为 error checkpoint，并保留 Agent trace 供区分数学失败、预算和平台错误。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数；正式评测可在 manifest 中冻结为更低值以规避端点节流。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
 

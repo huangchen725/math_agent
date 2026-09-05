@@ -197,6 +197,18 @@ def test_new_formal_module_with_strategy_edit_is_topology_change() -> None:
     assert "CHANGE-001" in rules
 
 
+def test_formal_audit_checks_runtime_contract_without_doc_paths() -> None:
+    manifest = guard.load_manifest()
+
+    # --formal 的 paths 固定为 runtime 文件（从不包含文档），"变更必须伴随
+    # 文档"的 DOC-001 检查属于 --changed 的变更审计语义，不应在 formal 下
+    # 必然误报；formal 只审计运行时契约本身。
+    triggers, blockers = guard.evaluate(list(manifest["runtime_files"]), manifest, formal=True)
+
+    rules = {finding.rule for finding in blockers}
+    assert "DOC-001" not in rules
+
+
 def test_anchor_canary_reports_r1_runtime_divergence() -> None:
     manifest = guard.load_manifest()
 

@@ -309,7 +309,9 @@ def evaluate(
             )
         )
 
-    if runtime_paths and not planned:
+    # DOC-001 的"变更必须伴随文档"检查属于 --changed 的变更审计语义；
+    # --formal 的 paths 固定为 runtime 文件（不含文档），跳过以免必然误报。
+    if runtime_paths and not planned and not formal:
         required_docs = {"ARCHITECTURE.md", "README.md", manifest["authoritative_spec"]}
         missing = sorted(required_docs.difference(normalized))
         if missing:

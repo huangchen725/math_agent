@@ -17,6 +17,7 @@ except ImportError:
     pass
 
 from llm_client import InternChatClient
+from local_support.xh202627_local_adapter import LocalToolAdapter
 from user_agent import ReasoningAgent
 
 
@@ -211,7 +212,7 @@ async def run(args: argparse.Namespace) -> None:
     input_digest = file_sha256(input_path)
 
     client = InternChatClient()
-    agent = ReasoningAgent(client=client)
+    agent = ReasoningAgent(client=client, local_adapter=LocalToolAdapter(client))
     semaphore = asyncio.Semaphore(LOCAL_MAX_CONCURRENCY)
 
     print(f"Loaded {len(items)} items. Max concurrency: {LOCAL_MAX_CONCURRENCY}.")

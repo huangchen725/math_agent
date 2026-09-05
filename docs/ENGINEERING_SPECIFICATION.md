@@ -109,6 +109,8 @@ S1～S6 的代码、测试、CI、评测和交付成果没有丢失，完整保�
 
 进展（2026-09-05）：R1-1 三参数投影已完成——`user_agent.py`、`math_tools.py`、`verify_math.py` 的全部 `client.chat` 调用收敛为 `messages/temperature/max_tokens` 三参数；移除 `thinking_mode`、`tools`、`tool_choice` 发送与 `get_last_response_meta` 读取；根入口不再 import `llm_client`（IMPORT-001 碰撞面消除）；严格三参数 fake 回归（`tests/test_client_projection.py`）先行。已知降级：usage token 记账暂缺（R1-2 经显式本地适配器恢复）；正式平台工具候选暂退化为纯推理请求（R1-2 恢复本地工具路径）。工具定义、执行与安全边界未变。
 
+进展（2026-09-05）：R1-2 宽构造器已完成——`ReasoningAgent(client, config, local_adapter=...)` 显式接受本地适配器（`local_support/xh202627_local_adapter.py`，CLIENT-002：正式入口导入图之外），适配器提供三参数同形的 `chat`（内部 `meta_sink` 记账）、`chat_with_tools`（本地工具恢复）与 `read_usage`。`llm_client.py` 删除 ContextVar 与 `get_last_response_meta` 静态方法，`chat` 新增 `meta_sink` 回调（不进 HTTP payload）。R1-1 的两项降级均已恢复：本地 usage 记账、本地工具路径；正式平台行为不变（无适配器即纯三参数，无能力探测）。`--formal` 全量门禁通过（运行时契约零 blocker）；守卫同时修正两处启发式误报（CHANGE-001 拓扑信号收敛为“新增顶层正式模块”、DOC-001 变更伴随检查不适用于 `--formal` 全量审计语义），均配测试固化。
+
 退出条件：严格 client、官方预加载、污染矩阵、根文件闭包和隔离入口全部通过；第二次正式运行保持请求链有效。
 
 ### Q0：可信能力基线

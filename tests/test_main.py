@@ -111,7 +111,7 @@ def test_run_writes_results_and_privacy_safe_summary(tmp_path: Path, monkeypatch
         model = "fake-model"
 
     class FakeAgent:
-        def __init__(self, client):
+        def __init__(self, client, local_adapter=None):
             self.client = client
 
         def solve(self, problem, metadata):

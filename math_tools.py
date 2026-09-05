@@ -517,11 +517,12 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
                   temperature: float = 0.6,
                   max_tokens: int = 8192,
                   tool_timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
-                  budget=None) -> tuple[str, List[Dict]]:
+                  budget=None, tool_client=None) -> tuple[str, List[Dict]]:
     """工具调用循环：调 client.chat → 若返回 tool_calls 则执行并回灌 → 直到文本回复。
 
-    R1-1 三参数投影：请求只使用 messages/temperature/max_tokens（CLIENT-001）。
-    循环结构保留，以处理仍返回 tool_calls 的响应。
+    R1-1 三参数投影：默认请求只使用 messages/temperature/max_tokens（CLIENT-001）。
+    R1-2 宽构造器：``tool_client`` 为显式本地适配器（CLIENT-002）时，工具请求
+    经其 ``chat_with_tools`` 增强，usage 经 ``read_usage`` 记入预算。循环结构保留。
 
     返回 (最终文本回复, 工具调用trace)
     """
@@ -531,11 +532,21 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
     for round_id in range(max_rounds):
         if budget is not None:
             budget.consume_model_request()
-        response = client.chat(
-            messages=current_messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        if tool_client is not None:
+            response = tool_client.chat_with_tools(
+                messages=current_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=TOOL_DEFINITIONS,
+            )
+            if budget is not None:
+                budget.record_response_meta({"usage": tool_client.read_usage()})
+        else:
+            response = client.chat(
+                messages=current_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         # 文本回复 → 结束
         if isinstance(response, str):

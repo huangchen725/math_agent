@@ -18,6 +18,7 @@ load_dotenv(os.path.join(BASE, ".env"))
 import gradio as gr
 
 from llm_client import InternChatClient
+from local_support.xh202627_local_adapter import LocalToolAdapter
 from user_agent import ReasoningAgent
 
 
@@ -46,7 +47,7 @@ def solve_problem(problem: str):
         return "请输入题目", "（等待输入）", ""
     try:
         client = InternChatClient()
-        agent = ReasoningAgent(client=client)
+        agent = ReasoningAgent(client=client, local_adapter=LocalToolAdapter(client))
         result = agent.solve(problem=problem, metadata={"idx": 0})
     except Exception as e:
         return f"求解失败：{type(e).__name__}: {e}", "（无推理过程）", ""

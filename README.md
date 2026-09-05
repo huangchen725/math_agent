@@ -2,7 +2,7 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
-> **恢复状态（2026-09-05）**：活动运行时代码已恢复到最后一个官方有分版本 `350a267f` 的完整内容树，并于 2026-09-05 完成原样官方定锚评测：平台抓取 `ba63ac0`，112 题全部成功运行、1069 次请求、答对 24 题（21.43%），请求链恢复已获正式正证据。当前阶段为 R1 最小契约加固，按独立提交逐项完成三参数投影、宽构造器、trace 脱敏、生命周期兜底与截断隔离，不改变模型、prompt、候选数、温度和聚合；其中三参数投影已于 2026-09-05 完成（入口对注入 client 只调用 `chat(messages, temperature, max_tokens)`，不再发送扩展参数，不再读取最近响应 getter，也不再 import `llm_client`）。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，按单变量逐项重新验证后引入。
+> **恢复状态（2026-09-05）**：活动运行时代码已恢复到最后一个官方有分版本 `350a267f` 的完整内容树，并于 2026-09-05 完成原样官方定锚评测：平台抓取 `ba63ac0`，112 题全部成功运行、1069 次请求、答对 24 题（21.43%），请求链恢复已获正式正证据。当前阶段为 R1 最小契约加固，按独立提交逐项完成三参数投影、宽构造器、trace 脱敏、生命周期兜底与截断隔离，不改变模型、prompt、候选数、温度和聚合；其中三参数投影与宽构造器已于 2026-09-05 完成：入口对注入 client 只调用 `chat(messages, temperature, max_tokens)`，不再发送扩展参数、不读取最近响应 getter、不 import `llm_client`；本地入口可显式注入 `local_support` 适配器恢复 usage 记账与工具调用（CLIENT-002），`--formal` 全量门禁已通过。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，按单变量逐项重新验证后引入。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
@@ -134,6 +134,7 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 ├── deterministic_verifier.py # 确定性验证原语（尚未接入选择器）
 ├── domain_prompts.py          # 18 个数学领域提示
 ├── llm_client.py              # OpenAI 兼容 HTTP 客户端
+├── local_support/             # 正式图外显式本地适配器（CLIENT-002）
 ├── main.py                    # JSONL 批处理与断点续跑
 ├── demo.py                    # Gradio 演示
 ├── verify_math.py             # 人工在线验证

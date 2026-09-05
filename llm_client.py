@@ -1,8 +1,7 @@
 import json
 import os
 import time
-from contextvars import ContextVar
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
 import requests
 
@@ -23,10 +22,6 @@ _RATE_LIMIT_MESSAGE_MARKERS = (
 
 ChatMessage = Dict[str, Any]
 ChatResponse = Union[str, ChatMessage]
-_LAST_RESPONSE_META: ContextVar[Dict[str, Any]] = ContextVar(
-    "last_intern_response_meta",
-    default={},
-)
 
 
 class InternChatClient:
@@ -64,6 +59,7 @@ class InternChatClient:
         *,
         thinking_mode: Optional[bool] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        meta_sink: Optional[Callable[[Dict[str, Any]], None]] = None,
         **request_args: Any,
     ) -> ChatResponse:
         """Create a chat completion.
@@ -75,6 +71,11 @@ class InternChatClient:
         When the model requests a tool call, the complete assistant message is
         returned so that callers can read ``tool_calls`` and append the message
         to the next request.
+
+        ``meta_sink`` is a local-only callback receiving the response metadata
+        (request id, model, usage, elapsed, attempts) for local budget
+        accounting. It never enters the HTTP payload. (R1-2, CLIENT-002: the
+        formal runtime reads no last-response getter.)
         """
         payload = {
             "model": self.model,
@@ -117,13 +118,14 @@ class InternChatClient:
                 data = response.json()
                 message = data["choices"][0]["message"]
                 usage = data.get("usage")
-                _LAST_RESPONSE_META.set({
-                    "id": data.get("id"),
-                    "model": data.get("model", self.model),
-                    "usage": usage if isinstance(usage, dict) else {},
-                    "elapsed_ms": round((time.monotonic() - request_started) * 1000),
-                    "attempts": attempt + 1,
-                })
+                if meta_sink is not None:
+                    meta_sink({
+                        "id": data.get("id"),
+                        "model": data.get("model", self.model),
+                        "usage": usage if isinstance(usage, dict) else {},
+                        "elapsed_ms": round((time.monotonic() - request_started) * 1000),
+                        "attempts": attempt + 1,
+                    })
                 if message.get("tool_calls"):
                     return message
                 return message["content"]
@@ -135,11 +137,6 @@ class InternChatClient:
                     break
 
         raise RuntimeError(f"Chat completion failed: {last_error}") from last_error
-
-    @staticmethod
-    def get_last_response_meta() -> Dict[str, Any]:
-        """Return response metadata for the current thread/context without secrets."""
-        return dict(_LAST_RESPONSE_META.get())
 
     @staticmethod
     def _is_retryable(exc: Exception) -> bool:

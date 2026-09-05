@@ -109,9 +109,17 @@ class AgentConfig:
 class ReasoningAgent:
     """领域路由、工具增强、验证、反思与聚合智能体。"""
 
-    def __init__(self, client: Any, config: AgentConfig | None = None) -> None:
+    def __init__(self, client: Any, config: AgentConfig | None = None, *,
+                 local_adapter: Any = None) -> None:
+        """宽构造器（R1-2）：``local_adapter`` 为显式本地适配器（CLIENT-002）。
+
+        适配器由本地入口（main.py/demo.py）显式传入，提供
+        ``read_usage()`` 与 ``chat_with_tools(...)``；正式平台不传，
+        所有请求走三参数公开协议，运行时不做任何能力探测。
+        """
         self.config = config or AgentConfig()
         self.client = client
+        self.local_adapter = local_adapter
 
     def _chat(self, system_prompt: str, user_content: str,
               temperature: float, max_tokens: int) -> str:
@@ -123,9 +131,18 @@ class ReasoningAgent:
         budget = _ACTIVE_BUDGET.get()
         if budget is not None:
             budget.consume_model_request()
-        resp = self.client.chat(
-            messages=messages, temperature=temperature, max_tokens=max_tokens
-        )
+        if self.local_adapter is not None:
+            # 显式本地适配器路径（CLIENT-002）：签名与三参数公开协议一致，
+            # 内部经 meta_sink 记录 usage 供本地预算记账。
+            resp = self.local_adapter.chat(
+                messages=messages, temperature=temperature, max_tokens=max_tokens
+            )
+            if budget is not None:
+                budget.record_response_meta({"usage": self.local_adapter.read_usage()})
+        else:
+            resp = self.client.chat(
+                messages=messages, temperature=temperature, max_tokens=max_tokens
+            )
         return resp if isinstance(resp, str) else str(resp.get("content", ""))
 
     def solve(self, problem: str, metadata: Dict) -> Dict:
@@ -322,6 +339,7 @@ class ReasoningAgent:
                 max_tokens=self.config.max_tokens,
                 tool_timeout_seconds=self.config.tool_timeout_seconds,
                 budget=_ACTIVE_BUDGET.get(),
+                tool_client=self.local_adapter,
             )
             if self.config.enable_fallback and "最终答案" not in response and len(response) > 3000:
                 trace = [{"step": f"tool_solve_{cid}", "content": tt}]
