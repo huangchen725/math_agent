@@ -263,46 +263,70 @@ class ReasoningAgent:
 
         # 阶段3：验证投票
         scored: List[Candidate] = []
-        for cid, candidate in enumerate(candidates):
-            confidence, vt, verifications = self._verify(problem, candidate, cid)
-            answer = build_answer(self._extract_answer(candidate))
-            strategy = (
-                "tool"
-                if self.config.enable_tools and cid < self.config.tool_candidates
-                else "plain"
-            )
-            scored.append(Candidate(
-                content=candidate,
-                strategy=strategy,
-                confidence=confidence + (0.3 if answer.raw else -0.5),
-                answer=answer,
-                raw_confidence=confidence,
-                verifications=verifications,
-            ))
-            trace.extend(vt)
+        try:
+            for cid, candidate in enumerate(candidates):
+                confidence, vt, verifications = self._verify(problem, candidate, cid)
+                answer = build_answer(self._extract_answer(candidate))
+                strategy = (
+                    "tool"
+                    if self.config.enable_tools and cid < self.config.tool_candidates
+                    else "plain"
+                )
+                scored.append(Candidate(
+                    content=candidate,
+                    strategy=strategy,
+                    confidence=confidence + (0.3 if answer.raw else -0.5),
+                    answer=answer,
+                    raw_confidence=confidence,
+                    verifications=verifications,
+                ))
+                trace.extend(vt)
+        except BudgetExceeded as e:
+            # R1-4 生命周期兜底：验证阶段预算耗尽时保留已有候选，
+            # 剩余候选以无票状态进入聚合（聚合本身不消耗预算）。
+            trace.append({"step": "verify_budget_exhausted", "content": _clip_for_trace(str(e))})
+            for candidate in candidates[len(scored):]:
+                answer = build_answer(self._extract_answer(candidate))
+                strategy = (
+                    "tool"
+                    if self.config.enable_tools and len(scored) < self.config.tool_candidates
+                    else "plain"
+                )
+                scored.append(Candidate(
+                    content=candidate,
+                    strategy=strategy,
+                    confidence=(0.3 if answer.raw else -0.5),
+                    answer=answer,
+                    raw_confidence=0.0,
+                    metadata={"verification_skipped": "budget"},
+                ))
 
         # 阶段4：Critic + 反思（仅低置信度触发）
-        if self.config.enable_critic and scored:
-            best = max(scored, key=lambda item: item.confidence)
-            if best.raw_confidence < 0.5 and best.answer.raw:
-                criticism = self._critic(problem, best.content, trace)
-                if criticism and "NO ERROR" not in criticism.upper():
-                    refined = self._reflect(problem, best.content, criticism, trace)
-                    if refined:
-                        rc, rv, verifications = self._verify(
-                            problem, refined, len(candidates)
-                        )
-                        ra = build_answer(self._extract_answer(refined))
-                        scored.append(Candidate(
-                            content=refined,
-                            strategy="reflection",
-                            confidence=rc + (0.3 if ra.raw else -0.5),
-                            answer=ra,
-                            raw_confidence=rc,
-                            verifications=verifications,
-                            metadata={"temperature": self.config.reflection_temperature},
-                        ))
-                        trace.extend(rv)
+        try:
+            if self.config.enable_critic and scored:
+                best = max(scored, key=lambda item: item.confidence)
+                if best.raw_confidence < 0.5 and best.answer.raw:
+                    criticism = self._critic(problem, best.content, trace)
+                    if criticism and "NO ERROR" not in criticism.upper():
+                        refined = self._reflect(problem, best.content, criticism, trace)
+                        if refined:
+                            rc, rv, verifications = self._verify(
+                                problem, refined, len(candidates)
+                            )
+                            ra = build_answer(self._extract_answer(refined))
+                            scored.append(Candidate(
+                                content=refined,
+                                strategy="reflection",
+                                confidence=rc + (0.3 if ra.raw else -0.5),
+                                answer=ra,
+                                raw_confidence=rc,
+                                verifications=verifications,
+                                metadata={"temperature": self.config.reflection_temperature},
+                            ))
+                            trace.extend(rv)
+        except BudgetExceeded as e:
+            # R1-4：反思阶段预算耗尽时跳过反思，直接聚合已有候选
+            trace.append({"step": "reflect_budget_exhausted", "content": _clip_for_trace(str(e))})
 
         # 阶段6：加权聚合
         final_answer, best_content = self._aggregate(scored, trace)
