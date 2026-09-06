@@ -72,7 +72,7 @@ def test_wide_constructor_restores_usage_accounting():
     assert summary["content"]["total_tokens"] > 0
 
 
-def test_wide_constructor_restores_tool_path_without_thinking_mode():
+def test_wide_constructor_tool_path_disables_thinking_mode():
     from user_agent import AgentConfig
 
     config = AgentConfig(tool_candidates=1, plain_candidates=0, enable_critic=False)
@@ -83,10 +83,11 @@ def test_wide_constructor_restores_tool_path_without_thinking_mode():
     assert result["final_response"].endswith("最终答案：2")
     tool_calls = [call for call in client.calls if call["tools"] is not None]
     assert tool_calls, "tool candidates must receive tool definitions through the adapter"
-    assert all(call["thinking_mode"] is None for call in client.calls)
+    # 2026-09-06 修订：所有请求必须显式关闭 397B 默认思维链
+    assert all(call["thinking_mode"] is False for call in client.calls)
 
 
-def test_without_adapter_tool_calls_stay_three_argument():
+def test_without_adapter_public_path_stays_text_only_with_thinking_disabled():
     from user_agent import AgentConfig, ReasoningAgent
 
     client = RecordingClient()
@@ -95,5 +96,6 @@ def test_without_adapter_tool_calls_stay_three_argument():
 
     assert result["final_response"].endswith("最终答案：2")
     assert client.calls
+    # 公开路径保持 text-only（协作者设计），但必须显式关闭思维链
     assert all(call["tools"] is None for call in client.calls)
-    assert all(call["thinking_mode"] is None for call in client.calls)
+    assert all(call["thinking_mode"] is False for call in client.calls)

@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-This repository is the XH-202627 competition math agent. The active runtime is the recovery snapshot whose tracked runtime content matches the last officially scored commit `350a267f`; the later S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7`. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the binding recovery, regression, and rebuild standard, not a second architecture document.
+This repository is the XH-202627 competition math agent. The active runtime is undergoing R1 contract hardening after the officially scored R0 anchor (`ba63ac0`, runtime content matching `350a267f`). It now legitimately differs from that anchor; S1-S6 remains archived at `archive/s1-s6-1fc98b7`. `ARCHITECTURE.md` is the sole architecture source of truth. `docs/ENGINEERING_SPECIFICATION.md` is the binding recovery, regression, and rebuild standard, not a second architecture document.
 
 ## Mandatory policy trigger protocol
 
@@ -60,9 +60,12 @@ python .agents/policy_guard.py --changed
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
+python .agents/policy_guard.py --formal
 ```
 
 Run focused tests first while iterating, then all offline checks. Do not call the real model API as part of ordinary tests. If a live evaluation is necessary, state the expected request count and obtain the user's authorization before spending quota.
+
+The R1 `--formal` CLI now runs the entire offline behavior suite after static checks. A static `evaluate(..., formal=True)` call alone is not full formal acceptance. The isolated formal source closure is declared by `_FORMAL_SOURCE_FILES` in `user_agent.py`; loading must preserve foreign module-cache entries and never depend on repository `sys.path` insertion. Local tool execution remains outside that import graph.
 
 ## Documentation rules
 

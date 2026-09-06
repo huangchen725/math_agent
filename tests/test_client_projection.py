@@ -1,10 +1,16 @@
-"""R1-1 regression: the public client contract is projected to three arguments.
+"""Public client contract regression.
 
-These tests fail before the CLIENT-001 projection lands and enforce the
-strict fake-client gate defined in docs/ENGINEERING_SPECIFICATION.md
-(TEST-CLIENT-001): chat must receive exactly messages, temperature and
-max_tokens, with no dynamic kwargs, no extension arguments and no
-last-response metadata side channel.
+Historically R1-1 projected the public client contract to three arguments
+(messages/temperature/max_tokens). On 2026-09-06 the contract was amended
+with official evaluation evidence: the 9/5 run (ba63ac0) proved the platform
+client accepts extended keywords (112/112 success, 0 errors), while the 9/6
+run (c009929) proved the three-argument protocol is catastrophic with
+Intern-S2-Preview-397B, whose default thinking chain burned the max_tokens
+budget (84% truncated requests, 52 invalid answers). The public contract now
+allows exactly messages, temperature, max_tokens and thinking_mode; tool
+transport keywords (tools, tool_choice) remain local-adapter-only extras
+tolerated by the guard. No dynamic kwargs, no last-response metadata side
+channel.
 """
 
 import importlib.util
@@ -25,18 +31,22 @@ def _load_guard():
     return module
 
 
-class StrictThreeArgumentClient:
-    """chat 只接受三个命名参数：无 **kwargs，也不提供任何元数据 getter。"""
+class StrictPublicClient:
+    """chat 只接受公开协议命名参数：无 **kwargs，也不提供任何元数据 getter。"""
 
     def __init__(self):
         self.calls = []
 
-    def chat(self, messages, temperature, max_tokens):
+    def chat(self, messages, temperature, max_tokens, thinking_mode=None,
+             tools=None, tool_choice=None):
         self.calls.append(
             {
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                "thinking_mode": thinking_mode,
+                "tools": tools,
+                "tool_choice": tool_choice,
             }
         )
         system_text = "\n".join(
@@ -51,23 +61,40 @@ class StrictThreeArgumentClient:
         return "推理：1+1=2。\n最终答案：2"
 
 
-def test_solve_uses_exactly_three_public_chat_arguments():
+def test_solve_uses_only_public_protocol_arguments():
     from user_agent import AgentConfig, ReasoningAgent
 
-    client = StrictThreeArgumentClient()
+    client = StrictPublicClient()
     config = AgentConfig(tool_candidates=1, plain_candidates=1, enable_critic=False)
     result = ReasoningAgent(client, config).solve("计算 1+1。", {})
 
     assert result["final_response"].endswith("最终答案：2")
     assert client.calls, "solve must issue at least one model request"
     for call in client.calls:
-        assert set(call) == {"messages", "temperature", "max_tokens"}
+        assert set(call) <= {
+            "messages", "temperature", "max_tokens",
+            "thinking_mode", "tools", "tool_choice",
+        }
+
+
+def test_solve_always_disables_thinking_mode():
+    from user_agent import AgentConfig, ReasoningAgent
+
+    client = StrictPublicClient()
+    config = AgentConfig(tool_candidates=1, plain_candidates=1, enable_critic=False)
+    ReasoningAgent(client, config).solve("计算 1+1。", {})
+
+    assert client.calls, "solve must issue at least one model request"
+    for call in client.calls:
+        # 397B 默认思维链会吃满 max_tokens（9/6 评测 84% 截断），
+        # 因此所有请求必须显式关闭 thinking。
+        assert call["thinking_mode"] is False
 
 
 def test_solve_tolerates_client_without_metadata_getter():
     from user_agent import AgentConfig, ReasoningAgent
 
-    client = StrictThreeArgumentClient()
+    client = StrictPublicClient()
     assert not hasattr(client, "get_last_response_meta")
     config = AgentConfig(tool_candidates=1, plain_candidates=0, enable_critic=False)
     result = ReasoningAgent(client, config).solve("计算 1+1。", {})

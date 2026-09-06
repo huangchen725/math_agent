@@ -12,7 +12,7 @@ class LongResponseClient:
     def __init__(self):
         self.calls = 0
 
-    def chat(self, messages, temperature=None, max_tokens=None):
+    def chat(self, messages, temperature=None, max_tokens=None, **kwargs):
         self.calls += 1
         system_text = "\n".join(
             message.get("content", "")

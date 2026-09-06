@@ -61,9 +61,9 @@ def test_agent_stops_before_exceeding_model_request_budget():
     )
     result = ReasoningAgent(client, config).solve("1+1", {})
 
-    assert result["final_response"] == "未解出"
+    assert result["final_response"] == "推理\n最终答案：2"
     assert client.calls == 1
-    assert any(item["step"] == "budget_exceeded" for item in result["trace"])
+    assert any(item["step"] == "generation_budget_exhausted" for item in result["trace"])
 
 
 def test_agent_rejects_oversized_problem_without_calling_model():

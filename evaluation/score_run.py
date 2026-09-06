@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from collections import Counter, defaultdict
@@ -47,7 +48,8 @@ def _budget_snapshot(trace: object) -> dict[str, int]:
                 "tool_calls",
                 "elapsed_ms",
             )
-            if isinstance(content.get(key, 0), (int, float))
+            if type(content.get(key, 0)) in (int, float)
+            and math.isfinite(content.get(key, 0)) and 0 <= content.get(key, 0) <= 10**15
         }
     return {}
 
@@ -72,6 +74,15 @@ def _group_summary(items: list[dict[str, Any]], field: str) -> dict[str, Any]:
 
 
 def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]:
+    seen = set()
+    root = output_dir.resolve()
+    for position, item in enumerate(dataset):
+        idx = str(item.get("idx", position))
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", idx) or idx in seen:
+            raise ValueError("unsafe or duplicate score index")
+        seen.add(idx)
+        if (root / f"{idx}.json").resolve().parent != root:
+            raise ValueError("output path escapes run directory")
     results = []
     totals: Counter[str] = Counter()
     usage: Counter[str] = Counter()
@@ -86,10 +97,14 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
             status = "missing"
         else:
             try:
+                if output_path.stat().st_size > 2_000_000:
+                    raise ValueError("checkpoint exceeds size limit")
                 loaded = json.loads(output_path.read_text(encoding="utf-8-sig"))
                 if not isinstance(loaded, dict):
                     raise ValueError("output is not an object")
                 record = loaded
+                if "idx" in record and str(record["idx"]) != idx:
+                    raise ValueError("checkpoint index mismatch")
             except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
                 status = "error"
                 detail = f"invalid output: {exc}"
@@ -105,6 +120,12 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                     method = judged.method
                     detail = judged.detail
                 usage.update(_budget_snapshot(record.get("trace")))
+        events = record.get("trace", [])
+        steps = [r.get("step", "") for r in events if type(r) is dict] if type(events) is list else []
+        truncated = any(type(s) is str and (s.startswith("truncated") or s == "response_truncated") for s in steps)
+        invalid = record.get("status") == "success" and not actual
+        totals["truncated_items"] += int(truncated)
+        totals["invalid_items"] += int(invalid)
         totals[status] += 1
         results.append(
             {
@@ -115,9 +136,13 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
                 "template_family": item.get("template_family", "<missing>"),
                 "expected": item.get("answer", ""),
                 "actual": actual,
+                "final_response": record.get("final_response", "") if type(record.get("final_response", "")) is str else "",
                 "status": status,
                 "method": method,
                 "detail": detail,
+                "truncated": truncated,
+                "invalid": invalid,
+                "usage": _budget_snapshot(record.get("trace")),
             }
         )
 
@@ -134,6 +159,8 @@ def score_run(dataset: list[dict[str, Any]], output_dir: Path) -> dict[str, Any]
             "conservative_wilson_95": [conservative_low, conservative_high],
             "reviewable_wilson_95_upper_scenario": [review_low, review_high],
             "usage": dict(usage),
+            "truncated_items": totals["truncated_items"],
+            "invalid_items": totals["invalid_items"],
         },
         "by_subject": _group_summary(results, "subject"),
         "by_level": _group_summary(results, "level"),

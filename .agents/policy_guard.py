@@ -213,7 +213,12 @@ def scan_python_text(path: str, text: str, manifest: dict) -> list[Finding]:
             Finding("ENTRY-001", "Root user_agent.py must physically declare ReasoningAgent.", path)
         )
 
-    allowed_keywords = {"messages", "temperature", "max_tokens"}
+    # 2026-09-06 修订：官方证据表明平台 client 接受扩展关键字——
+    # 9/5 评测（ba63ac0）以 v17 协议传递 thinking_mode/tools/tool_choice，
+    # 112/112 成功、0 错误；9/6 评测（c009929）三参数协议下 397B 默认
+    # 思维链导致 84% 请求截断、52 题 invalid。故公开协议扩展为以下关键字。
+    allowed_keywords = {"messages", "temperature", "max_tokens",
+                        "thinking_mode", "tools", "tool_choice"}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -345,6 +350,30 @@ def _anchor_canary(manifest: dict) -> list[Finding]:
     return _validate_policy_files(manifest)
 
 
+def _formal_behavior_checks() -> list[Finding]:
+    """A formal PASS requires executable regressions, not just matching source text."""
+    required = ("test_r1_acceptance.py", "test_r1_invariants.py", "test_client_projection.py",
+                "test_official_import_collision.py", "test_trace_hygiene.py",
+                "test_truncation_isolation.py", "test_lifecycle_fallback.py")
+    if {"Q0", "Q1"}.intersection(load_manifest().get("offline_workstreams", [])):
+        required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py")
+    missing = [name for name in required if not (ROOT / "tests" / name).is_file()]
+    if missing:
+        return [Finding("TEST-IMPORT-001", "Required R1 behavior tests missing: " + ", ".join(missing))]
+    try:
+        process = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "tests"], cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return [Finding("TEST-IMPORT-001", "Formal behavior suite could not complete.")]
+    if process.returncode:
+        return [Finding("TEST-IMPORT-001",
+            "Formal behavior suite failed; run python -m pytest -q tests for details.")]
+    print("formal_behavior=" + process.stdout.strip().splitlines()[-1])
+    return []
+
+
 def _print_report(
     mode: str,
     manifest: dict,
@@ -403,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.formal:
         paths = list(manifest["runtime_files"])
         triggers, blockers = evaluate(paths, manifest, formal=True)
+        if not blockers:
+            blockers.extend(_formal_behavior_checks())
         _print_report("formal", manifest, paths, triggers, blockers)
         return 2 if blockers else 0
 

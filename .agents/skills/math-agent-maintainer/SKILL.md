@@ -13,7 +13,7 @@ Read `AGENTS.md`, `.agents/policies/HARD_RULES.md`, this Skill's `PROJECT_POLICY
 
 When the guard or manual review finds a blocker, emit `[POLICY BLOCK] <RULE-ID>` with the exact proposed action, consequence, and safe alternative before any mutation. Stop only the violating sub-action and continue safe in-scope work. Never execute first and explain afterward.
 
-The active runtime is the recovery snapshot matching the last officially scored commit `350a267f`. The S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7` for selective reintroduction. Do not describe archived modules as current architecture.
+The active runtime is in R1 hardening after the successful R0 anchor run (`ba63ac0`, runtime content matching `350a267f`); R1 code differs from the anchor. The S1-S6 implementation is preserved at `archive/s1-s6-1fc98b7` for selective reintroduction. Do not describe archived modules as current architecture.
 
 ## Preserve the recovery anchor
 
@@ -37,6 +37,8 @@ The active runtime is the recovery snapshot matching the last officially scored 
 ## Reintroduce changes in order
 
 Follow the recovery stages in `docs/ENGINEERING_SPECIFICATION.md`:
+
+The 2026-09-06 user scheduling decision permits Q0/Q1 offline work while R1 official acceptance is pending. Keep the official candidate frozen separately; offline tests do not establish a model baseline or optimization benefit. The stage list below describes evidence gates, not a requirement to idle between official runs.
 
 1. R0 official compatibility anchor.
 2. R1 minimum public contract hardening, one variable per official run.
@@ -69,6 +71,8 @@ python .agents/policy_guard.py --changed
 Before a submission, run `--anchor-canary` for the unmodified R0 anchor or `--formal` for a later changed runtime. A nonzero guard exit blocks the submission and must be reported with its rule ID.
 
 These checks do not establish official compatibility or mathematical improvement. After S5 quality tooling is selectively restored, use its complete gate only after adapting it to the active runtime; do not copy archived green reports or weaken checks.
+
+The R1 `--formal` command includes the executable offline behavior suite. Verify all candidate sources and recovery failures, opaque constructor arguments, secret-bearing synthetic traces, isolated imports, and concurrent request metadata; the absence of static findings alone does not establish those properties. Keep second-official-run evidence separate from offline completion.
 
 ## Documentation
 

@@ -2,11 +2,19 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
-> **恢复状态（2026-09-05）**：活动运行时代码已恢复到最后一个官方有分版本 `350a267f` 的完整内容树，并于 2026-09-05 完成原样官方定锚评测：平台抓取 `ba63ac0`，112 题全部成功运行、1069 次请求、答对 24 题（21.43%），请求链恢复已获正式正证据。当前阶段为 R1 最小契约加固（五项已全部完成于 2026-09-05）：入口对注入 client 只调用 `chat(messages, temperature, max_tokens)`，不再发送扩展参数、不读取最近响应 getter、不 import `llm_client`；本地入口可显式注入 `local_support` 适配器恢复 usage 记账与工具调用（CLIENT-002）；trace 字符串内容统一 300 字符脱敏截断；验证/反思阶段预算耗尽时保留已有候选聚合；截断候选的残句不进入聚合。全程不改变模型、prompt、候选数、温度和聚合规则，`--formal` 全量门禁已通过。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，按单变量逐项重新验证后引入。
+> **恢复状态（2026-09-06）**：R0 已在 `ba63ac0` 完成官方定锚：112 success、1069 次请求、24/112 correct（21.43%）。独立验收发现的 R1 缺口现已修复，Python 3.10/3.12 各通过 187 个离线测试。入口支持不透明附加构造参数，client 只走三参数公开调用；公开 trace 只保留白名单事件与数值预算；初始化至输出失败关闭；初始候选、反思与恢复统一校验完整答案；本地 usage/finish_reason 随请求返回；正式依赖从入口位置加载至独立命名空间。`--formal` 包含实际行为测试。阶段仍为 R1，第二次正式评测尚未执行；离线通过不代表官方兼容性或正确率提升。S1～S6 仍保存在 `archive/s1-s6-1fc98b7`。
+
+> **当前离线进度**：R1 修复已提交为 `9126c04`。其上 Q0/Q1 离线工作流和实验实现已完成，两个 Python 版本各 371 项测试通过。真实模型基线、收益与官方验收仍分别待补。
+
+> **最新正式结果（2026-09-06）**：新日志抓取较早的 `c009929`：112 success / 0 error，10 correct / 50 incorrect / 52 invalid（8.93%），607 次请求中 512 次截断（84.35%）。它未包含 `9126c04` 修复或 `6d42d2c` 的 Q0/Q1，以上“正式验收待补”指这些后续版本。当前输出预算仍需真实模型诊断，离线通过不能证明退化已修复。详见 [本次正式诊断](docs/evaluations/OFFICIAL_112_20260906.md)。
+
+> **截断缺陷修复（本轮工作区）**：强制单次输出不超过用户确认的官方 8192 上限，修复生成预算耗尽丢弃已有合格答案、未知验证被判错及冲突元数据覆盖截断；明确 length 的空内容允许原预算内恢复。默认 unknown 不触发纠错，Q1 calibrated_verifier 仅进一步收紧标签格式。两个 Python 版本各 452 项完整门禁通过，详见 [修复与验证](docs/evaluations/TRUNCATION_REPAIR_20260906.md)。这些代码修复不代表真实截断率已降低；更新后的 18 次诊断计划全部在 8192 内，真实执行需单独额度授权。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
 ## 核心接口
+
+修复范围、失败反例与验证证据见 [R1 修复与复验](docs/evaluations/R1_REPAIR_VALIDATION_20260905.md)。
 
 ```python
 ReasoningAgent(client).solve(problem, metadata)
@@ -15,7 +23,8 @@ ReasoningAgent(client).solve(problem, metadata)
 
 - `client` 由调用方注入，代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
-- `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
+- `trace` 记录求解阶段和数值预算；不包含题面、候选、答案、工具结果或异常原文。
+- 构造形式兼容 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`；只有本模块的 `AgentConfig` 被用作配置，其它附加对象被忽略。本地适配器通过 `complete()` 返回绑定该请求的 response/metadata，不提供最近响应 getter。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 - 官方文件、消息、冲突口径和未公开契约见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)；赛事红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
@@ -60,7 +69,7 @@ Copy-Item .env.example .env
 | --- | --- | --- | --- |
 | `INTERN_API_KEY` | 是 | 无 | Intern API token |
 | `INTERN_API_BASE` | 否 | 官方 Chat Completions 地址 | OpenAI 兼容端点 |
-| `INTERN_MODEL` | 否 | `intern-s2-preview` | 模型名 |
+| `INTERN_MODEL` | 否 | `intern-s2-preview-397b` | 本地模型名；正式注入 client 由平台控制 |
 | `LOCAL_MAX_CONCURRENCY` | 否 | `3` | 本地并发，必须为正整数 |
 
 ## 运行
@@ -83,6 +92,23 @@ python demo.py
 
 ## 验证
 
+Q0/Q1 离线开发已按 2026-09-06 用户决策并行推进，R1 官方验收仍单独等待。当前 Q0 冻结集为 U-MATH 的 144 道公开英文大学数学题（六领域，开发/留出各 72），仅在被忽略的 `outputs/q0-umath-v4/` 保存；许可原文和来源版本保存在 `outputs/q0-umath-source-v2/`。它不是赛事隐藏题集，不保证预训练独立，也未完成实际模型运行或双人盲审。详见 [Q0/Q1 离线诊断报告](docs/evaluations/Q0_Q1_OFFLINE_20260906.md)。
+
+离线准备与比较命令（均不调用模型）：
+
+```bash
+python -m evaluation.q0_pipeline verify outputs/q0-umath-v4
+python -m evaluation.q1_experiments outputs/q0-umath-v4 --output outputs/q1/dev-plan.json
+python -m evaluation.q0_pipeline score outputs/q0-umath-v4 RUN_DIR PLAN_JSON --variant baseline --output SCORE_JSON
+python -m evaluation.q0_pipeline compare BASE_SCORE CANDIDATE_SCORE --output COMPARISON_JSON
+python -m evaluation.q0_pipeline review-packet outputs/q0-umath-v4 SCORE_JSON --salt REVIEW_SALT --output PACKET_JSON
+python -m evaluation.q0_pipeline review-merge PACKET_JSON REVIEWER_A_JSON REVIEWER_B_JSON --output REVIEW_RESULT_JSON
+```
+
+从原始来源重建：`python -m evaluation.import_umath OUTPUT_SOURCE` 只下载公开数据；然后执行 `python -m evaluation.q0_pipeline freeze OUTPUT_SOURCE/records.jsonl NEW_BUNDLE`。冻结文件、题号、近重复、来源、代码/配置和运行输出指纹不一致时拒绝使用。旧 v1–v3 为被审核淘汰的中间产物。
+
+Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。十组计划覆盖基线、五项单变量、critic/reflection/tools 消融和组合候选；`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
+
 默认检查不访问外部 API：
 
 ```bash
@@ -90,6 +116,7 @@ python .agents/policy_guard.py --changed
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
+python .agents/policy_guard.py --formal
 ```
 
 所有仓库任务在修改前还必须运行 `python .agents/policy_guard.py --paths <预计路径...>`；不改文件的真实 API、推送、提交、发布等动作使用 `--actions`。守卫会列出本次触发的规则 ID；出现 `[POLICY BLOCK]` 时，工作 agent 必须在执行前报告具体动作、风险和安全替代，并停止触线子动作。完整流程见 [.agents/policies/HARD_RULES.md](.agents/policies/HARD_RULES.md)。阶段已于 2026-09-05 进入 R1：改动版正式检查使用 `--formal`；`--anchor-canary` 仅用于核对历史锚点内容，不能为改动版背书。

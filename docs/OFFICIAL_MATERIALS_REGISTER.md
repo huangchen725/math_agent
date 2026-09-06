@@ -22,8 +22,16 @@
 | MAT-008 | 官方更新日志 | `https://aicarrier.feishu.cn/wiki/C3dBwzdyFiDxEIkYq7ucOZ59neh`，页面显示 07 月 20 日修改，2026-09-01 核验 | 动态页面，无不可变版本 ID | 记录 07 月 14/16 日规则变化及适用动作；页面明确自称变更日志 |
 | MAT-009 | 官方 FAQ 与答疑沉淀 | `https://aicarrier.feishu.cn/wiki/BHoMw601Xiy5i3keTLDcg3M3n5x`，页面显示 07 月 24 日修改，2026-09-01 核验 | 动态页面，无不可变版本 ID | 模型、题集、工具、依赖、环境和 Judger 的书面答复；页面提示部分内容可能由 AI 生成，因此低于签章文件但高于口头转述 |
 | MAT-010 | 用户转交的平台评测日志（2026-09-05） | `eval_log_a4a6f26234b141a3a80b985ffd99b0e5.log`；抓取 `ba63ac0463fc2afe685b82ac6a1774dabf5027e8` | `a8928d0ae66f9e024f23b20c7dec39b5ea1ae8d349a654123c903d00a7057e00` | 本次运行正证据：1069 请求、112 success、24 correct；无模型 ID 和正式批次编号，不作为通用契约保证 |
+| MAT-011 | 用户转交的平台评测日志（2026-09-06） | `eval_log_097d05ec8bdb4ac9a854711d10af32e8.log`；抓取 `c009929012bba3301791790600572bf229d3874f` | `888f5c47f170b455d58585ed81bb5bb2ebb97043c5811a89b278a1c0adc766a0` | 607 请求、512 截断、112 success / 0 error、10 correct / 50 incorrect / 52 invalid；无模型 ID，不能验收后续 `9126c04` / `6d42d2c` |
+| MAT-012 | 书生官方 Chat API 文档（2026-09-06 核验） | `https://internlm.intern-ai.org.cn/doc/docs/Chat/` | 动态网页，无不可变版本 ID | 397B 默认深度思考，普通 API 支持 thinking_mode；不证明竞赛注入 client 支持扩展参数，也不证明 MAT-011 的实际模型 |
 
 MAT-010 补充说明（2026-09-05）：用户在提供日志后明确回复“是intern-s2-preview-35b”，据此将本次模型记为 `intern-s2-preview-35b`。该确认绑定本次实验；日志本身没有模型字段这一事实不变，不据此更新通用正式模型 allowlist、API 映射或运行配置。
+
+MAT-011 补充说明（2026-09-06）：输入 SHA 与 MAT-010 相同，请求级截断率由 10.20% 升至 84.35%，Agent 耗时 23608.390 秒。运行成功与数学判分分开，52 invalid 不是 52 个 runner error。耗时超过既有 6 小时口径，但日志无合成补题、deadline_seconds=0；不据此放宽时限或关闭 RUNNER/BUDGET/CHANGE 缺口。详见 [本次诊断](evaluations/OFFICIAL_112_20260906.md)。MAT-012 仅用于形成可验证的思考模式假设，不改变正式调用契约或模型 allowlist。
+
+MAT-012 再核验补充（2026-09-06）：Chat 文档“调用参数说明”还记载普通 API 在模型 120 秒未输出完成时中断并返回已有结果；这是服务端行为口径，与本地 HTTP 超时不同，尚不能确定 MAT-011 的实际执行或计数方式。用户“单次截断是8192”的提示暂缺原文；本地 max_tokens=8192 不证明正式硬上限。截断诊断须同时核对 token 和时间条件，见 [专项审计补查](evaluations/TRUNCATION_AUDIT_20260906.md#8-后续补查8192-口径与服务端-120-秒中断)。
+
+用户后续明确确认（2026-09-06）：“已知8192截断是官方数据”，并授权直接修复。本项目按单次 8192 硬上限执行，禁止 Agent 与本地诊断请求超过该值，不再将 16384 作为待执行条件。该确认无需等待进一步材料即可实施更严格限制；来源仍记为用户转述，未补造官方原件哈希，也不推断 thinking_mode、finish_reason 或服务端时间限制的额外契约。
 
 证据使用顺序如下：
 

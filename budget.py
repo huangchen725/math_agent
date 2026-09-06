@@ -14,9 +14,9 @@ class BudgetExceeded(RuntimeError):
 @dataclass
 class ExecutionBudget:
     max_model_requests: int = 16
-    max_total_tokens: int = 400_000
+    max_total_tokens: int = 200_000
     max_tool_calls: int = 48
-    timeout_seconds: float = 900.0
+    timeout_seconds: float = 600.0
     started_at: float = field(default_factory=time.monotonic)
     model_requests: int = 0
     prompt_tokens: int = 0
