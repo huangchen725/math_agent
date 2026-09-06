@@ -2,11 +2,13 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
-> **恢复状态（2026-09-05）**：活动运行时代码已恢复到最后一个官方有分版本 `350a267f` 的完整内容树，并于 2026-09-05 完成原样官方定锚评测：平台抓取 `ba63ac0`，112 题全部成功运行、1069 次请求、答对 24 题（21.43%），请求链恢复已获正式正证据。当前阶段为 R1 最小契约加固（五项已全部完成于 2026-09-05）：入口对注入 client 只调用 `chat(messages, temperature, max_tokens)`，不再发送扩展参数、不读取最近响应 getter、不 import `llm_client`；本地入口可显式注入 `local_support` 适配器恢复 usage 记账与工具调用（CLIENT-002）；trace 字符串内容统一 300 字符脱敏截断；验证/反思阶段预算耗尽时保留已有候选聚合；截断候选的残句不进入聚合。全程不改变模型、prompt、候选数、温度和聚合规则，`--formal` 全量门禁已通过。S1～S6 工程化成果保存在 `archive/s1-s6-1fc98b7`，按单变量逐项重新验证后引入。
+> **恢复状态（2026-09-06）**：R0 已在 `ba63ac0` 完成官方定锚：112 success、1069 次请求、24/112 correct（21.43%）。独立验收发现的 R1 缺口现已修复，Python 3.10/3.12 各通过 187 个离线测试。入口支持不透明附加构造参数，client 只走三参数公开调用；公开 trace 只保留白名单事件与数值预算；初始化至输出失败关闭；初始候选、反思与恢复统一校验完整答案；本地 usage/finish_reason 随请求返回；正式依赖从入口位置加载至独立命名空间。`--formal` 包含实际行为测试。阶段仍为 R1，第二次正式评测尚未执行；离线通过不代表官方兼容性或正确率提升。S1～S6 仍保存在 `archive/s1-s6-1fc98b7`。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
 ## 核心接口
+
+修复范围、失败反例与验证证据见 [R1 修复与复验](docs/evaluations/R1_REPAIR_VALIDATION_20260905.md)。
 
 ```python
 ReasoningAgent(client).solve(problem, metadata)
@@ -15,7 +17,8 @@ ReasoningAgent(client).solve(problem, metadata)
 
 - `client` 由调用方注入，代码中不保存 API key。
 - `final_response` 保留选中候选的推理文本，并且最后只保留一行规范化的 `最终答案：...`；答案体不带解释性句子，常见记号统一为稳定形式。
-- `trace` 记录领域判断、候选生成、工具调用、验证、反思、聚合和单题预算摘要。
+- `trace` 记录求解阶段和数值预算；不包含题面、候选、答案、工具结果或异常原文。
+- 构造形式兼容 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`；只有本模块的 `AgentConfig` 被用作配置，其它附加对象被忽略。本地适配器通过 `complete()` 返回绑定该请求的 response/metadata，不提供最近响应 getter。
 - 完整组件边界、数据流、配置和安全约束只以 [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
 - 官方文件、消息、冲突口径和未公开契约见 [官方材料证据登记册](docs/OFFICIAL_MATERIALS_REGISTER.md)；赛事红线见 [竞赛合规清单](docs/COMPETITION_COMPLIANCE.md)。
 
@@ -90,6 +93,7 @@ python .agents/policy_guard.py --changed
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
+python .agents/policy_guard.py --formal
 ```
 
 所有仓库任务在修改前还必须运行 `python .agents/policy_guard.py --paths <预计路径...>`；不改文件的真实 API、推送、提交、发布等动作使用 `--actions`。守卫会列出本次触发的规则 ID；出现 `[POLICY BLOCK]` 时，工作 agent 必须在执行前报告具体动作、风险和安全替代，并停止触线子动作。完整流程见 [.agents/policies/HARD_RULES.md](.agents/policies/HARD_RULES.md)。阶段已于 2026-09-05 进入 R1：改动版正式检查使用 `--formal`；`--anchor-canary` 仅用于核对历史锚点内容，不能为改动版背书。

@@ -1,8 +1,8 @@
 # 数学推理智能体架构
 
-> 状态：R1 最小契约加固进行中
+> 状态：R1 离线加固通过；第二次正式评测待执行
 >
-> 更新日期：2026-09-05
+> 更新日期：2026-09-06
 >
 > 运行时基线：`350a267f`（R0 已定锚）；R1-1 三参数投影已使运行时合法偏离锚点
 > 本文件是仓库唯一的架构事实源。工程底线、恢复门禁和重建路线由 `docs/ENGINEERING_SPECIFICATION.md` 规定，但不另行定义组件架构。
@@ -17,6 +17,8 @@
 
 ## 2. 外部契约
 
+R1 独立验收缺陷已于 2026-09-06 完成本地修复。以下描述当前工作树；官方平台兼容性仍须第二次正式运行确认。
+
 ```python
 ReasoningAgent(client).solve(problem, metadata)
 # -> {"final_response": str, "trace": list[dict]}
@@ -26,23 +28,27 @@ ReasoningAgent(client).solve(problem, metadata)
 - `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
 - `client` 必须提供公开 `chat(messages=..., temperature=..., max_tokens=...)`（R1-1 三参数投影），由调用方注入，运行时一律按外部对象处理。
 - `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理，并以唯一一行 `最终答案：...` 结尾。该行只含规范化答案体，不含解释性句子；常见 Unicode/LaTeX 表示转换为稳定记号，已有精确形式时优先保留精确形式。
-- `trace` 是事件列表，用于记录路由、工具、候选、验证、反思、回退、选择和单题预算摘要；R1-3 起所有字符串内容经统一脱敏截断（300 字符上限 + 显式截断标记），不含凭据类材料。
-- `ReasoningAgent.solve()` 捕获全局异常并尝试低成本回退；`main.py` 将空答案和 `未解出` 视为失败记录。
+- `trace` 是公开事件列表，最多 256 项；只保留白名单阶段标识和有界数值预算，其余 content 为固定省略文本。没有题面、模型、工具、答案、异常原文，也不靠截取前缀来脱敏。
+- `ReasoningAgent.solve()` 的公共失败边界覆盖配置校验、输入序列化、预算初始化、求解、聚合和输出；不可预期异常返回 `未解出`，不发起额外的紧急请求。`main.py` 将空答案和 `未解出` 视为失败记录。
 
-R1-1（2026-09-05）已完成该收敛：运行时对所有注入 client 只调用三参数公开 `chat`，不再发送 `thinking_mode`、`tools`、`tool_choice`，也不再读取最近响应 getter；根入口已不再 import `llm_client`（IMPORT-001 碰撞面消除）。R1-2（2026-09-05）增加宽构造器：`ReasoningAgent(client, config, local_adapter=...)` 可显式注入 `local_support/xh202627_local_adapter.py` 的本地适配器（CLIENT-002，正式入口导入图之外），为本地入口恢复 usage 记账与工具调用；正式平台不传适配器，全部请求保持三参数，运行时不做任何能力探测。
+构造形式是 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`。仅接受此入口真实定义的 `AgentConfig` 为配置；不透明参数和未知 kwargs 不污染配置，也不触发 client 能力探测。未知 client 一律只调用三参数 `chat`。本地入口可显式传入 `LocalToolAdapter`，`complete()` 返回 `{response, metadata}`，`run_tools()` 返回文本、工具 trace 与本次 metadata；不存在共享最近响应 getter。
+
+正式导入闭包为根 `user_agent.py` 及 `_FORMAL_SOURCE_FILES` 中四个源文件：`agent_types.py`、`budget.py`、`domain_prompts.py`、`answer_equivalence.py`。入口按自身 `__file__` 确定源目录，以标准加载 API 装入新建的 `xh202627_runtime_<uuid>` 私有命名空间。等价模块在该空间内使用相对类型导入；不修改 `sys.path`、不复用或替换平台的同名缓存。这是现有根源文件的加载隔离，没有新增物理包目录或复制第二套实现。正式入口不导入 SymPy、工具执行器、HTTP client 或本地适配器；本地工具由显式适配器按原有可 spawn 路径调用。
 
 ## 3. 组件与数据流
 
 ```mermaid
 flowchart LR
-    I[JSONL / Demo / 调用方] --> C[InternChatClient]
+    I[JSONL / Demo / 调用方] --> C[注入 client 的公开 chat]
     I --> A[ReasoningAgent]
     C --> A
     D[domain_prompts.py<br/>18 领域提示] --> A
     B[ExecutionBudget] --> A
-    A --> T[math_tools.py<br/>11 个受限 SymPy 工具]
+    A --> L[显式本地 LocalToolAdapter]
+    L --> T[math_tools.py<br/>11 个受限 SymPy 工具]
     T --> P[tool_executor.py<br/>可终止子进程]
-    T --> A
+    T --> L
+    L --> A
     E[Answer / Candidate / Verification] --> A
     A --> R[final_response + trace]
     R --> O[每题 JSON / Demo 展示 / 调用方]
@@ -73,11 +79,11 @@ flowchart LR
 
 1. **领域路由**：`_detect_domain()` 对 18 个领域的关键词做不区分 ASCII 大小写的计数，选择最高分领域；未匹配时使用通用提示。
 2. **候选生成**：默认生成 2 个工具增强候选和 1 个纯推理候选，策略温度 `0.6`、单次上限 `8192` tokens；R1-1 起不再发送 `thinking_mode` 参数。
-3. **工具循环**：每个工具候选最多 3 轮。R1-1 三参数投影后，对注入 client 的请求不再携带 API 级 `tools` 定义，工具候选退化为纯推理请求（循环与 tool_calls 处理结构保留）；R1-2 起本地入口可经显式适配器（`chat_with_tools`）恢复工具增强，正式平台保持三参数纯文本。
-4. **截断回退**：候选无可抽取答案，或长回复缺少最终答案标记时，以温度 `0.0`、最多 `512` tokens 请求直接答案。
+3. **工具循环**：本地每个工具候选最多 3 轮，经显式适配器的 `run_tools()` / `complete_with_tools()` 执行工具增强并返回请求元数据。正式平台没有本地适配器时，工具候选直接执行同提示的三参数文本请求，不进入工具模块。
+4. **响应资格与恢复**：响应将可用的 finish_reason 与文本绑定。明确未完成状态、缺少完整答案标记、未闭合 TeX 或残句均不具备候选资格。工具候选和全候选无答案时仍可用原有温度 `0.0`、最多 `512` tokens 直接答案恢复；恢复本身共享请求/token/时间预算，恢复为空、异常、残句或再次截断时失败关闭。
 5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，仅接受 `VERDICT: A` 为正票；长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
 6. **批评与反思**：最佳候选原始置信度低于 `0.5` 且已有答案时，先批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。
-7. **聚合**：抽取为结构化 `Answer`，使用保守 canonical key 归一化精确数值、集合、多解、常见 Unicode 上下标和 LaTeX 包装，按多数票优先；无法证明的符号或语义等价不合并。没有多数项时选择置信度最高的候选。答案和展示推理始终取自同一个获胜答案组。R1-5 截断隔离：缺少答案标记且达到截断量级（≥3000 字符）的候选不提供可聚合答案（残句不进入聚合），trace 记录 `truncated_isolated_{cid}`；全部候选截断时触发直接答案回退。
+7. **聚合**：初始候选、反思和直接恢复均通过共享答案资格检查；有资格的 `Answer` 保持原有保守 canonical key 和多数票优先排序。没有多数项时选最高置信度；答案和展示推理来自同一获胜组。无资格候选不能由最终 fallback 重新抽取原文；没有可用答案就返回 `未解出`。验证/反思阶段预算耗尽时允许对已有合格候选聚合；生成阶段耗尽继续失败关闭。明确截断的 verifier 为 unknown，截断 critic 不驱动反思。
 8. **构造响应**：移除模型文本中已有的答案标签，保留其余获胜候选推理，并统一追加唯一的 `最终答案：...`。答案体经共享安全归一化后输出；精确值与近似值同时存在时保留精确部分，并规范角度符号、`πi` 显式乘法及常见特征根标签；fallback 也通过同一构造逻辑。
 
 `deterministic_verifier.py` 已提供受硬超时保护的确定性验证原语，但本层保守改动没有把它们接入第 5～7 步，也没有改变候选数量、温度、thinking mode 或模型选择。接入前必须先建立固定回归集并验证假阳性/假阴性。
@@ -131,7 +137,7 @@ flowchart LR
 | `INTERN_API_BASE` | `https://chat.intern-ai.org.cn/api/v1/chat/completions` |
 | `INTERN_MODEL` | `intern-s2-preview` |
 
-客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保留 `chat` 的可选扩展参数（`thinking_mode`、`tools` 等）供本地显式调用，并新增 `meta_sink` 回调（R1-2）：成功响应后以回调交付 usage 等元数据，不进入 HTTP payload。原 `get_last_response_meta()` 静态方法与 ContextVar 已删除（R1-2 迁移至显式本地适配器）。本地运行经 `LocalToolAdapter` 恢复单题 usage 记账；正式平台无适配器时 usage 记账为 0，请求数、工具调用与 deadline 预算不受影响。
+客户端拒绝 `stream=True` 和 `n != 1`。只重试连接错误、超时、HTTP `408/409/425/429`、服务端 `5xx`，以及响应 code/type/message 明确表示频率限制的 HTTP 400；普通参数错误和认证错误直接失败。客户端保留 `chat` 的可选扩展参数（`thinking_mode`、`tools` 等）供本地显式调用，并新增 `meta_sink` 回调（R1-2）：成功响应后以回调交付 usage、finish_reason 等元数据，不进入 HTTP payload；显式适配器将 metadata 与本次 response 一并返回，末轮文本请求也记账。原 `get_last_response_meta()` 静态方法与 ContextVar 已删除（R1-2 迁移至显式本地适配器）。本地运行经 `LocalToolAdapter` 恢复单题 usage 记账；正式平台无适配器时 usage 记账为 0，请求数、工具调用与 deadline 预算不受影响。
 
 `main.py` 读取 JSONL，每行必须是对象且含非空 `problem`。`idx` 缺失时按行生成；显式 `idx` 必须是 1～128 位 ASCII 字母、数字、下划线或连字符，且不能重复。结果写入 `<output_dir>/<idx>.json`，先写 `.tmp` 再原子替换。只有合法 JSON、`status == "success"` 且 `final_response` 非空的 checkpoint 会被跳过。`未解出` 保存为 error checkpoint，并保留 Agent trace 供区分数学失败、预算和平台错误。并发由 `LOCAL_MAX_CONCURRENCY` 控制，默认 `3` 且必须为正整数；正式评测可在 manifest 中冻结为更低值以规避端点节流。批处理完成后原子写入 `<output_dir>/_run/run_summary.json`，包含输入文件名和 SHA-256、模型、并发、UTC 开始时间、耗时以及成功/失败/跳过计数，不包含题面或密钥。
 
@@ -139,8 +145,8 @@ flowchart LR
 
 - API key 只从环境变量读取；`.env`、`outputs/` 和验证报告被 Git 忽略。
 - 题目、metadata、模型文本、tool calls、HTTP/JSON 响应和 checkpoint 均视为不可信输入。
-- trace 会包含题面衍生内容、候选片段和工具结果，输出目录应按敏感数据管理。
-- 工具调用失败会退化到纯推理；候选截断会尝试快速回退；全局异常仍保证接口返回结构稳定。
+- 公开 trace 仅包含白名单事件和数值预算；final_response 仍保留获胜解答推理，输出目录继续按题目数据的敏感级别管理。
+- 本地数学计算失败返回受控工具错误；模型传输或协议失败不盲目重试为纯推理。候选不完整时仅通过有预算的直接答案恢复；全局异常返回稳定失败结构。
 - R1-4 生命周期兜底：验证或反思阶段预算耗尽时，已生成候选以无票状态进入聚合（聚合不消耗预算），trace 记录 `verify_budget_exhausted`/`reflect_budget_exhausted`；生成阶段预算耗尽仍返回 `未解出`。
 - SymPy 子进程有墙钟硬超时，但尚无操作系统级内存上限；复杂表达式在超时前仍可能形成内存峰值。
 - 单题 deadline 在各模型/工具调用边界检查，无法提前取消已发出的阻塞 HTTP 请求；单请求由客户端超时保护。
@@ -155,9 +161,12 @@ flowchart LR
 python -m pytest -q
 python -m compileall -q .
 python -m ruff check .
+python .agents/policy_guard.py --formal
 ```
 
 测试以 fake client 和确定性输入覆盖接口、预算、工具、客户端及 runner，不依赖真实 API。`python evaluation/audit_dataset.py <dataset>` 可离线检查题集规模、元数据和泄漏风险；`evaluation/judge.py` 的文字语义与无法证明等价关系必须保持 `unknown`，禁止用子串命中判对。`python verify_math.py` 默认只解析 few-shot，不访问 API；只有 `--execute` 才会在线验证，并由 `--max-requests` 限制首轮和重试总请求数。`main.py` 和 `demo.py` 使用真实凭据时会消耗配额，不应进入默认 CI。
+
+`--formal` 现在执行完整离线测试，缺少必要 R1 回归或测试失败会阻断；静态 `evaluate(formal=True)` 不是完整验收。无 finish_reason 时的格式检查不能证明任意自然语言解答未截断或数学正确，实际隐藏集 invalid/截断指标仍待官方评测。
 
 ## 9. 架构变更规则
 

@@ -517,41 +517,46 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
                   temperature: float = 0.6,
                   max_tokens: int = 8192,
                   tool_timeout_seconds: float = _DEFAULT_TOOL_TIMEOUT_SECONDS,
-                  budget=None, tool_client=None) -> tuple[str, List[Dict]]:
+                  budget=None, tool_client=None, return_metadata=False):
     """工具调用循环：调 client.chat → 若返回 tool_calls 则执行并回灌 → 直到文本回复。
 
     R1-1 三参数投影：默认请求只使用 messages/temperature/max_tokens（CLIENT-001）。
     R1-2 宽构造器：``tool_client`` 为显式本地适配器（CLIENT-002）时，工具请求
-    经其 ``chat_with_tools`` 增强，usage 经 ``read_usage`` 记入预算。循环结构保留。
+    经其 ``complete_with_tools`` 增强，usage 从本次返回 metadata 记入预算。末轮纯文本也使用同样的请求绑定记账。
 
     返回 (最终文本回复, 工具调用trace)
     """
     trace: List[Dict] = []
     current_messages = list(messages)
 
+    def finish(text, metadata):
+        return (text, trace, metadata) if return_metadata else (text, trace)
+
     for round_id in range(max_rounds):
         if budget is not None:
             budget.consume_model_request()
         if tool_client is not None:
-            response = tool_client.chat_with_tools(
+            completed = tool_client.complete_with_tools(
                 messages=current_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=TOOL_DEFINITIONS,
             )
+            response, metadata = completed["response"], completed["metadata"]
             if budget is not None:
-                budget.record_response_meta({"usage": tool_client.read_usage()})
+                budget.record_response_meta(metadata)
         else:
             response = client.chat(
                 messages=current_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+            metadata = {}
 
         # 文本回复 → 结束
         if isinstance(response, str):
             trace.append({"step": f"tool_round_{round_id}_text", "content": response[:500]})
-            return response, trace
+            return finish(response, metadata)
 
         if not isinstance(response, dict):
             raise TypeError(f"不支持的模型响应类型: {type(response).__name__}")
@@ -561,7 +566,9 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
             content = response.get("content")
             if isinstance(content, str):
                 trace.append({"step": f"tool_round_{round_id}_text", "content": content[:500]})
-                return content, trace
+                metadata = {**metadata, "finish_reason": response.get(
+                    "finish_reason", metadata.get("finish_reason"))}
+                return finish(content, metadata)
             raise ValueError("模型响应既没有文本，也没有 tool_calls")
         if not isinstance(tool_calls, list):
             raise TypeError("tool_calls 必须是列表")
@@ -613,11 +620,18 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
     # 超过最大轮数，强制请求一次无工具的文本回复
     if budget is not None:
         budget.consume_model_request()
-    response = client.chat(
-        messages=current_messages,
-        temperature=0.0,
-        max_tokens=1024,
-    )
+    if tool_client is not None:
+        completed = tool_client.complete(messages=current_messages, temperature=0.0, max_tokens=1024)
+        response, metadata = completed["response"], completed["metadata"]
+        if budget is not None:
+            budget.record_response_meta(metadata)
+    else:
+        response = client.chat(messages=current_messages, temperature=0.0, max_tokens=1024)
+        metadata = {}
     if isinstance(response, str):
-        return response, trace
-    return str(response)[:500], trace
+        return finish(response, metadata)
+    if isinstance(response, dict) and isinstance(response.get("content"), str):
+        metadata = {**metadata, "finish_reason": response.get(
+            "finish_reason", metadata.get("finish_reason"))}
+        return finish(response["content"], metadata)
+    raise ValueError("模型末轮未返回文本")

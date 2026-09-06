@@ -345,6 +345,28 @@ def _anchor_canary(manifest: dict) -> list[Finding]:
     return _validate_policy_files(manifest)
 
 
+def _formal_behavior_checks() -> list[Finding]:
+    """A formal PASS requires executable regressions, not just matching source text."""
+    required = ("test_r1_acceptance.py", "test_r1_invariants.py", "test_client_projection.py",
+                "test_official_import_collision.py", "test_trace_hygiene.py",
+                "test_truncation_isolation.py", "test_lifecycle_fallback.py")
+    missing = [name for name in required if not (ROOT / "tests" / name).is_file()]
+    if missing:
+        return [Finding("TEST-IMPORT-001", "Required R1 behavior tests missing: " + ", ".join(missing))]
+    try:
+        process = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "tests"], cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return [Finding("TEST-IMPORT-001", "Formal behavior suite could not complete.")]
+    if process.returncode:
+        return [Finding("TEST-IMPORT-001",
+            "Formal behavior suite failed; run python -m pytest -q tests for details.")]
+    print("formal_behavior=" + process.stdout.strip().splitlines()[-1])
+    return []
+
+
 def _print_report(
     mode: str,
     manifest: dict,
@@ -403,6 +425,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.formal:
         paths = list(manifest["runtime_files"])
         triggers, blockers = evaluate(paths, manifest, formal=True)
+        if not blockers:
+            blockers.extend(_formal_behavior_checks())
         _print_report("formal", manifest, paths, triggers, blockers)
         return 2 if blockers else 0
 

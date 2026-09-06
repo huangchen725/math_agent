@@ -12,7 +12,10 @@ from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from typing import Any, Optional
 
-from agent_types import Answer
+if __package__:
+    from .agent_types import Answer
+else:
+    from agent_types import Answer
 
 
 _CATEGORICAL_ANSWERS = {

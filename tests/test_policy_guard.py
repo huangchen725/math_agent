@@ -217,3 +217,22 @@ def test_anchor_canary_reports_r1_runtime_divergence() -> None:
     rules = {finding.rule for finding in guard._anchor_canary(manifest)}
     assert manifest["phase"] == "R1"
     assert "ANCHOR-001" in rules
+
+
+def test_formal_behavior_gate_fails_on_regression(monkeypatch):
+    import subprocess
+    monkeypatch.setattr(guard.subprocess, "run", lambda *a, **k:
+        subprocess.CompletedProcess(a[0], 1, "1 failed", ""))
+    assert {finding.rule for finding in guard._formal_behavior_checks()} == {"TEST-IMPORT-001"}
+
+
+def test_formal_behavior_gate_requires_complete_suite(monkeypatch):
+    import subprocess
+    commands = []
+    def successful(command, **kwargs):
+        commands.append(command)
+        assert kwargs["timeout"] == 60
+        return subprocess.CompletedProcess(command, 0, "200 passed", "")
+    monkeypatch.setattr(guard.subprocess, "run", successful)
+    assert guard._formal_behavior_checks() == []
+    assert commands[0] == [sys.executable, "-m", "pytest", "-q", "tests"]

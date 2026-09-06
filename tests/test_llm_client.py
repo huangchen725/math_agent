@@ -103,7 +103,7 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
     payload = {
         "id": "request-1",
         "model": "test-model",
-        "choices": [{"message": {"content": "ok"}}],
+        "choices": [{"message": {"content": "ok"}, "finish_reason": "length"}],
         "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
     }
     monkeypatch.setattr(llm_client.requests, "post", lambda *a, **k: _http_response(200, payload))
@@ -112,6 +112,7 @@ def test_client_exposes_usage_without_changing_text_contract(monkeypatch):
 
     assert client.chat([{"role": "user", "content": "hello"}], meta_sink=captured.update) == "ok"
     assert captured["usage"]["total_tokens"] == 5
+    assert captured["finish_reason"] == "length"
     assert client.chat([{"role": "user", "content": "hello"}]) == "ok"
 
 

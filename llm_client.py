@@ -123,6 +123,7 @@ class InternChatClient:
                         "id": data.get("id"),
                         "model": data.get("model", self.model),
                         "usage": usage if isinstance(usage, dict) else {},
+                        "finish_reason": data["choices"][0].get("finish_reason"),
                         "elapsed_ms": round((time.monotonic() - request_started) * 1000),
                         "attempts": attempt + 1,
                     })
