@@ -4,6 +4,8 @@
 
 > **恢复状态（2026-09-06）**：R0 已在 `ba63ac0` 完成官方定锚：112 success、1069 次请求、24/112 correct（21.43%）。独立验收发现的 R1 缺口现已修复，Python 3.10/3.12 各通过 187 个离线测试。入口支持不透明附加构造参数，client 只走三参数公开调用；公开 trace 只保留白名单事件与数值预算；初始化至输出失败关闭；初始候选、反思与恢复统一校验完整答案；本地 usage/finish_reason 随请求返回；正式依赖从入口位置加载至独立命名空间。`--formal` 包含实际行为测试。阶段仍为 R1，第二次正式评测尚未执行；离线通过不代表官方兼容性或正确率提升。S1～S6 仍保存在 `archive/s1-s6-1fc98b7`。
 
+> **当前离线进度**：R1 修复已提交为 `9126c04`。其上 Q0/Q1 离线工作流和实验实现已完成，两个 Python 版本各 371 项测试通过。真实模型基线、收益与官方验收仍分别待补。
+
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
 ## 核心接口
@@ -63,7 +65,7 @@ Copy-Item .env.example .env
 | --- | --- | --- | --- |
 | `INTERN_API_KEY` | 是 | 无 | Intern API token |
 | `INTERN_API_BASE` | 否 | 官方 Chat Completions 地址 | OpenAI 兼容端点 |
-| `INTERN_MODEL` | 否 | `intern-s2-preview` | 模型名 |
+| `INTERN_MODEL` | 否 | `intern-s2-preview-397b` | 本地模型名；正式注入 client 由平台控制 |
 | `LOCAL_MAX_CONCURRENCY` | 否 | `3` | 本地并发，必须为正整数 |
 
 ## 运行
@@ -85,6 +87,23 @@ python demo.py
 演示默认监听 `127.0.0.1:7860`，会使用真实 API。
 
 ## 验证
+
+Q0/Q1 离线开发已按 2026-09-06 用户决策并行推进，R1 官方验收仍单独等待。当前 Q0 冻结集为 U-MATH 的 144 道公开英文大学数学题（六领域，开发/留出各 72），仅在被忽略的 `outputs/q0-umath-v4/` 保存；许可原文和来源版本保存在 `outputs/q0-umath-source-v2/`。它不是赛事隐藏题集，不保证预训练独立，也未完成实际模型运行或双人盲审。详见 [Q0/Q1 离线诊断报告](docs/evaluations/Q0_Q1_OFFLINE_20260906.md)。
+
+离线准备与比较命令（均不调用模型）：
+
+```bash
+python -m evaluation.q0_pipeline verify outputs/q0-umath-v4
+python -m evaluation.q1_experiments outputs/q0-umath-v4 --output outputs/q1/dev-plan.json
+python -m evaluation.q0_pipeline score outputs/q0-umath-v4 RUN_DIR PLAN_JSON --variant baseline --output SCORE_JSON
+python -m evaluation.q0_pipeline compare BASE_SCORE CANDIDATE_SCORE --output COMPARISON_JSON
+python -m evaluation.q0_pipeline review-packet outputs/q0-umath-v4 SCORE_JSON --salt REVIEW_SALT --output PACKET_JSON
+python -m evaluation.q0_pipeline review-merge PACKET_JSON REVIEWER_A_JSON REVIEWER_B_JSON --output REVIEW_RESULT_JSON
+```
+
+从原始来源重建：`python -m evaluation.import_umath OUTPUT_SOURCE` 只下载公开数据；然后执行 `python -m evaluation.q0_pipeline freeze OUTPUT_SOURCE/records.jsonl NEW_BUNDLE`。冻结文件、题号、近重复、来源、代码/配置和运行输出指纹不一致时拒绝使用。旧 v1–v3 为被审核淘汰的中间产物。
+
+Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。十组计划覆盖基线、五项单变量、critic/reflection/tools 消融和组合候选；`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
 
 默认检查不访问外部 API：
 

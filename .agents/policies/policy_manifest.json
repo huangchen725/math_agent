@@ -1,7 +1,9 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-09-05.1",
+  "policy_version": "2026-09-06.1",
   "phase": "R1",
+  "offline_workstreams": ["Q0", "Q1"],
+  "schedule_decision": "2026-09-06: user authorized Q0/Q1 offline work while R1 official acceptance remains pending",
   "authoritative_spec": "docs/ENGINEERING_SPECIFICATION.md",
   "human_protocol": ".agents/policies/HARD_RULES.md",
   "anchor_commit": "350a267f",

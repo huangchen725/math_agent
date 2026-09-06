@@ -4,6 +4,8 @@
 架构事实源：ARCHITECTURE.md
 """
 import json
+import ast
+from fractions import Fraction
 import math
 import re
 import importlib.util
@@ -82,7 +84,7 @@ _PUBLIC_STEP = re.compile(
     r"(?:input_error|global_error|budget_exceeded|budget_summary|domain_detect|"
     r"truncated_fallback|verify_budget_exhausted|reflect_budget_exhausted|"
     r"critic|critic_error|reflection|reflect_error|fallback_result|"
-    r"self_consistency|select_final|"
+    r"self_consistency|select_final|deterministic_pass|deterministic_fail|deterministic_unknown|response_truncated|"
     r"(?:policy_plain|policy_tool|tool_solve|tool_error|truncated|truncated_isolated)_\d+|"
     r"(?:verify|verify_err|verify_unknown)_\d+_\d+)\Z"
 )
@@ -219,7 +221,7 @@ class ReasoningAgent:
     """领域路由、工具增强、验证、反思与聚合智能体。"""
 
     def __init__(self, client: Any, config: AgentConfig | None = None, *args,
-                 local_adapter: Any = None, **kwargs) -> None:
+                 local_adapter: Any = None, local_policy=None, **kwargs) -> None:
         """宽构造器（R1-2）：``local_adapter`` 为显式本地适配器（CLIENT-002）。
 
         适配器由本地入口（main.py/demo.py）显式传入，提供
@@ -229,6 +231,7 @@ class ReasoningAgent:
         self.config = config if type(config) is AgentConfig else AgentConfig()
         self.client = client
         self.local_adapter = local_adapter
+        self.local_policy = local_policy if type(local_policy) is Q1Policy else Q1Policy()
 
     def _chat(self, system_prompt: str, user_content: str,
               temperature: float, max_tokens: int) -> str:
@@ -276,6 +279,8 @@ class ReasoningAgent:
             ]}
 
     def _validate_config(self):
+        if any(type(value) is not bool for value in vars(self.local_policy).values()):
+            raise ValueError("invalid experiment policy")
         defaults = AgentConfig()
         for name, default in vars(defaults).items():
             value = getattr(self.config, name)
@@ -360,6 +365,8 @@ class ReasoningAgent:
         # 阶段1：关键词检测领域
         domain_name = self._detect_domain(problem)
         domain_prompt = get_domain_prompt(domain_name)
+        if self.local_policy.compact_routing:
+            domain_prompt = POLICY_NO_TOOL_PROMPT + "\n" + _ROUTE_HINTS.get(domain_name, "核对所求对象、定义域和边界条件。")
         if domain_name:
             trace.append({"step": "domain_detect", "content": f"关键词识别: {domain_name}"})
 
@@ -376,6 +383,10 @@ class ReasoningAgent:
             if self.config.enable_fallback:
                 fb = self._quick_fallback(problem, trace)
                 if fb:
+                    if self.local_policy.deterministic:
+                        if _complete_task_check(problem, fb) == "fail":
+                            trace.append({"step": "deterministic_fail", "content": "[内容已省略]"})
+                            return {"final_response": "未解出", "trace": trace}
                     return {"final_response": self._build_response("", fb), "trace": trace}
             return {"final_response": "未解出", "trace": trace}
 
@@ -426,9 +437,11 @@ class ReasoningAgent:
         try:
             if self.config.enable_critic and scored:
                 best = max(scored, key=lambda item: item.confidence)
-                if best.raw_confidence < 0.5 and best.answer.raw:
+                has_failure = any(v.status == "fail" for v in best.verifications)
+                if (best.raw_confidence < 0.5 and best.answer.raw
+                        and (not self.local_policy.calibrated_verifier or has_failure)):
                     criticism = self._critic(problem, best.content, trace)
-                    if criticism and "NO ERROR" not in criticism.upper():
+                    if criticism and "NO ERROR" not in criticism.upper() and self.config.enable_reflection:
                         refined = self._reflect(problem, best.content, criticism, trace)
                         ra = self._answer_for_aggregation(refined, len(candidates), trace)
                         if ra.raw:
@@ -450,6 +463,8 @@ class ReasoningAgent:
             trace.append({"step": "reflect_budget_exhausted", "content": _clip_for_trace(str(e))})
 
         # 阶段6：加权聚合
+        if self.local_policy.deterministic:
+            scored = self._apply_exact_evidence(problem, scored, trace)
         final_answer, best_content = self._aggregate(scored, trace)
         if not final_answer:
             return {"final_response": "未解出", "trace": trace}
@@ -490,7 +505,17 @@ class ReasoningAgent:
             candidates.append(cand)
             trace.extend(tt)
         for i in range(self.config.plain_candidates):
-            cand = self._solve_plain(problem, domain_prompt)
+            if self.local_policy.diverse_candidates:
+                cand = self._chat(domain_prompt or POLICY_NO_TOOL_PROMPT,
+                    f"{problem}\n\n请用独立方法复核后给出完整解答。",
+                    temperature=min(1.0, self.config.policy_temperature + 0.2),
+                    max_tokens=self.config.max_tokens)
+            else:
+                cand = self._solve_plain(problem, domain_prompt)
+            if self.local_policy.recover_plain and self.config.enable_fallback and not self._extract_answer(cand):
+                trace.append({"step": f"truncated_{i}", "content": "[内容已省略]"})
+                recovered = self._quick_fallback(problem, trace)
+                cand = recovered or cand
             candidates.append(cand)
             trace.append({"step": f"policy_plain_{i}", "content": _clip_for_trace(cand)})
         return [c for c in candidates if c], trace
@@ -556,12 +581,15 @@ class ReasoningAgent:
                     f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
                     temperature=self.config.verifier_temperature,
                     max_tokens=self.config.verifier_max_tokens)
-                if self._response_cutoff(verdict):
+                status = self._verdict_status(verdict)
+                if self._response_cutoff(verdict) or (self.local_policy.calibrated_verifier and status == "unknown"):
+                    if self._response_cutoff(verdict):
+                        trace.append({"step": "response_truncated", "content": "[内容已省略]"})
                     verifications.append(Verification(source="model", status="unknown",
                         confidence=0.0, detail="incomplete response"))
                     trace.append({"step": f"verify_unknown_{cid}_{vid}", "content": "incomplete"})
                     continue
-                passed = self._is_correct(verdict)
+                passed = status == "pass" if self.local_policy.calibrated_verifier else self._is_correct(verdict)
                 votes.append(passed)
                 verifications.append(Verification(
                     source="model",
@@ -786,6 +814,29 @@ class ReasoningAgent:
         return float(value) if value is not None else None
 
     @staticmethod
+    def _verdict_status(verdict):
+        if not isinstance(verdict, str) or ReasoningAgent._response_cutoff(verdict):
+            return "unknown"
+        match = re.fullmatch(r"\s*VERDICT\s*[:：]\s*([AB])\s*", verdict, re.I)
+        return ("pass" if match[1].upper() == "A" else "fail") if match else "unknown"
+
+    def _apply_exact_evidence(self, problem, candidates, trace):
+        passed, remaining = [], []
+        for candidate in candidates:
+            if not candidate.answer.raw:
+                continue
+            status = _complete_task_check(problem, candidate.answer.raw)
+            trace.append({"step": "deterministic_" + status, "content": "[内容已省略]"})
+            candidate.verifications.append(Verification("deterministic:complete_problem", status,
+                1.0 if status == "pass" else 0.0, "bounded exact arithmetic"))
+            if status == "pass":
+                passed.append(candidate)
+            elif status == "unknown":
+                remaining.append(candidate)
+        # A complete exact problem proof outranks model votes. Unparsed tasks never change order.
+        return passed if passed else remaining
+
+    @staticmethod
     def _is_correct(verdict: str) -> bool:
         m = re.findall(r"\bVERDICT\s*[:：]\s*([AB])", verdict, re.IGNORECASE)
         if m: return m[-1].upper() == "A"
@@ -793,3 +844,170 @@ class ReasoningAgent:
         if m: return m[-1].upper() == "A"
         words = re.findall(r"\b[A-Z]+\b", verdict.upper())
         return "CORRECT" in words and "INCORRECT" not in words
+
+
+@dataclass(frozen=True)
+class Q1Policy:
+    """Explicit offline experiment switches; the public default remains R1."""
+    recover_plain: bool = False
+    deterministic: bool = False
+    compact_routing: bool = False
+    calibrated_verifier: bool = False
+    diverse_candidates: bool = False
+
+
+_ROUTE_HINTS = {
+    "数学分析": "先确认极限或收敛的定义与适用条件，再核对端点。",
+    "线性代数": "核对矩阵维度；特征值须包含重数，解空间须给全。",
+    "概率论": "明确样本空间与独立性，检查归一化和参数范围。",
+    "数论": "区分整数与实数范围，核对整除、模数及全部解。",
+    "组合": "明确计数对象，检查重复计数和遗漏。",
+}
+
+
+def _exact_answer_value(text):
+    if type(text) is not str or len(text) > 256:
+        return None
+    if not re.fullmatch(r"[+-]?\d+(?:\.\d+)?(?:/\d+)?", text.strip()):
+        return None
+    try:
+        return Fraction(text.strip())
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _exact_problem_value(problem):
+    """Only full, bounded arithmetic/binomial/mod-power tasks. No semantic guesses."""
+    if type(problem) is not str or len(problem) > 300:
+        return None
+    text = problem.strip().rstrip("。？?")
+    modular = re.fullmatch(r"求整数\s*([+-]?\d{1,9})\s*\^\s*(\d{1,6})\s*除以\s*(\d{1,9})\s*的余数", text)
+    if modular:
+        base, exponent, modulus = map(int, modular.groups())
+        return Fraction(pow(base, exponent, modulus)) if modulus > 0 else None
+    combo = re.fullmatch(r"(?:计算|求)\s*C\((\d{1,4}),\s*(\d{1,4})\)", text)
+    if combo:
+        n, k = map(int, combo.groups())
+        return Fraction(math.comb(n, k)) if 0 <= k <= n <= 1000 else None
+    match = re.fullmatch(r"(?:计算|求值|Calculate|Evaluate)\s*[:：]?\s*([0-9+*/(). ^\-]+)", text, re.I)
+    if not match or len(match[1]) > 128:
+        return None
+    try:
+        tree = ast.parse(match[1].strip().replace("^", "**"), mode="eval")
+        if sum(1 for _ in ast.walk(tree)) > 64:
+            return None
+        def evaluate(node):
+            if isinstance(node, ast.Constant) and type(node.value) is int:
+                value = Fraction(node.value)
+            elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                value = evaluate(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
+            elif isinstance(node, ast.BinOp):
+                left, right = evaluate(node.left), evaluate(node.right)
+                if isinstance(node.op, ast.Add):
+                    value = left + right
+                elif isinstance(node.op, ast.Sub):
+                    value = left - right
+                elif isinstance(node.op, ast.Mult):
+                    value = left * right
+                elif isinstance(node.op, ast.Div):
+                    value = left / right
+                elif isinstance(node.op, ast.Pow) and right.denominator == 1 and 0 <= right <= 100:
+                    value = left ** int(right)
+                else:
+                    raise ValueError("unsupported arithmetic")
+            else:
+                raise ValueError("unsupported syntax")
+            if max(value.numerator.bit_length(), value.denominator.bit_length()) > 4096:
+                raise ValueError("arithmetic size exceeded")
+            return value
+        return evaluate(tree.body)
+    except (SyntaxError, ValueError, ZeroDivisionError, OverflowError, RecursionError):
+        return None
+
+
+def _bounded_polynomial(text):
+    """Rational polynomials only; fixed degree, AST, text and coefficient bounds."""
+    if type(text) is not str or len(text) > 128 or not re.fullmatch(r"[x0-9+*/(). ^\s-]+", text):
+        raise ValueError("polynomial size")
+    tree = ast.parse(text.strip().replace("^", "**"), mode="eval")
+    if sum(1 for _ in ast.walk(tree)) > 64:
+        raise ValueError("polynomial nodes")
+    def checked(poly):
+        if max(poly, default=0) > 12 or any(max(v.numerator.bit_length(), v.denominator.bit_length()) > 1024 for v in poly.values()):
+            raise ValueError("polynomial resources")
+        return {k: v for k,v in poly.items() if v}
+    def multiply(left, right):
+        result = {}
+        for a,b in left.items():
+            for c,d in right.items():
+                result[a+c] = result.get(a+c, Fraction(0)) + b*d
+        return checked(result)
+    def visit(node):
+        if isinstance(node, ast.Name) and node.id == "x":
+            return {1: Fraction(1)}
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            return checked({0: Fraction(node.value)})
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return {k: v*(-1 if isinstance(node.op, ast.USub) else 1) for k,v in visit(node.operand).items()}
+        if not isinstance(node, ast.BinOp):
+            raise ValueError("polynomial grammar")
+        left, right = visit(node.left), visit(node.right)
+        if isinstance(node.op, (ast.Add, ast.Sub)):
+            result = dict(left)
+            for k,v in right.items():
+                result[k] = result.get(k, Fraction(0)) + v*(-1 if isinstance(node.op, ast.Sub) else 1)
+            return checked(result)
+        if isinstance(node.op, ast.Mult):
+            return multiply(left, right)
+        if isinstance(node.op, ast.Div) and set(right) == {0}:
+            return checked({k: v/right[0] for k,v in left.items()})
+        if isinstance(node.op, ast.Pow) and set(right).issubset({0}):
+            exponent = right.get(0, Fraction(0))
+            if exponent.denominator != 1 or not 0 <= exponent <= 12:
+                raise ValueError("polynomial exponent")
+            result = {0: Fraction(1)}
+            for _ in range(int(exponent)):
+                result = multiply(result, left)
+            return result
+        raise ValueError("polynomial operator")
+    return checked(visit(tree.body))
+
+
+def _complete_task_check(problem, answer):
+    if type(problem) is not str or type(answer) is not str or max(len(problem), len(answer)) > 300:
+        return "unknown"
+    expected, actual = _exact_problem_value(problem), _exact_answer_value(answer)
+    if expected is not None and actual is not None:
+        return "pass" if expected == actual else "fail"
+    text = problem.strip().rstrip("。？?")
+    derivative = re.fullmatch(r"求函数\s*f\(x\)\s*=\s*(.+?)\s*的导数", text)
+    integral = re.fullmatch(r"计算\s*(.+?)\s*关于\s*x\s*的不定积分", text)
+    determinant = re.fullmatch(r"计算矩阵\s*(\[\[.*\]\])\s*的行列式", text)
+    try:
+        if derivative:
+            original = _bounded_polynomial(derivative[1])
+            expected_poly = {k-1: v*k for k,v in original.items() if k}
+            return "pass" if expected_poly == _bounded_polynomial(answer) else "fail"
+        if integral:
+            # Require an explicit free integration constant; never prove a partial family.
+            match = re.fullmatch(r"(.+?)\s*[+]\s*C", answer.strip())
+            if not match:
+                return "unknown"
+            original = _bounded_polynomial(match[1])
+            derivative_poly = {k-1: v*k for k,v in original.items() if k}
+            return "pass" if derivative_poly == _bounded_polynomial(integral[1]) else "fail"
+        if determinant and actual is not None:
+            matrix = json.loads(determinant[1])
+            if len(matrix) not in (2, 3) or any(type(row) is not list or len(row) != len(matrix) for row in matrix):
+                return "unknown"
+            if any(type(v) is not int or abs(v) > 1_000_000 for row in matrix for v in row):
+                return "unknown"
+            if len(matrix) == 2:
+                expected = matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0]
+            else:
+                a,b,c = matrix
+                expected = a[0]*(b[1]*c[2]-b[2]*c[1])-a[1]*(b[0]*c[2]-b[2]*c[0])+a[2]*(b[0]*c[1]-b[1]*c[0])
+            return "pass" if actual == expected else "fail"
+    except (ValueError, SyntaxError, TypeError, ZeroDivisionError, RecursionError, OverflowError):
+        return "unknown"
+    return "unknown"

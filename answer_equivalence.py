@@ -40,8 +40,13 @@ def normalize_answer(answer: str) -> str:
     value = value.replace(r"\(", "").replace(r"\)", "")
     value = value.replace(r"\[", "").replace(r"\]", "")
     value = re.sub(r"\\boxed\{([^{}]*)\}", r"\1", value)
+    def fraction(match):
+        def grouped(part):
+            part = part.strip()
+            return part if re.fullmatch(r"[+-]?(?:\d+(?:\.\d+)?|[A-Za-z]\w*)", part) else "(" + part + ")"
+        return grouped(match[1]) + "/" + grouped(match[2])
     for _ in range(3):
-        value = re.sub(r"\\[d]?frac\{([^{}]+)\}\{([^{}]+)\}", r"\1/\2", value)
+        value = re.sub(r"\\[d]?frac\{([^{}]+)\}\{([^{}]+)\}", fraction, value)
     value = re.sub(r"\\(?:mathbb|text|mathrm|mathcal)\{([^{}]*)\}", r"\1", value)
     value = value.replace(r"\displaystyle", "")
     value = value.replace("\\left", "").replace("\\right", "").replace("$", "")
@@ -113,6 +118,11 @@ def normalize_answer(answer: str) -> str:
 def numeric_value(answer: str) -> Optional[Fraction]:
     """Parse an exact integer, decimal, or simple fraction without ``eval``."""
     value = normalize_answer(answer).replace(" ", "")
+    if len(value) > 2048:
+        return None
+    exponent = re.search(r"[eE]([+-]?\d+)$", value)
+    if exponent and (len(exponent[1].lstrip("+-")) > 4 or abs(int(exponent[1])) > 1000):
+        return None
     try:
         if re.fullmatch(r"[+-]?\d+", value):
             return Fraction(int(value), 1)
@@ -179,7 +189,7 @@ def canonical_answer(answer: str) -> tuple[Any, ...]:
         keys = tuple(sorted((canonical_answer(part) for part in parts), key=repr))
         return "multi", keys
 
-    return "text", compact.casefold()
+    return "text", compact.casefold() if compact.casefold() in _CATEGORICAL_ANSWERS else compact
 
 
 def answer_kind(answer: str) -> str:
