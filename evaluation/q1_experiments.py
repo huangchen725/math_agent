@@ -7,6 +7,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import time
+from uuid import uuid4
 
 from evaluation.audit_dataset import load_jsonl
 from evaluation.q0_pipeline import digest, verify_bundle
@@ -57,7 +58,7 @@ def make_plan(bundle: Path, *, split="dev", model="intern-s2-preview-397b", loca
         "scope": "explicit local adapter experiment" if local_tools else "text-only injected protocol"}
 
 
-def run_plan(plan, variant, bundle: Path, output: Path, client, *, execution="fixture", local_adapter=None):
+def run_plan(plan, variant, bundle: Path, output: Path, client, *, execution="fixture", local_adapter=None, run_ticket=None):
     """Call only a supplied client; caller owns real-API authorization outside this offline CLI."""
     manifest = verify_bundle(bundle)
     if execution not in {"fixture", "real"} or variant not in plan["variants"]:
@@ -73,6 +74,9 @@ def run_plan(plan, variant, bundle: Path, output: Path, client, *, execution="fi
         raise ValueError("plan differs from frozen ablation specification")
     if output.exists():
         raise ValueError("fresh run directory required; no mixed checkpoints")
+    if run_ticket is not None and (type(run_ticket) is not dict or
+            set(run_ticket) != {"protocol_sha256", "slot", "nonce", "reserved_at"}):
+        raise ValueError("invalid offline experiment ticket")
     settings = plan["variants"][variant]
     agent = ReasoningAgent(client, AgentConfig(**settings["agent"]),
         local_policy=Q1Policy(**settings["policy"]), local_adapter=local_adapter)
@@ -81,6 +85,8 @@ def run_plan(plan, variant, bundle: Path, output: Path, client, *, execution="fi
     summary_dir = output/"_run"
     summary_dir.mkdir()
     summary = {"input_sha256": plan["input_sha256"], "dataset_sha256": plan["dataset_sha256"],
+        "run_id": uuid4().hex, "started_at": time.time(),
+        "run_ticket_sha256": digest(run_ticket) if run_ticket is not None else None,
         "model": plan["model"], "code_sha": plan["code_sha"], "config": settings,
         "execution": execution, "variant": variant, "plan_sha256": digest(plan), "local_tools": plan["local_tools"],
         "status": "running", "completed_items": 0}

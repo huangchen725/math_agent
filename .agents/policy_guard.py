@@ -352,6 +352,8 @@ def _formal_behavior_checks() -> list[Finding]:
                 "test_truncation_isolation.py", "test_lifecycle_fallback.py")
     if {"Q0", "Q1"}.intersection(load_manifest().get("offline_workstreams", [])):
         required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py")
+    if "Q2" in load_manifest().get("offline_workstreams", []):
+        required += ("test_q2_pipeline.py", "test_q2_commands.py")
     missing = [name for name in required if not (ROOT / "tests" / name).is_file()]
     if missing:
         return [Finding("TEST-IMPORT-001", "Required R1 behavior tests missing: " + ", ".join(missing))]

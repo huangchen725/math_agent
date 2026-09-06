@@ -236,3 +236,14 @@ def test_formal_behavior_gate_requires_complete_suite(monkeypatch):
     monkeypatch.setattr(guard.subprocess, "run", successful)
     assert guard._formal_behavior_checks() == []
     assert commands[0] == [sys.executable, "-m", "pytest", "-q", "tests"]
+
+
+def test_formal_behavior_gate_requires_q2_regressions(monkeypatch):
+    from pathlib import Path
+    original = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path:
+        False if path.name == "test_q2_pipeline.py" else original(path))
+    findings = guard._formal_behavior_checks()
+    assert len(findings) == 1
+    assert findings[0].rule == "TEST-IMPORT-001"
+    assert "test_q2_pipeline.py" in findings[0].message
