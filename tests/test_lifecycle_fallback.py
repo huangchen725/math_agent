@@ -44,7 +44,7 @@ def test_verification_budget_exhaustion_preserves_candidates():
     assert client.calls == 2
 
 
-def test_generation_budget_exhaustion_still_reports_unsolved():
+def test_generation_budget_exhaustion_preserves_completed_candidate():
     from user_agent import AgentConfig, ReasoningAgent
 
     client = SteadyClient()
@@ -56,5 +56,6 @@ def test_generation_budget_exhaustion_still_reports_unsolved():
     )
     result = ReasoningAgent(client, config).solve("计算 1+1。", {})
 
-    assert result["final_response"] == "未解出"
-    assert any(item["step"] == "budget_exceeded" for item in result["trace"])
+    assert result["final_response"] == "推理：1+1=2。\n最终答案：2"
+    assert client.calls == 1
+    assert any(item["step"] == "generation_budget_exhausted" for item in result["trace"])

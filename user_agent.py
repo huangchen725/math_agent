@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Tuple
 # The source closure is fixed; neither cwd/sys.path nor preloaded bare modules
 # determine its ownership. A fresh private namespace never replaces foreign state.
 _FORMAL_SOURCE_FILES = ("agent_types.py", "budget.py", "domain_prompts.py", "answer_equivalence.py")
+MAX_OUTPUT_TOKENS = 8192  # User-confirmed official single-request bound (2026-09-06).
 
 
 def _load_formal_dependencies():
@@ -82,7 +83,7 @@ def _clip_trace_item(item: Dict) -> Dict:
 
 _PUBLIC_STEP = re.compile(
     r"(?:input_error|global_error|budget_exceeded|budget_summary|domain_detect|"
-    r"truncated_fallback|verify_budget_exhausted|reflect_budget_exhausted|"
+    r"truncated_fallback|generation_budget_exhausted|verify_budget_exhausted|reflect_budget_exhausted|"
     r"critic|critic_error|reflection|reflect_error|fallback_result|"
     r"self_consistency|select_final|deterministic_pass|deterministic_fail|deterministic_unknown|response_truncated|"
     r"(?:policy_plain|policy_tool|tool_solve|tool_error|truncated|truncated_isolated)_\d+|"
@@ -125,11 +126,15 @@ class _ModelText(str):
 
 
 def _response_text(response, metadata=None):
-    reason = metadata.get("finish_reason") if type(metadata) is dict else None
+    reasons = [metadata.get("finish_reason")] if type(metadata) is dict else []
     if type(response) is dict:
-        if reason is None:
-            reason = response.get("finish_reason")
+        reasons.append(response.get("finish_reason"))
         response = response.get("content")
+    reasons = [reason for reason in reasons if type(reason) is str and reason]
+    # Either source can supply incompleteness; a conflicting stop never cancels it.
+    reason = next((value for value in reasons if value != "stop"), reasons[0] if reasons else None)
+    if response is None and reason == "length":
+        response = ""
     if not isinstance(response, str):
         raise ValueError("invalid response type")
     # A bounded output contract prevents malformed clients from growing review/trace state.
@@ -236,6 +241,8 @@ class ReasoningAgent:
     def _chat(self, system_prompt: str, user_content: str,
               temperature: float, max_tokens: int) -> str:
         """调用 client.chat，返回文本。仅使用三参数公开协议（CLIENT-001）。"""
+        if type(max_tokens) is not int or not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
+            raise ValueError("invalid output token limit")
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -288,7 +295,10 @@ class ReasoningAgent:
                 valid = type(value) is bool
             elif type(default) is int:
                 minimum = 0 if name in ("tool_candidates", "plain_candidates") else 1
-                valid = type(value) is int and minimum <= value <= 10**9
+                maximum = MAX_OUTPUT_TOKENS if name in (
+                    "max_tokens", "verifier_max_tokens", "critic_max_tokens", "fallback_max_tokens"
+                ) else 10**9
+                valid = type(value) is int and minimum <= value <= maximum
             else:
                 valid = type(value) in (int, float) and math.isfinite(value) and value >= 0
                 if "timeout" in name:
@@ -438,8 +448,7 @@ class ReasoningAgent:
             if self.config.enable_critic and scored:
                 best = max(scored, key=lambda item: item.confidence)
                 has_failure = any(v.status == "fail" for v in best.verifications)
-                if (best.raw_confidence < 0.5 and best.answer.raw
-                        and (not self.local_policy.calibrated_verifier or has_failure)):
+                if best.raw_confidence < 0.5 and best.answer.raw and has_failure:
                     criticism = self._critic(problem, best.content, trace)
                     if criticism and "NO ERROR" not in criticism.upper() and self.config.enable_reflection:
                         refined = self._reflect(problem, best.content, criticism, trace)
@@ -496,28 +505,33 @@ class ReasoningAgent:
     def _generate_candidates(self, problem: str, domain_prompt: str) -> Tuple[List[str], List[Dict]]:
         """v17：回退v13——全部温度0.6，简单候选生成。"""
         candidates, trace = [], []
-        for i in range(self.config.tool_candidates):
-            if self.config.enable_tools:
-                cand, tt = self._solve_tools(problem, i, domain_prompt)
-            else:
-                cand = self._solve_plain(problem, domain_prompt)
-                tt = [{"step": f"policy_tool_{i}", "content": _clip_for_trace(cand)}]
-            candidates.append(cand)
-            trace.extend(tt)
-        for i in range(self.config.plain_candidates):
-            if self.local_policy.diverse_candidates:
-                cand = self._chat(domain_prompt or POLICY_NO_TOOL_PROMPT,
-                    f"{problem}\n\n请用独立方法复核后给出完整解答。",
-                    temperature=min(1.0, self.config.policy_temperature + 0.2),
-                    max_tokens=self.config.max_tokens)
-            else:
-                cand = self._solve_plain(problem, domain_prompt)
-            if self.local_policy.recover_plain and self.config.enable_fallback and not self._extract_answer(cand):
-                trace.append({"step": f"truncated_{i}", "content": "[内容已省略]"})
-                recovered = self._quick_fallback(problem, trace)
-                cand = recovered or cand
-            candidates.append(cand)
-            trace.append({"step": f"policy_plain_{i}", "content": _clip_for_trace(cand)})
+        try:
+            for i in range(self.config.tool_candidates):
+                if self.config.enable_tools:
+                    cand, tt = self._solve_tools(problem, i, domain_prompt)
+                else:
+                    cand = self._solve_plain(problem, domain_prompt)
+                    tt = [{"step": f"policy_tool_{i}", "content": _clip_for_trace(cand)}]
+                candidates.append(cand)
+                trace.extend(tt)
+            for i in range(self.config.plain_candidates):
+                if self.local_policy.diverse_candidates:
+                    cand = self._chat(domain_prompt or POLICY_NO_TOOL_PROMPT,
+                        f"{problem}\n\n请用独立方法复核后给出完整解答。",
+                        temperature=min(1.0, self.config.policy_temperature + 0.2),
+                        max_tokens=self.config.max_tokens)
+                else:
+                    cand = self._solve_plain(problem, domain_prompt)
+                if self.local_policy.recover_plain and self.config.enable_fallback and not self._extract_answer(cand):
+                    trace.append({"step": f"truncated_{i}", "content": "[内容已省略]"})
+                    recovered = self._quick_fallback(problem, trace)
+                    cand = recovered or cand
+                candidates.append(cand)
+                trace.append({"step": f"policy_plain_{i}", "content": _clip_for_trace(cand)})
+        except BudgetExceeded:
+            # Keep completed work. The shared qualification/aggregation path still
+            # rejects incomplete candidates, and the exhausted budget forbids more calls.
+            trace.append({"step": "generation_budget_exhausted", "content": "[内容已省略]"})
         return [c for c in candidates if c], trace
 
     def _solve_tools(self, problem: str, cid: int, domain_prompt: str) -> Tuple[str, List[Dict]]:
@@ -581,15 +595,15 @@ class ReasoningAgent:
                     f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
                     temperature=self.config.verifier_temperature,
                     max_tokens=self.config.verifier_max_tokens)
-                status = self._verdict_status(verdict)
-                if self._response_cutoff(verdict) or (self.local_policy.calibrated_verifier and status == "unknown"):
+                status = self._verdict_status(verdict, allow_short_labels=not self.local_policy.calibrated_verifier)
+                if self._response_cutoff(verdict) or status == "unknown":
                     if self._response_cutoff(verdict):
                         trace.append({"step": "response_truncated", "content": "[内容已省略]"})
                     verifications.append(Verification(source="model", status="unknown",
                         confidence=0.0, detail="incomplete response"))
                     trace.append({"step": f"verify_unknown_{cid}_{vid}", "content": "incomplete"})
                     continue
-                passed = status == "pass" if self.local_policy.calibrated_verifier else self._is_correct(verdict)
+                passed = status == "pass"
                 votes.append(passed)
                 verifications.append(Verification(
                     source="model",
@@ -814,11 +828,19 @@ class ReasoningAgent:
         return float(value) if value is not None else None
 
     @staticmethod
-    def _verdict_status(verdict):
+    def _verdict_status(verdict, *, allow_short_labels=False):
         if not isinstance(verdict, str) or ReasoningAgent._response_cutoff(verdict):
             return "unknown"
         match = re.fullmatch(r"\s*VERDICT\s*[:：]\s*([AB])\s*", verdict, re.I)
-        return ("pass" if match[1].upper() == "A" else "fail") if match else "unknown"
+        if match:
+            return "pass" if match[1].upper() == "A" else "fail"
+        if allow_short_labels:
+            label = verdict.strip().upper()
+            if label in ("A", "CORRECT"):
+                return "pass"
+            if label in ("B", "INCORRECT"):
+                return "fail"
+        return "unknown"
 
     def _apply_exact_evidence(self, problem, candidates, trace):
         passed, remaining = [], []
