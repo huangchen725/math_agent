@@ -107,10 +107,10 @@ class AgentConfig:
     critic_temperature: float = 0.3
     reflection_temperature: float = 0.3
     # token
-    max_tokens: int = 8192
-    verifier_max_tokens: int = 1024
-    critic_max_tokens: int = 1024
-    fallback_max_tokens: int = 512
+    max_tokens: int = 16384
+    verifier_max_tokens: int = 4096
+    critic_max_tokens: int = 4096
+    fallback_max_tokens: int = 2048
     # thinking mode（v13: False——thinking导致截断；R1-1 三参数投影后不再发送）
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
@@ -159,13 +159,15 @@ class ReasoningAgent:
             # 显式本地适配器路径（CLIENT-002）：签名与三参数公开协议一致，
             # 内部经 meta_sink 记录 usage 供本地预算记账。
             resp = self.local_adapter.chat(
-                messages=messages, temperature=temperature, max_tokens=max_tokens
+                messages=messages, temperature=temperature, max_tokens=max_tokens,
+                thinking_mode=False,
             )
             if budget is not None:
                 budget.record_response_meta({"usage": self.local_adapter.read_usage()})
         else:
             resp = self.client.chat(
-                messages=messages, temperature=temperature, max_tokens=max_tokens
+                messages=messages, temperature=temperature, max_tokens=max_tokens,
+                thinking_mode=False,
             )
         return resp if isinstance(resp, str) else str(resp.get("content", ""))
 

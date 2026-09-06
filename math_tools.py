@@ -546,6 +546,9 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
                 messages=current_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                tools=TOOL_DEFINITIONS,
+                tool_choice="auto",
+                thinking_mode=False,
             )
 
         # 文本回复 → 结束
@@ -617,6 +620,7 @@ def run_tool_loop(client, messages: List[Dict], max_rounds: int = 5,
         messages=current_messages,
         temperature=0.0,
         max_tokens=1024,
+        thinking_mode=False,
     )
     if isinstance(response, str):
         return response, trace

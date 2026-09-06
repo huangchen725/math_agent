@@ -25,18 +25,25 @@ class LocalToolAdapter:
     def _sink(self, meta: Dict[str, Any]) -> None:
         self._last_meta = meta if isinstance(meta, dict) else {}
 
-    def chat(self, messages, temperature, max_tokens):
+    def chat(self, messages, temperature, max_tokens, thinking_mode=None):
         """三参数公开协议请求；meta_sink 记录 usage。"""
+        kwargs = {}
+        if thinking_mode is not None:
+            kwargs["thinking_mode"] = thinking_mode
         return self._client.chat(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             meta_sink=self._sink,
+            **kwargs,
         )
 
     def chat_with_tools(self, messages, temperature, max_tokens, tools,
-                        tool_choice: str = "auto"):
+                        tool_choice: str = "auto", thinking_mode=None):
         """本地工具增强请求（仅在显式注入本适配器时使用）。"""
+        kwargs = {}
+        if thinking_mode is not None:
+            kwargs["thinking_mode"] = thinking_mode
         return self._client.chat(
             messages=messages,
             temperature=temperature,
@@ -44,6 +51,7 @@ class LocalToolAdapter:
             tools=tools,
             tool_choice=tool_choice,
             meta_sink=self._sink,
+            **kwargs,
         )
 
     def read_usage(self) -> Dict[str, Any]:
