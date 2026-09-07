@@ -129,7 +129,7 @@ class OwnedFixtureClient:
     def __init__(self, answer="2", metadata=True):
         self.answer, self.metadata = answer, metadata
 
-    def chat(self, *, messages, temperature, max_tokens, meta_sink):
+    def chat(self, *, messages, temperature, max_tokens, meta_sink, **kwargs):
         if self.metadata:
             meta_sink({"model":"intern-s2-preview-397b", "usage":{"total_tokens":2},
                        "attempts":1, "finish_reason":"stop"})

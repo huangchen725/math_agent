@@ -65,7 +65,10 @@ class MatchingReplayClient:
         self.position = 0
         self.mismatch = None
 
-    def chat(self, *, messages, temperature, max_tokens):
+    def chat(self, *, messages, temperature, max_tokens,
+             thinking_mode=None, tools=None, tool_choice=None):
+        # 2026-09-06 公开协议修订：容忍 thinking_mode/tools/tool_choice，
+        # 摘要对比仍只看三个原始键，保证旧录制条目可回放。
         sent = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         if self.position >= len(self.entries):
             self.mismatch = "recorded_sequence_exhausted"

@@ -175,7 +175,9 @@ class RelayClient:
     def __init__(self, directory, *, clock=time.monotonic, sleep=time.sleep):
         self.directory, self.clock, self.sleep = Path(directory), clock, sleep
 
-    def chat(self, *, messages, temperature, max_tokens):
+    def chat(self, *, messages, temperature, max_tokens,
+             thinking_mode=None, tools=None, tool_choice=None):
+        # 2026-09-06 公开协议修订：容忍扩展关键字，载荷仍按三键规范记录。
         payload = _payload(messages, temperature, max_tokens)
         with _gate(self.directory):
             state = _state(self.directory)

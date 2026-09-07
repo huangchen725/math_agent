@@ -146,10 +146,14 @@ class ObservedTextClient:
         self.owned_local_client = owned_local_client
         self.observations = []
 
-    def chat(self, *, messages, temperature, max_tokens):
+    def chat(self, *, messages, temperature, max_tokens,
+             thinking_mode=None, tools=None, tool_choice=None):
         captured = []
+        passthrough = {"meta_sink": captured.append}
+        if thinking_mode is not None:
+            passthrough["thinking_mode"] = thinking_mode
         response = self.owned_local_client.chat(messages=messages, temperature=temperature,
-            max_tokens=max_tokens, meta_sink=captured.append)
+            max_tokens=max_tokens, **passthrough)
         self.observations.append(captured[0] if len(captured) == 1 else {})
         # Deliver request-bound finish_reason through the public response shape.
         if isinstance(response, str):

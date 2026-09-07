@@ -81,7 +81,7 @@ class Sequence:
         self.values = iter(values)
         self.calls = []
 
-    def chat(self, *, messages, temperature, max_tokens):
+    def chat(self, *, messages, temperature, max_tokens, **kwargs):
         self.calls.append((messages, temperature, max_tokens))
         return next(self.values)
 
