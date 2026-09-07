@@ -38,7 +38,7 @@ The active runtime is in R1 hardening after the successful R0 anchor run (`ba63a
 
 Follow the recovery stages in `docs/ENGINEERING_SPECIFICATION.md`:
 
-The 2026-09-06 user scheduling decision permits Q0/Q1 offline work while R1 official acceptance is pending. Keep the official candidate frozen separately; offline tests do not establish a model baseline or optimization benefit. The stage list below describes evidence gates, not a requirement to idle between official runs.
+The 2026-09-06 user scheduling decision permits Q0/Q1 offline work; the 2026-09-07 user authorization also permits Q2 offline engineering preparation while R1 official acceptance is pending. Keep the official candidate frozen separately; offline tests do not establish a model baseline or optimization benefit. Real API use still needs quota authorization. A1 large architecture changes remain deferred. The stage list below describes evidence gates, not a requirement to idle between official runs.
 
 1. R0 official compatibility anchor.
 2. R1 minimum public contract hardening, one variable per official run.

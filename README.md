@@ -2,13 +2,15 @@
 
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
+> **2026-09-07 第一批提分工程**：A3→A1→A2→A4→A5 已完成离线实施，Python 3.10/3.12 完整 formal 各 625 项通过。修复有界多行/粗体答案提取和符号补答传递；新增旧响应严格回放、本地小批限额与暂停控制、参考争议匿名复核材料。原实测维持暂停，本轮零 API；不改变模型、提示、候选数与预算，不承诺正式分数增幅。交付与复验见 [第一批工程报告](docs/evaluations/ACCURACY_ENGINEERING_IMPLEMENTATION_20260907.md)。下方有日期的测试数量属于相应历史版本。
+
 > **恢复状态（2026-09-06）**：R0 已在 `ba63ac0` 完成官方定锚：112 success、1069 次请求、24/112 correct（21.43%）。独立验收发现的 R1 缺口现已修复，Python 3.10/3.12 各通过 187 个离线测试。入口支持不透明附加构造参数，client 只走三参数公开调用；公开 trace 只保留白名单事件与数值预算；初始化至输出失败关闭；初始候选、反思与恢复统一校验完整答案；本地 usage/finish_reason 随请求返回；正式依赖从入口位置加载至独立命名空间。`--formal` 包含实际行为测试。阶段仍为 R1，第二次正式评测尚未执行；离线通过不代表官方兼容性或正确率提升。S1～S6 仍保存在 `archive/s1-s6-1fc98b7`。
 
-> **当前离线进度**：R1 修复已提交为 `9126c04`。其上 Q0/Q1 离线工作流和实验实现已完成，两个 Python 版本各 371 项测试通过。真实模型基线、收益与官方验收仍分别待补。
+> **当前离线进度**：Q0/Q1 工程已完成，截断专项修复已提交为 `dfb5ce8`。Q2 已补充预登记、重复配对统计、候选锁定、留出集与交付核验工作流；验证结果见 [Q2 离线报告](docs/evaluations/Q2_OFFLINE_20260907.md)。真实模型基线、收益、人工盲审与官方验收仍分别待补。
 
-> **最新正式结果（2026-09-06）**：新日志抓取较早的 `c009929`：112 success / 0 error，10 correct / 50 incorrect / 52 invalid（8.93%），607 次请求中 512 次截断（84.35%）。它未包含 `9126c04` 修复或 `6d42d2c` 的 Q0/Q1，以上“正式验收待补”指这些后续版本。当前输出预算仍需真实模型诊断，离线通过不能证明退化已修复。详见 [本次正式诊断](docs/evaluations/OFFICIAL_112_20260906.md)。
+> **最新正式结果（2026-09-07）**：平台抓取 `0641043`，26 correct / 86 incorrect / 0 invalid（23.21%），112 success / 0 error，803 请求中 77 次截断（9.59%）。用户判断大概率是完成 Q1、尚未完成 Q2 的版本；本地与 GitHub main 是 `35fbea6`，尚未核对源码关系，不能将本次改善归因于某一修复。下一目标为提升正确率。公开开发集配对此前因 120 秒读取超时停止：基线完成 6/72、紧凑提示 0/72，累计 38 次请求、已知 53,566 token，另一次失败用量未知。已修复离线判分误判，两版本各 522 项全量门禁通过。用户随后批准重开并允许最长 360 秒等待；v3 采用读取 300 秒、外层 350 秒，现因耗时过长按用户要求暂停：基线 72/72、紧凑提示 11/72，两个执行进程均已退出，不自动续跑。累计 532 次请求、已知 1,153,518 token，另保留历史一笔未知用量；完整配对结论仍缺失。详见 [正式报告](docs/evaluations/OFFICIAL_112_20260907.md)、[首轮实测与后续方案](docs/evaluations/ACCURACY_PILOT_20260907.md) 和 [提分计划](docs/evaluations/ACCURACY_NEXT_20260907.md)。
 
-> **截断缺陷修复（本轮工作区）**：强制单次输出不超过用户确认的官方 8192 上限，修复生成预算耗尽丢弃已有合格答案、未知验证被判错及冲突元数据覆盖截断；明确 length 的空内容允许原预算内恢复。默认 unknown 不触发纠错，Q1 calibrated_verifier 仅进一步收紧标签格式。两个 Python 版本各 452 项完整门禁通过，详见 [修复与验证](docs/evaluations/TRUNCATION_REPAIR_20260906.md)。这些代码修复不代表真实截断率已降低；更新后的 18 次诊断计划全部在 8192 内，真实执行需单独额度授权。
+> **截断缺陷修复（`dfb5ce8`）**：强制单次输出不超过用户确认的官方 8192 上限，修复生成预算耗尽丢弃已有合格答案、未知验证被判错及冲突元数据覆盖截断；明确 length 的空内容允许原预算内恢复。默认 unknown 不触发纠错，Q1 calibrated_verifier 仅进一步收紧标签格式。两个 Python 版本各 452 项完整门禁通过，详见 [修复与验证](docs/evaluations/TRUNCATION_REPAIR_20260906.md)。这些代码修复不代表真实截断率已降低；更新后的 18 次诊断计划全部在 8192 内，真实执行需单独额度授权。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
 
@@ -108,6 +110,24 @@ python -m evaluation.q0_pipeline review-merge PACKET_JSON REVIEWER_A_JSON REVIEW
 从原始来源重建：`python -m evaluation.import_umath OUTPUT_SOURCE` 只下载公开数据；然后执行 `python -m evaluation.q0_pipeline freeze OUTPUT_SOURCE/records.jsonl NEW_BUNDLE`。冻结文件、题号、近重复、来源、代码/配置和运行输出指纹不一致时拒绝使用。旧 v1–v3 为被审核淘汰的中间产物。
 
 Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。十组计划覆盖基线、五项单变量、critic/reflection/tools 消融和组合候选；`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
+
+Q2 离线入口（默认三次重复，冻结后不得减少候选、重复次数或修改阈值）：
+
+```bash
+python -m evaluation.q2_pipeline freeze outputs/q0-umath-v4 outputs/q2/NEW_STUDY
+python -m evaluation.q2_pipeline reserve outputs/q2/NEW_STUDY baseline 0
+python -m evaluation.q2_pipeline record outputs/q2/NEW_STUDY dev:baseline:0 RUN_DIR --receipt RECEIPT_JSON
+python -m evaluation.q2_pipeline analyze outputs/q2/NEW_STUDY
+python -m evaluation.q2_pipeline select outputs/q2/NEW_STUDY CANDIDATE
+python -m evaluation.q2_pipeline reserve outputs/q2/NEW_STUDY baseline 0 --split test
+python -m evaluation.q2_pipeline analyze outputs/q2/NEW_STUDY --split test
+python -m evaluation.q2_pipeline accept outputs/q2/NEW_STUDY
+python -m evaluation.q2_pipeline delivery outputs/q2/NEW_STUDY --expected-commit FULL_SHA --remote-commit FULL_SHA
+```
+
+这些命令只管理本地证据，没有模型执行命令。`record` 需要已经完成、绑定预登记凭证的运行；执行库接口 `run_reserved(study, slot, output, client, execution="fixture")` 由调用方提供 client，真实运行必须另获额度授权。仅对项目自有本地 client 使用 `ObservedTextClient` 收集逐请求元数据，再用 `receipt_from_observations` 生成回执；未知官方 client 不进入该适配器。模拟回执和缺失成本数据均不能晋级。
+
+只有全部预登记开发运行入账且候选通过门槛，才能锁定唯一候选并登记留出运行。留出评估结束后关闭该研究，不能改选策略；失败运行不能静默重跑。已有公开题集准备文件位于 `outputs/q2-20260907/study/`，仅为未执行的工程方案。详情、统计边界及使用限制见 [Q2 离线报告](docs/evaluations/Q2_OFFLINE_20260907.md)。
 
 默认检查不访问外部 API：
 
