@@ -125,6 +125,22 @@ class _ModelText(str):
         return value
 
 
+_FINAL_LABEL = r"(?:最终答案(?:是|为)?|答案(?:是|为)?)"
+_FINAL_PREFIX = r"(?:^[ \t]*(?:#{1,6}[ \t]+)?(?:[0-9]{1,3}[.)、][ \t]+)?|(?<=[。.!?])[ \t]*)"
+_FINAL_MARKER = re.compile(
+    _FINAL_PREFIX + rf"(?:\*\*{_FINAL_LABEL}\*\*[ \t]*[:：]?|"
+    rf"\*\*{_FINAL_LABEL}[ \t]*[:：]\*\*|__{_FINAL_LABEL}__[ \t]*[:：]?|"
+    rf"__{_FINAL_LABEL}[ \t]*[:：]__|{_FINAL_LABEL}[ \t]*[:：]|{_FINAL_LABEL}[ \t]*$)"
+    r"[ \t]*(?P<body>.*)$"
+)
+_FINAL_INTENT = re.compile(_FINAL_PREFIX + rf"(?:\*\*|__)?{_FINAL_LABEL}(?=[ \t:：*_]|$)")
+_ANSWER_NUMBER = re.compile(r"^([0-9]{1,3})[.)、][ \t]+(.+)$")
+_PRESENTATION_ONLY = re.compile(
+    r"(?:Or maybe separate lines\? It says single line\.(?: So we can put them in one line\.)?|"
+    r"Let's produce the final (?:answer|output)\.)"
+)
+
+
 def _response_text(response, metadata=None):
     reasons = [metadata.get("finish_reason")] if type(metadata) is dict else []
     if type(response) is dict:
@@ -394,7 +410,7 @@ class ReasoningAgent:
                 fb = self._quick_fallback(problem, trace)
                 if fb:
                     if self.local_policy.deterministic:
-                        if _complete_task_check(problem, fb) == "fail":
+                        if _complete_task_check(problem, str(fb)) == "fail":
                             trace.append({"step": "deterministic_fail", "content": "[内容已省略]"})
                             return {"final_response": "未解出", "trace": trace}
                     return {"final_response": self._build_response("", fb), "trace": trace}
@@ -525,7 +541,7 @@ class ReasoningAgent:
                 if self.local_policy.recover_plain and self.config.enable_fallback and not self._extract_answer(cand):
                     trace.append({"step": f"truncated_{i}", "content": "[内容已省略]"})
                     recovered = self._quick_fallback(problem, trace)
-                    cand = recovered or cand
+                    cand = self._candidate_from_recovery(recovered) or cand
                 candidates.append(cand)
                 trace.append({"step": f"policy_plain_{i}", "content": _clip_for_trace(cand)})
         except BudgetExceeded:
@@ -558,7 +574,7 @@ class ReasoningAgent:
                 trace.append({"step": f"truncated_{cid}", "content": "截断兜底"})
                 fb = self._quick_fallback(problem, trace)
                 if fb:
-                    response = fb
+                    response = self._candidate_from_recovery(fb)
                 trace.append({"step": f"policy_tool_{cid}", "content": _clip_for_trace(response)})
                 return response, trace
             trace = [{"step": f"tool_solve_{cid}", "content": [_clip_trace_item(item) for item in tt]}]
@@ -771,28 +787,101 @@ class ReasoningAgent:
                 temperature=0.0, max_tokens=self.config.fallback_max_tokens)
             ans = self._extract_answer(resp)
             trace.append({"step": "fallback_result", "content": _clip_for_trace(ans)})
-            return "" if self._response_cutoff(resp) else ans
+            if self._response_cutoff(resp) or not ans:
+                return ""
+            return _ModelText(ans, resp.finish_reason if isinstance(resp, _ModelText) else None)
         except BudgetExceeded:
             raise
         except Exception:
             return ""
 
     @staticmethod
-    def _extract_answer(text: str) -> str:
-        """只提取完整标记或单行数值，不把未完成推导的最后一行当答案。"""
-        if not isinstance(text, str) or not text or ReasoningAgent._response_cutoff(text):
+    def _candidate_from_recovery(answer):
+        """Restore the validated answer marker without inventing completion evidence."""
+        if ReasoningAgent._response_cutoff(answer) or not ReasoningAgent._valid_answer_body(answer):
             return ""
-        matches = re.findall(r"(?:最终答案|答案(?:是|为)?)[ \t]*[:：][ \t]*([^\r\n]+)", text)
-        if matches:
-            answer = matches[-1].strip()
-        else:
-            boxed = re.findall(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", text)
-            if boxed:
-                answer = boxed[-1].strip()
-            elif re.fullmatch(r"[+\-]?\d+(?:\.\d+)?(?:/\d+)?", text.strip()):
-                answer = text.strip()
-            else:
+        reason = answer.finish_reason if isinstance(answer, _ModelText) else None
+        return _ModelText("最终答案：" + str(answer), reason)
+
+    @staticmethod
+    def _extract_answer(text: str) -> str:
+        """Read one bounded explicit answer block; never salvage an earlier incomplete result."""
+        if (not isinstance(text, str) or not text or len(text) > 100_000
+                or ReasoningAgent._response_cutoff(text)):
+            return ""
+        lines = text.splitlines()
+        markers, visible, fence = [], [], None
+        for index, line in enumerate(lines):
+            boundary = re.fullmatch(r"[ \t]*(`{3,32}|~{3,32})([A-Za-z0-9_+-]{0,32})[ \t]*", line)
+            if boundary:
+                delimiter, language = boundary.groups()
+                if fence is None:
+                    fence = delimiter
+                elif not language and delimiter[0] == fence[0] and len(delimiter) >= len(fence):
+                    fence = None
+                continue
+            if fence is None:
+                visible.append(line)
+                for intent in _FINAL_INTENT.finditer(line):
+                    markers.append((index, _FINAL_MARKER.match(line, intent.start())))
+        if markers:
+            index, marker = markers[-1]
+            if marker is None:
                 return ""
+            return ReasoningAgent._answer_block(marker.group("body"), lines[index+1:],
+                closing_tag=any(line.strip() == "<final_answer>" for line in lines[:index]))
+        boxed = re.findall(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", "\n".join(visible))
+        if boxed:
+            answer = boxed[-1].strip()
+        elif re.fullmatch(r"[+\-]?\d+(?:\.\d+)?(?:/\d+)?", text.strip()):
+            answer = text.strip()
+        else:
+            return ""
+        return answer if ReasoningAgent._valid_answer_body(answer) else ""
+
+    @staticmethod
+    def _answer_block(first, remainder, *, closing_tag=False):
+        """Support flat numbered parts or individually labelled equations, not arbitrary prose."""
+        parts = [first.strip()] if first.strip() else []
+        size = len(first.strip())
+        separated = False
+        for offset, line in enumerate(remainder):
+            if re.match(r"^[ \t]*#{1,6}[ \t]+\S", line):
+                break
+            value = line.strip()
+            if closing_tag and value == "</final_answer>":
+                break
+            if not value:
+                separated = True
+                continue
+            # Preserve the existing single-line contract when a later paragraph
+            # comments on presentation. Numbered/equation continuations still join.
+            if (separated and len(parts) == 1 and first.strip() and not _ANSWER_NUMBER.match(first.strip())
+                    and all(_PRESENTATION_ONLY.fullmatch(tail.strip()) for tail in remainder[offset:] if tail.strip())):
+                break
+            size += len(value) + 2
+            if size > 2048 or len(parts) >= 128:
+                return ""
+            parts.append(value)
+            separated = False
+        if parts and parts[0] in (r"\[", "$$"):
+            closing = r"\]" if parts[0] == r"\[" else "$$"
+            if closing not in parts[1:]:
+                return ""
+            answer = " ".join(parts)
+            return answer if ReasoningAgent._valid_answer_body(answer) else ""
+        if not parts or any(not ReasoningAgent._valid_answer_body(part) for part in parts):
+            return ""
+        if len(parts) > 1:
+            numbered = [_ANSWER_NUMBER.fullmatch(part) for part in parts]
+            if numbered[0]:
+                if any(not match or int(match.group(1)) != number
+                       or not ReasoningAgent._valid_answer_body(match.group(2))
+                       for number, match in enumerate(numbered, 1)):
+                    return ""
+            elif not all(re.match(r"^(?:\$|\\\()?[^\s=]{1,100}[ \t]*=", part) for part in parts):
+                return ""
+        answer = "; ".join(parts)
         return answer if ReasoningAgent._valid_answer_body(answer) else ""
 
     @staticmethod
@@ -800,7 +889,16 @@ class ReasoningAgent:
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 2048:
             return False
         value = answer.strip()
-        if value == "未解出" or re.search(
+        # The established formatter accepts mixed inline wrappers such as \(x$.
+        # Display blocks have explicit boundaries and must still close in order.
+        math_groups = 0
+        for token in re.findall(r"(?<!\\)\\([\[\]])", value):
+            math_groups += 1 if token == "[" else -1
+            if math_groups < 0:
+                return False
+        if math_groups or value.count("$$") % 2:
+            return False
+        if value in ("未解出", r"\[", r"\]", r"\(", r"\)", "$", "$$", "**", "__") or re.search(
             r"因此|所以|还需要|尚未|未完成|推导|详细步骤|答案是|答案为|"
             r"(?:we (?:need|must)|therefore|unfinished)|[=+*/^\\,，:：]$", value, re.I
         ):

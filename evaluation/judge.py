@@ -7,12 +7,28 @@ import ast
 from dataclasses import dataclass
 from typing import Literal
 
-from answer_equivalence import equivalent_answers, normalize_answer
+from answer_equivalence import equivalent_answers, normalize_answer, numeric_value
 from deterministic_verifier import verify_symbolic_equivalence
 
 
 JudgeStatus = Literal["correct", "wrong", "unknown", "no_answer"]
 _SYMBOLIC_TEXT = re.compile(r"[A-Za-z0-9_+\-*/^().{}\[\]\\,\sπ∞]+")
+
+
+def _numeric_set(text):
+    """Parse only an explicit, flat finite set of exact numeric literals."""
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    body = text[1:-1]
+    if not body.strip():
+        return frozenset()
+    parts = re.split("[,，]", body)
+    if len(parts) > 128:
+        return None
+    values = [numeric_value(part) for part in parts]
+    if any(value is None for value in values):
+        return None
+    return frozenset(values)
 
 
 def _domain_safe_polynomial(text):
@@ -62,6 +78,22 @@ def judge_answer(
         return JudgeResult("no_answer", "empty")
     if not isinstance(expected, str) or not expected.strip():
         return JudgeResult("unknown", "missing_expected")
+    if max(len(expected), len(actual)) > 2048:
+        return JudgeResult("unknown", "answer_size_limit")
+
+    left, right = normalize_answer(expected), normalize_answer(actual)
+    if any(char in left or char in right for char in ",，;；{}"):
+        # Runtime canonical keys sort comma-separated fields and compare opaque
+        # text literally. Neither operation proves equality/inequality of a
+        # semantic list, an ordered tuple, or a set of symbolic expressions.
+        left_set, right_set = _numeric_set(left), _numeric_set(right)
+        if left_set is not None and right_set is not None:
+            status: JudgeStatus = "correct" if left_set == right_set else "wrong"
+            return JudgeResult(status, "exact_numeric_set")
+        if left == right:
+            return JudgeResult("correct", "identical_notation")
+        return JudgeResult("unknown", "collection_review_required",
+            "collection order and opaque element equivalence are not inferred")
 
     conservative = equivalent_answers(expected, actual)
     if conservative is True:
@@ -82,7 +114,6 @@ def judge_answer(
         actual,
         timeout_seconds=symbolic_timeout_seconds,
     )
-    status: JudgeStatus
     if verification.status == "pass":
         status = "correct"
     elif verification.status == "fail":
