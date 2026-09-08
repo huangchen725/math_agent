@@ -183,9 +183,10 @@ def test_new_prompt_experiments_do_not_expand_legacy_combined(tmp_path):
     assert not any(baseline.values())
     assert {k for k, v in plan["variants"]["combined"]["policy"].items() if v} == {
         "recover_plain", "deterministic", "compact_routing", "calibrated_verifier", "diverse_candidates"}
-    candidate = plan["variants"]["tool_aware_prompts"]
-    assert candidate["agent"] == plan["variants"]["baseline"]["agent"]
-    assert {k for k, v in candidate["policy"].items() if v} == {"tool_aware_prompts"}
+    for name in ("tool_aware_prompts", "concise_recovery"):
+        candidate = plan["variants"][name]
+        assert candidate["agent"] == plan["variants"]["baseline"]["agent"]
+        assert {k for k, v in candidate["policy"].items() if v} == {name}
 
 
 def test_scoring_nan_and_checkpoint_mismatch_are_diagnostic_not_crashes(tmp_path):

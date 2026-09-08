@@ -182,6 +182,11 @@ POLICY_NO_TOOL_PROMPT = """你是数学推理智能体。用纯推理解题。
 最终答案行只写答案本体，不写“答案是”、解释或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
 """
 
+CONCISE_RECOVERY_PROMPT = """你是数学推理智能体。用纯推理完成补答。
+只输出一行“最终答案：XXX”，不要输出解题思路、推导步骤或解释。
+XXX 只写答案本体，不写“答案是”或完整句子；若已有精确形式，不要只写小数近似值；能等价表示时优先使用 ASCII 记号（如 x^2、C1、Z），复杂公式可用 LaTeX。
+"""
+
 VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否正确。
 
 判断维度：1.推理逻辑 2.计算准确性 3.最终答案
@@ -220,7 +225,7 @@ class AgentConfig:
     verifier_max_tokens: int = 1024
     critic_max_tokens: int = 1024
     fallback_max_tokens: int = 512
-    # thinking mode（v13: False——thinking导致截断；R1-1 三参数投影后不再发送）
+    # 保留已核验的显式 False 协议；历史兼容字段不改变 _chat 的固定值。
     policy_thinking_mode: bool = False
     verifier_thinking_mode: bool = False
     critic_thinking_mode: bool = False
@@ -248,7 +253,7 @@ class ReasoningAgent:
 
         适配器由本地入口（main.py/demo.py）显式传入，提供
         ``complete()`` 与 ``run_tools(...)``；正式平台不传，
-        所有请求走三参数公开协议，运行时不做任何能力探测。
+        所有请求走四参数公开协议（含 thinking_mode=False），运行时不做任何能力探测。
         """
         self.config = config if type(config) is AgentConfig else AgentConfig()
         self.client = client
@@ -257,7 +262,7 @@ class ReasoningAgent:
 
     def _chat(self, system_prompt: str, user_content: str,
               temperature: float, max_tokens: int) -> str:
-        """调用 client.chat，返回文本。仅使用三参数公开协议（CLIENT-001）。"""
+        """仅使用四参数公开协议（CLIENT-001），显式传 thinking_mode=False。"""
         if type(max_tokens) is not int or not 1 <= max_tokens <= MAX_OUTPUT_TOKENS:
             raise ValueError("invalid output token limit")
         messages = []
@@ -794,7 +799,8 @@ class ReasoningAgent:
 
     def _quick_fallback(self, problem: str, trace: List[Dict]) -> str:
         try:
-            resp = self._chat(POLICY_NO_TOOL_PROMPT,
+            system_prompt = CONCISE_RECOVERY_PROMPT if self.local_policy.concise_recovery else POLICY_NO_TOOL_PROMPT
+            resp = self._chat(system_prompt,
                 f"{problem}\n\n请直接给出最终答案，不要详细推导。单独一行按“最终答案：XXX”输出，XXX 只写答案本体。",
                 temperature=0.0, max_tokens=self.config.fallback_max_tokens)
             ans = self._extract_answer(resp)
@@ -987,6 +993,7 @@ class Q1Policy:
     calibrated_verifier: bool = False
     diverse_candidates: bool = False
     tool_aware_prompts: bool = False
+    concise_recovery: bool = False
 
 
 _ROUTE_HINTS = {

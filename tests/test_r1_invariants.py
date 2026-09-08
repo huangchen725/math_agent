@@ -248,8 +248,37 @@ def test_prompts_and_default_config_are_unchanged_from_reviewed_baseline():
         check=True, capture_output=True, text=True, encoding="utf-8").stdout
     def frozen(source):
         tree = ast.parse(source)
-        return [ast.dump(node) for node in tree.body if (
-            isinstance(node, ast.ClassDef) and node.name == "AgentConfig"
-        ) or (isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id.endswith("_PROMPT") for target in node.targets))]
-    assert frozen(before) == frozen((ROOT / "user_agent.py").read_text(encoding="utf-8"))
+        result = {}
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef) and node.name == "AgentConfig":
+                result[node.name] = ast.dump(node)
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
+                        result[target.id] = ast.dump(node)
+        return result
+    baseline = frozen(before)
+    current = frozen((ROOT / "user_agent.py").read_text(encoding="utf-8"))
+    # User-authorized B2 adds one opt-in prompt; every original prompt and the
+    # entire AgentConfig AST remain frozen. Other new prompts still fail here.
+    assert set(current) == set(baseline) | {"CONCISE_RECOVERY_PROMPT"}
+    assert {name: current[name] for name in baseline} == baseline
+    assert runtime.Q1Policy().concise_recovery is False
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+        def chat(self, *, messages, temperature, max_tokens, thinking_mode):
+            assert (temperature, max_tokens, thinking_mode) == (0.0, 512, False)
+            self.calls.append(messages)
+            return "最终答案：2"
+    calls = []
+    for policy in (None, runtime.Q1Policy(concise_recovery=True)):
+        client = Client()
+        agent = runtime.ReasoningAgent(client, local_policy=policy)
+        assert agent._quick_fallback("synthetic task", []) == "2"
+        assert len(client.calls) == 1
+        calls.append(client.calls[0])
+    assert calls[0][0]["content"] == runtime.POLICY_NO_TOOL_PROMPT
+    assert calls[1][0]["content"] == runtime.CONCISE_RECOVERY_PROMPT
+    assert calls[0][1:] == calls[1][1:]

@@ -16,7 +16,7 @@ from user_agent import AgentConfig, Q1Policy, ReasoningAgent
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ("baseline", "recover_plain", "deterministic", "compact_routing",
             "calibrated_verifier", "diverse_candidates", "no_critic", "no_reflection",
-            "no_tools", "combined", "tool_aware_prompts")
+            "no_tools", "combined", "tool_aware_prompts", "concise_recovery")
 
 
 def source_hash():

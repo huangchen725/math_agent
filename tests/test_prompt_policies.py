@@ -1,4 +1,4 @@
-"""B1 prompt capability regressions. Synthetic replies are not accuracy evidence."""
+"""B1/B2 prompt regressions. Synthetic replies are not accuracy evidence."""
 import copy
 from dataclasses import asdict
 from hashlib import sha256
@@ -161,7 +161,9 @@ def test_b1_only_changes_generation_messages_not_verifier_or_config():
     assert snapshots[0][1]["final_response"] == snapshots[1][1]["final_response"]
 
 
-def test_b1_with_foreign_preloads_uses_strict_public_client(monkeypatch):
+@pytest.mark.parametrize("policy", [{"tool_aware_prompts": True}, {"concise_recovery": True},
+    {"tool_aware_prompts": True, "concise_recovery": True}])
+def test_prompt_policies_with_foreign_preloads_use_strict_public_client(monkeypatch, policy):
     names = ("llm_client", "agent_types", "budget", "domain_prompts", "answer_equivalence", "math_tools")
     foreign = {name: types.ModuleType(name) for name in names}
     for name, module in foreign.items():
@@ -170,11 +172,13 @@ def test_b1_with_foreign_preloads_uses_strict_public_client(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
-    client = StrictClient()
-    result = module.ReasoningAgent(client,
-        local_policy=module.Q1Policy(tool_aware_prompts=True)).solve("计算1+1", {})
+    recovery = policy.get("concise_recovery")
+    client = StrictClient(["未完成", "最终答案：2"] if recovery else None)
+    config = module.AgentConfig(tool_candidates=0, plain_candidates=1) if recovery else module.AgentConfig()
+    result = module.ReasoningAgent(client, config,
+        local_policy=module.Q1Policy(**policy)).solve("计算1+1", {})
     assert result["final_response"].endswith("最终答案：2")
-    assert len(client.calls) == 6
+    assert len(client.calls) == (2 if recovery else 6)
     assert all(sys.modules[name] is original for name, original in foreign.items())
 
 
@@ -183,5 +187,113 @@ def test_b1_invalid_switch_is_rejected_before_first_request(value):
     client = StrictClient([])
     result = runtime.ReasoningAgent(client,
         local_policy=runtime.Q1Policy(tool_aware_prompts=value)).solve("计算1+1", {})
+    assert result["final_response"] == "未解出"
+    assert not client.calls
+
+
+@pytest.mark.parametrize("route,config,other,replies,expected_requests", [
+    ("tool_source", {"tool_candidates": 1, "plain_candidates": 0}, {},
+        ["未完成", "最终答案：2", "VERDICT: A"], 3),
+    ("plain_source", {"tool_candidates": 0, "plain_candidates": 1}, {"recover_plain": True},
+        ["未完成", "最终答案：2", "VERDICT: A"], 3),
+    ("final_recovery", {"tool_candidates": 0, "plain_candidates": 1}, {},
+        ["未完成", "最终答案：2"], 2),
+])
+@pytest.mark.parametrize("b1", [False, True])
+def test_b2_only_changes_recovery_system_prompt_on_every_route(route, config, other, replies, expected_requests, b1):
+    runs = []
+    for enabled in (False, True):
+        client = StrictClient(replies)
+        settings = runtime.AgentConfig(**config)
+        before = asdict(settings)
+        result = runtime.ReasoningAgent(client, settings, local_policy=runtime.Q1Policy(
+            concise_recovery=enabled, tool_aware_prompts=b1, **other)).solve("synthetic task", {})
+        assert result["final_response"] == "最终答案：2"
+        assert asdict(settings) == before
+        assert len(client.calls) == expected_requests
+        runs.append(client.calls)
+    changed = 0
+    for old, new in zip(*runs):
+        if new["max_tokens"] != 512:
+            assert old == new
+            continue
+        changed += 1
+        assert new["temperature"] == 0.0 and new["thinking_mode"] is False
+        assert old["messages"][0]["content"] == runtime.POLICY_NO_TOOL_PROMPT
+        assert new["messages"][0]["content"] == runtime.CONCISE_RECOVERY_PROMPT
+        assert "只输出一行" in new["messages"][0]["content"]
+        assert "1. 解题思路" not in new["messages"][0]["content"]
+        unchanged = copy.deepcopy(new)
+        unchanged["messages"][0] = old["messages"][0]
+        assert unchanged == old  # Includes the entire question and user directive.
+    assert changed == 1
+
+
+@pytest.mark.parametrize("response,expected", [
+    ({"content": "最终答案：2", "finish_reason": "stop"}, "最终答案：2"),
+    ("最终答案：2", "最终答案：2"),
+    ({"content": "最终答案：2", "finish_reason": "length"}, "未解出"),
+    ({"content": None, "finish_reason": "length"}, "未解出"),
+    ({"content": None, "finish_reason": "stop"}, "未解出"),
+    ({"content": "最终答案：2", "finish_reason": "content_filter"}, "未解出"),
+    ("", "未解出"), ("最终答案：", "未解出"),
+    ('{"name":"integrate"}', "未解出"), ("最终答案：\\[2", "未解出"),
+])
+def test_b2_never_relaxes_response_qualification_or_retries(response, expected):
+    client = StrictClient(["未完成", response])
+    result = runtime.ReasoningAgent(client,
+        runtime.AgentConfig(tool_candidates=0, plain_candidates=1),
+        local_policy=runtime.Q1Policy(concise_recovery=True)).solve("synthetic task", {})
+    assert result["final_response"] == expected
+    assert len(client.calls) == 2
+    assert client.calls[-1]["max_tokens"] == 512
+
+
+@pytest.mark.parametrize("fallback_enabled,request_limit,expected_calls", [(True, 1, 1), (True, 2, 2), (False, 16, 1)])
+def test_b2_keeps_fallback_switch_and_request_budget(fallback_enabled, request_limit, expected_calls):
+    client = StrictClient(["未完成", ""])
+    result = runtime.ReasoningAgent(client,
+        runtime.AgentConfig(tool_candidates=0, plain_candidates=1, enable_fallback=fallback_enabled,
+            max_model_requests=request_limit), local_policy=runtime.Q1Policy(concise_recovery=True)).solve(
+                "synthetic task", {})
+    assert result["final_response"] == "未解出"
+    assert len(client.calls) == expected_calls
+
+
+def test_b2_is_inert_without_recovery_including_critic_and_reflection():
+    replies = ["最终答案：2"]*3 + ["VERDICT: B"]*3 + ["请复核", "最终答案：2", "VERDICT: A"]
+    runs = []
+    for enabled in (False, True):
+        client = StrictClient(replies)
+        runtime.ReasoningAgent(client, local_policy=runtime.Q1Policy(concise_recovery=enabled)).solve("synthetic task", {})
+        assert len(client.calls) == 9
+        assert all(call["max_tokens"] != 512 for call in client.calls)
+        runs.append(client.calls)
+    assert runs[0] == runs[1]
+
+
+def test_b2_adapter_metadata_cannot_hide_truncated_answer():
+    class Adapter:
+        def __init__(self):
+            self.calls = []
+        def complete(self, *, messages, temperature, max_tokens, thinking_mode):
+            assert thinking_mode is False
+            self.calls.append(messages)
+            return {"response": {"content": "最终答案：2", "finish_reason": "stop"},
+                "metadata": {"finish_reason": "length"}}
+    adapter = Adapter()
+    result = runtime.ReasoningAgent(StrictClient([]),
+        runtime.AgentConfig(tool_candidates=0, plain_candidates=1), local_adapter=adapter,
+        local_policy=runtime.Q1Policy(concise_recovery=True)).solve("synthetic task", {})
+    assert result["final_response"] == "未解出"
+    assert len(adapter.calls) == 2
+    assert adapter.calls[-1][0]["content"] == runtime.CONCISE_RECOVERY_PROMPT
+
+
+@pytest.mark.parametrize("value", [None, "false", 0, 1, {}, []])
+def test_b2_invalid_switch_is_rejected_before_first_request(value):
+    client = StrictClient([])
+    result = runtime.ReasoningAgent(client,
+        local_policy=runtime.Q1Policy(concise_recovery=value)).solve("synthetic task", {})
     assert result["final_response"] == "未解出"
     assert not client.calls
