@@ -213,10 +213,9 @@ def scan_python_text(path: str, text: str, manifest: dict) -> list[Finding]:
             Finding("ENTRY-001", "Root user_agent.py must physically declare ReasoningAgent.", path)
         )
 
-    # 2026-09-06 修订：官方证据表明平台 client 接受扩展关键字——
-    # 9/5 评测（ba63ac0）以 v17 协议传递 thinking_mode/tools/tool_choice，
-    # 112/112 成功、0 错误；9/6 评测（c009929）三参数协议下 397B 默认
-    # 思维链导致 84% 请求截断、52 题 invalid。故公开协议扩展为以下关键字。
+    # 2026-09-08：已核验被测 0641043 显式传 thinking_mode=False，
+    # MAT-013 记录其 803 请求、0 error/invalid。用户决定保留该公开协议。
+    # tools/tool_choice 仅供既有本地工具路径；不把历史汇总当单变量根因证明。
     allowed_keywords = {"messages", "temperature", "max_tokens",
                         "thinking_mode", "tools", "tool_choice"}
     for node in ast.walk(tree):
@@ -358,7 +357,8 @@ def _formal_behavior_checks() -> list[Finding]:
     if {"Q0", "Q1"}.intersection(load_manifest().get("offline_workstreams", [])):
         required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py")
     if "Q2" in load_manifest().get("offline_workstreams", []):
-        required += ("test_q2_pipeline.py", "test_q2_commands.py")
+        required += ("test_q2_pipeline.py", "test_q2_commands.py", "test_answer_delivery.py",
+                     "test_pilot_control.py", "test_response_replay.py")
     missing = [name for name in required if not (ROOT / "tests" / name).is_file()]
     if missing:
         return [Finding("TEST-IMPORT-001", "Required R1 behavior tests missing: " + ", ".join(missing))]

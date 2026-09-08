@@ -1,17 +1,17 @@
 # 数学推理智能体架构
 
-> 状态：R1 与 Q0/Q1/Q2 离线工程；第一批提分工程两版完整 formal 各 625 项通过
+> 状态：R1 与 Q0/Q1/Q2 离线工程；当前正式代码以已核验的 `5c2f7a0` 为基线
 >
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 >
-> 运行时基线：`350a267f`（R0 已定锚）；R1-1 三参数投影已使运行时合法偏离锚点
+> 运行时基线：`0641043` 获正式 26/112；`5c2f7a0` 继承思考关闭并增加答案交付加固，收益未证实
 > 本文件是仓库唯一的架构事实源。工程底线、恢复门禁和重建路线由 `docs/ENGINEERING_SPECIFICATION.md` 规定，但不另行定义组件架构。
 
 > **2026-09-06 截断修复补充**：单次输出参数强制 1–8192；生成预算耗尽保留已完成合格候选；任一来源的未完成状态不能被 stop 覆盖；明确 length 且 content=null 可进入已有预算内的恢复。无完整验证标签默认 unknown，不触发批评/反思。真实模型截断率仍待实测，详见 `docs/evaluations/TRUNCATION_REPAIR_20260906.md`。
 
 > **2026-09-07 答案交付补充**：`_extract_answer` 读取最后一个有界最终答案块，支持粗体、标题、连续编号、逐行等式及闭合显示公式；完整响应上限 100000 字符、答案上限 2048 字符/128 行。最后标记为空、结构不完整、代码围栏示例及显式非 stop 状态继续拒绝；不回取更早答案。`_quick_fallback` 返回保留 finish_reason 的已验证答案体，候选恢复由 `_candidate_from_recovery` 恢复最终标记；最终兜底直接输出，确定性检查接收普通字符串。导入闭包、公开 client 协议、提示与预算不变。
 
-> **离线边界**：新增 `evaluation/xh202627_response_replay.py` 只对匹配的原请求回放，改变后续请求即停止；`evaluation/xh202627_pilot_control.py` 在正式闭包之外提供共享派发门、限额、暂停、单发送网络子进程及 Q1 中断摘要；`evaluation/xh202627_review_issues.py` 从冻结开发标签与 checkpoint 准备争议目录及两种匿名复核视图。网络工具需要另行授权后显式构造，CLI 只查看/暂停现有控制目录，导入与测试不发请求。生成方不加载参考标签；复核材料不进入 Agent。本次工作树不是任何既有正式分数的已核对源码。
+> **离线边界（2026-09-08）**：回放支持旧平铺和新队列封装的录制，严格比较完整请求参数；缺失/null/False/True 不互相替代。新快照指纹包含思考及工具参数；不执行 solve 的 compare 明确标记 parser_only。中继保留显式布尔思考开关到 HTTP，并在排队前拒绝不支持的工具参数；Q2 文本观察器同样拒绝工具参数。队列、暂停、全局限额、单次发送、旧证据只读和正式导入隔离保持不变。已暂停实测不自动恢复；当前离线修复不代表新增正式成绩。
 
 ## 1. 目标与边界
 
@@ -23,7 +23,7 @@
 
 ## 2. 外部契约
 
-R1 独立验收缺陷已于 2026-09-06 完成本地修复。以下描述当前工作树；官方平台兼容性仍须第二次正式运行确认。
+R1 独立验收缺陷已于 2026-09-06 完成本地修复。以下描述当前工作树；`0641043` 已取得一次正式运行证据，`5c2f7a0` 的交付改动及未公开的平台契约仍单独待验。
 
 ```python
 ReasoningAgent(client).solve(problem, metadata)
@@ -32,12 +32,12 @@ ReasoningAgent(client).solve(problem, metadata)
 
 - `problem` 是题目字符串，必须非空且默认不超过 20000 字符。
 - `metadata` 为竞赛兼容字典，必须可序列化为 JSON 且默认不超过 20000 字符；批处理入口会传入 `idx`，当前核心流水线不依赖其内容。
-- `client` 必须提供公开 `chat(messages=..., temperature=..., max_tokens=...)`（R1-1 三参数投影），由调用方注入，运行时一律按外部对象处理。
+- `client` 必须提供公开 `chat(messages=..., temperature=..., max_tokens=..., thinking_mode=False)`，由调用方注入，运行时一律按外部对象处理。
 - `final_response` 是非空字符串；除明确的 `未解出` 失败哨兵外，保留获胜候选推理，并以唯一一行 `最终答案：...` 结尾。该行只含规范化答案体，不含解释性句子；常见 Unicode/LaTeX 表示转换为稳定记号，已有精确形式时优先保留精确形式。
 - `trace` 是公开事件列表，最多 256 项；只保留白名单阶段标识和有界数值预算，其余 content 为固定省略文本。没有题面、模型、工具、答案、异常原文，也不靠截取前缀来脱敏。
 - `ReasoningAgent.solve()` 的公共失败边界覆盖配置校验、输入序列化、预算初始化、求解、聚合和输出；不可预期异常返回 `未解出`，不发起额外的紧急请求。`main.py` 将空答案和 `未解出` 视为失败记录。
 
-构造形式是 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`。仅接受此入口真实定义的 `AgentConfig` 为配置；不透明参数和未知 kwargs 不污染配置，也不触发 client 能力探测。未知 client 一律只调用三参数 `chat`。本地入口可显式传入 `LocalToolAdapter`，`complete()` 返回 `{response, metadata}`，`run_tools()` 返回文本、工具 trace 与本次 metadata；不存在共享最近响应 getter。
+构造形式是 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`。仅接受此入口真实定义的 `AgentConfig` 为配置；不透明参数和未知 kwargs 不污染配置，也不触发 client 能力探测。未知 client 一律按上述四参数调用 `chat`。本地入口可显式传入 `LocalToolAdapter`，`complete()` 返回 `{response, metadata}`，`run_tools()` 返回文本、工具 trace 与本次 metadata；不存在共享最近响应 getter。
 
 正式导入闭包为根 `user_agent.py` 及 `_FORMAL_SOURCE_FILES` 中四个源文件：`agent_types.py`、`budget.py`、`domain_prompts.py`、`answer_equivalence.py`。入口按自身 `__file__` 确定源目录，以标准加载 API 装入新建的 `xh202627_runtime_<uuid>` 私有命名空间。等价模块在该空间内使用相对类型导入；不修改 `sys.path`、不复用或替换平台的同名缓存。这是现有根源文件的加载隔离，没有新增物理包目录或复制第二套实现。正式入口不导入 SymPy、工具执行器、HTTP client 或本地适配器；本地工具由显式适配器按原有可 spawn 路径调用。
 
@@ -95,7 +95,7 @@ Q1 精确证据另支持完整匹配的有界有理多项式求导、不定积�
 
 1. **领域路由**：`_detect_domain()` 对 18 个领域的关键词做不区分 ASCII 大小写的计数，选择最高分领域；未匹配时使用通用提示。
 2. **候选生成**：默认生成 2 个工具增强候选和 1 个纯推理候选，策略温度 `0.6`、单次上限 `8192` tokens；R1-1 起不再发送 `thinking_mode` 参数。
-3. **工具循环**：本地每个工具候选最多 3 轮，经显式适配器的 `run_tools()` / `complete_with_tools()` 执行工具增强并返回请求元数据。正式平台没有本地适配器时，工具候选直接执行同提示的三参数文本请求，不进入工具模块。
+3. **工具循环**：本地每个工具候选最多 3 轮，经显式适配器的 `run_tools()` / `complete_with_tools()` 执行工具增强并返回请求元数据。正式平台没有本地适配器时，工具候选直接执行同提示、显式关闭思考的四参数文本请求，不进入工具模块。
 4. **响应资格与恢复**：响应将可用的 finish_reason 与文本绑定。明确未完成状态、缺少完整答案标记、未闭合 TeX 或残句均不具备候选资格。工具候选和全候选无答案时仍可用原有温度 `0.0`、最多 `512` tokens 直接答案恢复；恢复本身共享请求/token/时间预算，恢复为空、异常、残句或再次截断时失败关闭。
 5. **验证**：每个候选默认由模型验证 1 次，温度 `0.0`，只对完整 VERDICT: A/B 或单独 A/B/CORRECT/INCORRECT 标签投票；其它文本、互相矛盾的标签或显式截断均为 unknown。calibrated_verifier 只接受完整 VERDICT: A/B。长候选保留头尾，避免截掉末尾答案；验证结果写入结构化 `Verification`。有可抽取答案的候选仍按既有策略加 `0.3`，无答案减 `0.5`。
 6. **批评与反思**：最佳候选原始置信度低于 `0.5`、已有答案且至少有一个明确否定票时，才进入批评；存在明确问题时以温度 `0.3` 生成反思候选并再次验证。unknown-only 不驱动额外纠错请求。
@@ -198,6 +198,6 @@ Q1 运行清单增加随机 run_id、开始时间和可选预登记凭证摘要�
 
 可维护架构可以重新引入，但顺序受 `docs/ENGINEERING_SPECIFICATION.md` 约束：先取得恢复锚点的正式非零请求，再加固最小 client/入口契约，随后建立可信能力基线，最后单独验证物理模块结构。根 `user_agent.py` 必须真实声明入口类；新正式模块优先使用 `xh202627_*` 一类唯一前缀，不得使用 `agent`、`context`、`solver`、`budget`、`llm_client` 等通用顶层名。正式网关不得根据 client 的类身份、同名方法或动态属性启用私有能力。
 
-结构迁移必须满足四项等价门禁：官方 `llm_client` 先加载、严格三参数 client、完整 `sys.modules` 污染矩阵、仓库外隔离导入。迁移前后使用同一 fake 响应序列，且正式评测中不能同时改变 prompt、候选数、温度、模型、工具或聚合策略。
+结构迁移必须满足四项等价门禁：官方 `llm_client` 先加载、严格四参数 client（含 False 断言）、完整 `sys.modules` 污染矩阵、仓库外隔离导入。迁移前后使用同一 fake 响应序列，且正式评测中不能同时改变 prompt、候选数、温度、模型、工具或聚合策略。
 
 任何架构工作在修改前必须由 `.agents/policy_guard.py --paths` 显示 `IMPORT-*`、`CLIENT-*`、`ENTRY-*`、`CHANGE-001` 和 `DOC-001` 等实际触发项，修改后用 `--changed` 复核。出现 blocker 时，工作 agent 必须先显式报告规则和安全替代，再停止触线子动作；架构便利不能作为豁免理由。

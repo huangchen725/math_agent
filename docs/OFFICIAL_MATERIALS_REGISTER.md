@@ -25,6 +25,7 @@
 | MAT-011 | 用户转交的平台评测日志（2026-09-06） | `eval_log_097d05ec8bdb4ac9a854711d10af32e8.log`；抓取 `c009929012bba3301791790600572bf229d3874f` | `888f5c47f170b455d58585ed81bb5bb2ebb97043c5811a89b278a1c0adc766a0` | 607 请求、512 截断、112 success / 0 error、10 correct / 50 incorrect / 52 invalid；无模型 ID，不能验收后续 `9126c04` / `6d42d2c` |
 | MAT-012 | 书生官方 Chat API 文档（2026-09-06 核验） | `https://internlm.intern-ai.org.cn/doc/docs/Chat/` | 动态网页，无不可变版本 ID | 397B 默认深度思考，普通 API 支持 thinking_mode；不证明竞赛注入 client 支持扩展参数，也不证明 MAT-011 的实际模型 |
 | MAT-013 | 用户转交的平台评测日志（2026-09-07） | `eval_log_1522c9f702934c32be7e67a69ee34089.log`；抓取 `06410436b0fc5ae18830a18fed4745681a7966f2` | `f46324c8ec234dad748dc479e6a1f4adbfd6949b229aa536d8edf6186babfa90` | 803 请求、77 截断、112 success / 0 error、26 correct / 86 incorrect / 0 invalid；无模型或逐题回执，源码关系待核实 |
+| MAT-014 | 官方 baseline README 公开参数说明（2026-09-08 补充核验） | [固定版本 README](https://github.com/InternLM/Challenge-Cup-2026/blob/43be244a880d64a1f9d3a631aa7d9e976f26c17b/README.md) 的客户端参数说明部分；MAT-012 Chat 页同日复核 | `43be244a880d64a1f9d3a631aa7d9e976f26c17b`；Chat 页仍为动态 URL | baseline chat 明确列出 thinking_mode/tools 可选参数及透传；三参数示例不是禁止思考参数的官方规定。仍不提供闭源正式 wrapper 的全部转发回执或固定版本保证 |
 
 MAT-010 补充说明（2026-09-05）：用户在提供日志后明确回复“是intern-s2-preview-35b”，据此将本次模型记为 `intern-s2-preview-35b`。该确认绑定本次实验；日志本身没有模型字段这一事实不变，不据此更新通用正式模型 allowlist、API 映射或运行配置。
 
@@ -35,6 +36,10 @@ MAT-012 再核验补充（2026-09-06）：Chat 文档“调用参数说明”还
 用户后续明确确认（2026-09-06）：“已知8192截断是官方数据”，并授权直接修复。本项目按单次 8192 硬上限执行，禁止 Agent 与本地诊断请求超过该值，不再将 16384 作为待执行条件。该确认无需等待进一步材料即可实施更严格限制；来源仍记为用户转述，未补造官方原件哈希，也不推断 thinking_mode、finish_reason 或服务端时间限制的额外契约。
 
 MAT-013 补充说明（2026-09-07）：输入 SHA 与前两次相同，invalid 降为 0，请求级截断率 9.59%，Agent 墙钟 6363.181 秒。用户判断大概率为完成 Q1、尚未完成 Q2 的版本，但不掌握提交来源；该判断不作为源码相同的证明。本地及只读核验的 GitHub origin/main 为 `35fbea6`，暂缺 `0641043` 对象。新分数只归属日志提交；后续提分实验用当前可追溯代码建立独立本地基线，不等待版本线索补齐，不关闭 `OFFICIAL-GAP-*`。详见 [本次正式报告](evaluations/OFFICIAL_112_20260907.md)。
+
+MAT-013 源码关联补充（2026-09-08，内部核验，不新增官方答复）：用户提供 `https://gitcode.com/ZYM725/math-agent-xh202627-v3` 后，已读取日志绑定的完整提交对象 `06410436b0fc5ae18830a18fed4745681a7966f2`，确认正式调用包含 `thinking_mode=False`。其父提交为 `a27634e3e57cc6587f067ee8c666f43555b4e6fe` 与 `dfb5ce8aba29aff6a2f99902c3e19d9c8cc4146d`。源码未知项现已解决；MAT-013 原件与统计不改写，源码参数不能替代服务端实际模型/思考回执。
+
+MAT-014 纠正说明：本登记册早先根据三参数示例推断“没有公开扩展参数承诺”，遗漏了同份 README 后文的可选参数说明（约第 281、314 行）。此处补充纠正该推断，不把公开 baseline 当成所有平台版本的保证。Chat 页说明 397B 默认深度思考且建议工具任务保留思考，因此本项目关闭思考是保留已测版本的工程决策，不是官方普遍推荐。结合 MAT-013 源码和用户 2026-09-08 授权，现行正式请求协议保留显式 False；本地中继与回放须完整保留/核验该字段。`OFFICIAL-GAP-CLIENT/ERROR/RUNNER/CHANGE/MODEL` 中尚缺的逐请求回执、版本和通用行为仍待补。
 
 证据使用顺序如下：
 

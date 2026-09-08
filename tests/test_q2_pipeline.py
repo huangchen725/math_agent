@@ -159,6 +159,23 @@ def study(tmp_path):
     return path
 
 
+def test_text_observer_forwards_thinking_and_rejects_unsupported_tools():
+    calls = []
+    class OwnedClient:
+        def chat(self, *, messages, temperature, max_tokens, thinking_mode, meta_sink):
+            calls.append(thinking_mode)
+            meta_sink({"finish_reason": "stop"})
+            return "7"
+
+    client = q2.ObservedTextClient(OwnedClient())
+    payload = {"messages": [], "temperature": 0.0, "max_tokens": 512, "thinking_mode": False}
+    assert client.chat(**payload) == {"content": "7", "finish_reason": "stop"}
+    for extension in ({"tools": []}, {"tool_choice": "auto"}):
+        with pytest.raises(ValueError, match="text-only observer"):
+            client.chat(**payload, **extension)
+    assert calls == [False] and len(client.observations) == 1
+
+
 def test_fixture_workflow_never_opens_holdout(study):
     for repeat in range(3):
         for variant in ("baseline","calibrated_verifier"):

@@ -11,6 +11,26 @@ import re
 import user_agent as runtime
 from evaluation.q1_experiments import source_hash
 
+_UNSET = object()
+_REQUIRED_REQUEST_KEYS = {"messages", "temperature", "max_tokens"}
+_REQUEST_KEYS = _REQUIRED_REQUEST_KEYS | {"thinking_mode", "tools", "tool_choice"}
+
+
+def _request_payload(record):
+    """Read legacy flat records or queue envelopes without guessing omitted settings."""
+    if type(record) is not dict:
+        raise ValueError("invalid recorded request")
+    if "payload" in record:
+        if set(record) - {"ordinal", "payload"}:
+            raise ValueError("ambiguous recorded request envelope")
+        payload = record["payload"]
+    else:
+        payload = {key: value for key, value in record.items() if key != "ordinal"}
+    if (type(payload) is not dict or not _REQUIRED_REQUEST_KEYS <= payload.keys()
+            or payload.keys() - _REQUEST_KEYS):
+        raise ValueError("unsupported recorded request parameters")
+    return payload
+
 
 def digest(value):
     return sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
@@ -66,15 +86,20 @@ class MatchingReplayClient:
         self.mismatch = None
 
     def chat(self, *, messages, temperature, max_tokens,
-             thinking_mode=None, tools=None, tool_choice=None):
-        # 2026-09-06 公开协议修订：容忍 thinking_mode/tools/tool_choice，
-        # 摘要对比仍只看三个原始键，保证旧录制条目可回放。
+             thinking_mode=_UNSET, tools=_UNSET, tool_choice=_UNSET):
         sent = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+        sent.update({key: value for key, value in (
+            ("thinking_mode", thinking_mode), ("tools", tools), ("tool_choice", tool_choice)
+        ) if value is not _UNSET})
         if self.position >= len(self.entries):
             self.mismatch = "recorded_sequence_exhausted"
             raise ReplayDivergence(self.mismatch)
         request, response = self.entries[self.position]
-        expected = {key: request[key] for key in sent}
+        try:
+            expected = _request_payload(request)
+        except ValueError:
+            self.mismatch = "unsupported_recorded_request"
+            raise ReplayDivergence(self.mismatch) from None
         if digest(sent) != digest(expected):
             self.mismatch = "request_changed"
             raise ReplayDivergence(self.mismatch)
@@ -124,6 +149,7 @@ def capture(pilot, output):
         request = bind(f"model-relay/request-{ordinal:04d}.json")
         if request["ordinal"] != ordinal:
             raise ValueError("request identity mismatch")
+        payload = _request_payload(request)
         relative = f"model-relay/response-{ordinal:04d}.json"
         if not inside(pilot, relative).exists():
             observations.append({"ordinal": ordinal, "variant": row["variant"],
@@ -131,8 +157,9 @@ def capture(pilot, output):
             continue
         response = bind(relative)
         observations.append({"ordinal": ordinal, "variant": row["variant"],
-            "stage": row["stage"], "max_tokens": request["max_tokens"],
-            "request_sha256": digest({k: request[k] for k in ("messages", "temperature", "max_tokens")}),
+            "stage": row["stage"], "max_tokens": payload["max_tokens"],
+            "request_sha256": digest(payload),
+            "thinking_mode_recorded": "thinking_mode" in payload,
             "before": inspect_response(response)})
     items = audit["completed_item_diagnostics"]["items"]
     for item in items:
@@ -146,10 +173,10 @@ def capture(pilot, output):
         if files[relative] != item["checkpoint_sha256"] or checkpoint["idx"] != item["idx"]:
             raise ValueError("checkpoint binding mismatch")
         bind(f"{folder}/_run/run_summary.json")
-    manifest = {"schema_version": 1, "pilot": str(pilot), "input_path": str(inputs), "input_sha256": input_hash,
+    manifest = {"schema_version": 2, "pilot": str(pilot), "input_path": str(inputs), "input_sha256": input_hash,
         "generation_source_sha256": audit["generation_source_sha256"],
         "capture_source_sha256": source_hash(), "files": files, "responses": observations, "items": items,
-        "scope": "Offline parser diagnostics and exact-message replay only; no new model accuracy."}
+        "scope": "Offline parser diagnostics and exact recorded-parameter replay; missing settings are not inferred; no new model accuracy."}
     manifest["sha256"] = digest(manifest)
     write_new(output, manifest)
     return {"responses": len(observations), "completed_items": len(items), "sha256": manifest["sha256"]}
@@ -219,6 +246,7 @@ def compare(snapshot, output, *, solve=False):
         "snapshot_sha256": digest(manifest),
         "response_changes": dict(Counter(row.get("change", "missing") for row in rows)),
         "responses": rows, "item_replays": replays,
+        "replay_contract": "exact_recorded_parameters" if solve else "parser_only",
         "original_evidence_unchanged": True, "actual_api_requests": 0,
         "claim": "Changed parser acceptance is not new correct solves. Diverging requests cannot reuse later responses."}
     write_new(output, result)
@@ -230,7 +258,7 @@ def main():
     parser.add_argument("mode", choices=("capture", "compare"))
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("--solve", action="store_true", help="Strict message-matched offline replay; stop on divergence")
+    parser.add_argument("--solve", action="store_true", help="Match all recorded request parameters; stop on differences, including omitted settings")
     args = parser.parse_args()
     result = capture(args.input, args.output) if args.mode == "capture" else compare(args.input, args.output, solve=args.solve)
     print(json.dumps(result, ensure_ascii=False))

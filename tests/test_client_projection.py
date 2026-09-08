@@ -1,16 +1,8 @@
-"""Public client contract regression.
+"""Public four-argument contract regression.
 
-Historically R1-1 projected the public client contract to three arguments
-(messages/temperature/max_tokens). On 2026-09-06 the contract was amended
-with official evaluation evidence: the 9/5 run (ba63ac0) proved the platform
-client accepts extended keywords (112/112 success, 0 errors), while the 9/6
-run (c009929) proved the three-argument protocol is catastrophic with
-Intern-S2-Preview-397B, whose default thinking chain burned the max_tokens
-budget (84% truncated requests, 52 invalid answers). The public contract now
-allows exactly messages, temperature, max_tokens and thinking_mode; tool
-transport keywords (tools, tool_choice) remain local-adapter-only extras
-tolerated by the guard. No dynamic kwargs, no last-response metadata side
-channel.
+The 2026-09-08 source audit verified explicit thinking_mode=False in measured
+0641043. Preserve that user-approved protocol without claiming a single cause
+for cross-version evaluation differences. Local tools remain a separate path.
 """
 
 import importlib.util
@@ -37,16 +29,13 @@ class StrictPublicClient:
     def __init__(self):
         self.calls = []
 
-    def chat(self, messages, temperature, max_tokens, thinking_mode=None,
-             tools=None, tool_choice=None):
+    def chat(self, *, messages, temperature, max_tokens, thinking_mode):
         self.calls.append(
             {
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "thinking_mode": thinking_mode,
-                "tools": tools,
-                "tool_choice": tool_choice,
             }
         )
         system_text = "\n".join(
@@ -71,9 +60,9 @@ def test_solve_uses_only_public_protocol_arguments():
     assert result["final_response"].endswith("最终答案：2")
     assert client.calls, "solve must issue at least one model request"
     for call in client.calls:
-        assert set(call) <= {
+        assert set(call) == {
             "messages", "temperature", "max_tokens",
-            "thinking_mode", "tools", "tool_choice",
+            "thinking_mode",
         }
 
 
@@ -86,8 +75,7 @@ def test_solve_always_disables_thinking_mode():
 
     assert client.calls, "solve must issue at least one model request"
     for call in client.calls:
-        # 397B 默认思维链会吃满 max_tokens（9/6 评测 84% 截断），
-        # 因此所有请求必须显式关闭 thinking。
+        # Preserve the audited, user-approved formal protocol at every stage.
         assert call["thinking_mode"] is False
 
 

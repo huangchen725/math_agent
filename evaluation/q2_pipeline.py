@@ -148,6 +148,8 @@ class ObservedTextClient:
 
     def chat(self, *, messages, temperature, max_tokens,
              thinking_mode=None, tools=None, tool_choice=None):
+        if tools is not None or tool_choice is not None:
+            raise ValueError("text-only observer does not support tool parameters")
         captured = []
         passthrough = {"meta_sink": captured.append}
         if thinking_mode is not None:

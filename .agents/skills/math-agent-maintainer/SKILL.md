@@ -28,10 +28,10 @@ The active runtime is in R1 hardening after the successful R0 anchor run (`ba63a
 
 - Treat `sys.modules`, `sys.path`, the judge working directory, and preloaded modules as hostile integration state.
 - Never infer that `from llm_client import InternChatClient` resolves to a project-owned class. Never use such a class in `isinstance`/`issubclass` to unlock `chat_with_metadata`, tools, extra kwargs, metadata, or any privileged path.
-- A post-anchor formal entrypoint must treat every injected client as external and call only `chat(messages=..., temperature=..., max_tokens=...)`.
+- A post-anchor formal entrypoint must treat every injected client as external and call only `chat(messages=..., temperature=..., max_tokens=..., thinking_mode=False)`. The 2026-09-08 source audit and user decision preserve the measured `0641043` protocol; private access remains forbidden.
 - Put project-private client features behind an explicit local adapter outside the formal import graph. Do not probe markers, fields, same-name methods, signatures, or attributes.
 - Keep a real `ReasoningAgent` declaration in root `user_agent.py`. Use project-prefixed formal module names; do not add generic top-level names such as `agent`, `context`, `solver`, `budget`, or `llm_client`.
-- Before editing an injected-client boundary, first reproduce the official load order: preload a foreign `llm_client`, then import `user_agent`. Also test a strict three-parameter fake without `**kwargs`, a private-attribute trap, isolated path loading, and the complete `sys.modules` pollution matrix.
+- Before editing an injected-client boundary, first reproduce the official load order: preload a foreign `llm_client`, then import `user_agent`. Also test a strict public-protocol fake without `**kwargs`, assert `thinking_mode is False`, and retain private-attribute traps, isolated path loading, and the complete `sys.modules` pollution matrix. Local relay tests must inspect the final HTTP body; replay must distinguish omitted settings from explicit values.
 - A local A/B may prove a deterministic code defect. It cannot close `OFFICIAL-GAP-CLIENT`, `OFFICIAL-GAP-ERROR`, `OFFICIAL-GAP-RUNNER`, or `OFFICIAL-GAP-CHANGE` without the required official evidence.
 
 ## Reintroduce changes in order

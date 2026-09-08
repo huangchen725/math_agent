@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-09-07.1",
+  "policy_version": "2026-09-08.1",
+  "protocol_decision": "2026-09-08: user authorized retaining verified 0641043/5c2f7a0 thinking_mode=False; repair offline relay propagation and exact request replay without changing formal solving behavior or claiming accuracy gain",
   "phase": "R1",
   "offline_workstreams": ["Q0", "Q1", "Q2"],
   "schedule_decision": "2026-09-06: user authorized Q0/Q1 offline work; 2026-09-07: user authorized Q2 offline engineering preparation while R1 official acceptance and actual model evidence remain pending",

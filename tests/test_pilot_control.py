@@ -30,17 +30,85 @@ def wait_for(predicate):
         time.sleep(0.005)
 
 
-def launch_call(path):
+def launch_call(path, payload=None):
     results = []
     def call():
         try:
-            results.append(control.RelayClient(path).chat(**PAYLOAD))
+            results.append(control.RelayClient(path).chat(**(PAYLOAD if payload is None else payload)))
         except control.PilotStopped as error:
             results.append(type(error).__name__)
     thread = threading.Thread(target=call)
     thread.start()
     wait_for(lambda: control.status(path)["queued"] is not None)
     return thread, results
+
+
+@pytest.mark.parametrize("mode", ["omitted", False, True])
+def test_thinking_mode_survives_queue_admission_and_http_json(tmp_path, monkeypatch, mode):
+    import requests
+    payload = dict(PAYLOAD)
+    if mode != "omitted":
+        payload["thinking_mode"] = mode
+    bodies = []
+
+    class Response:
+        status_code = 200
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"model": "fixture-model", "usage": receipt()["metadata"]["usage"],
+                    "choices": [{"finish_reason": "stop", "message": {"content": "7"}}]}
+
+    class Session:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+        def mount(self, prefix, adapter):
+            assert adapter.max_retries.total == 0
+        def post(self, url, **kwargs):
+            bodies.append(json.loads(kwargs["data"]))
+            return Response()
+
+    monkeypatch.setattr(requests, "Session", Session)
+    path = setup(tmp_path)
+    caller, results = launch_call(path, payload)
+    try:
+        assert control.serve_once(path, lambda p: control._http_once(p, "SYNTHETIC_KEY", "fixture-model"))
+    finally:
+        control.pause(path)
+        caller.join(2)
+    assert not caller.is_alive() and results == [{"content": "7", "finish_reason": "stop"}]
+    assert bodies == [{"model": "fixture-model", **payload}]
+    queued = control._read(path / "request-0001.json")["payload"]
+    event = json.loads((path / "ledger.jsonl").read_text().splitlines()[0])
+    assert queued == payload
+    from hashlib import sha256
+    assert event["request_sha256"] == sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+@pytest.mark.parametrize("extension", [{"thinking_mode": value} for value in (None, 0, 1, "false", [], {})]
+                         + [{"tools": []}, {"tool_choice": "auto"}])
+def test_invalid_or_unsupported_extension_cannot_enter_queue(tmp_path, extension):
+    path = setup(tmp_path)
+    before = control.status(path)
+    with pytest.raises(ValueError):
+        control.RelayClient(path).chat(**PAYLOAD, **extension)
+    assert control.status(path) == before
+    assert not list(path.glob("request-*.json"))
+
+
+def test_payload_json_roundtrip_preserves_all_supported_request_fields():
+    rng = random.Random(20260908)
+    for number in range(90):
+        payload = {"messages": [{"role": rng.choice(["user", "system", "assistant"]),
+                                 "content": "数学\\\"\n" + str(number)}],
+                   "temperature": rng.random()*2, "max_tokens": rng.choice([1, 512, 1024, 8192])}
+        if number % 3:
+            payload["thinking_mode"] = number % 3 == 1
+        encoded = control._payload(**payload)
+        assert json.loads(json.dumps(encoded)) == payload
+        assert control._payload(**json.loads(json.dumps(encoded))) == payload
 
 
 def test_pause_before_worker_admission_sends_nothing(tmp_path):
@@ -186,6 +254,7 @@ def test_q1_partial_run_remains_interrupted_and_labels_do_not_reach_sender(tmp_p
     path = setup(tmp_path, identity=identity, requests=1, output_tokens=8192)
     def send(payload):
         assert "PRIVATE_REFERENCE" not in json.dumps(payload)
+        assert payload["thinking_mode"] is False
         return receipt()
     worker = threading.Thread(target=control.serve, args=(path, send))
     worker.start()

@@ -8,11 +8,13 @@
 
 > **当前离线进度**：Q0/Q1 工程已完成，截断专项修复已提交为 `dfb5ce8`。Q2 已补充预登记、重复配对统计、候选锁定、留出集与交付核验工作流；验证结果见 [Q2 离线报告](docs/evaluations/Q2_OFFLINE_20260907.md)。真实模型基线、收益、人工盲审与官方验收仍分别待补。
 
-> **最新正式结果（2026-09-07）**：平台抓取 `0641043`，26 correct / 86 incorrect / 0 invalid（23.21%），112 success / 0 error，803 请求中 77 次截断（9.59%）。用户判断大概率是完成 Q1、尚未完成 Q2 的版本；本地与 GitHub main 是 `35fbea6`，尚未核对源码关系，不能将本次改善归因于某一修复。下一目标为提升正确率。公开开发集配对此前因 120 秒读取超时停止：基线完成 6/72、紧凑提示 0/72，累计 38 次请求、已知 53,566 token，另一次失败用量未知。已修复离线判分误判，两版本各 522 项全量门禁通过。用户随后批准重开并允许最长 360 秒等待；v3 采用读取 300 秒、外层 350 秒，现因耗时过长按用户要求暂停：基线 72/72、紧凑提示 11/72，两个执行进程均已退出，不自动续跑。累计 532 次请求、已知 1,153,518 token，另保留历史一笔未知用量；完整配对结论仍缺失。详见 [正式报告](docs/evaluations/OFFICIAL_112_20260907.md)、[首轮实测与后续方案](docs/evaluations/ACCURACY_PILOT_20260907.md) 和 [提分计划](docs/evaluations/ACCURACY_NEXT_20260907.md)。
+> **最新正式结果（2026-09-07）**：平台抓取 `0641043`，26 correct / 86 incorrect / 0 invalid（23.21%），112 success / 0 error，803 请求中 77 次截断（9.59%）。2026-09-08 已核实它合并 `dfb5ce8` 与思考关闭修复，包含 Q0/Q1、尚无 Q2 和答案交付增量；跨批次改善仍不能归因于单一变量。下一目标为提升正确率。公开开发集配对此前因 120 秒读取超时停止：基线完成 6/72、紧凑提示 0/72，累计 38 次请求、已知 53,566 token，另一次失败用量未知。已修复离线判分误判，两版本各 522 项全量门禁通过。用户随后批准重开并允许最长 360 秒等待；v3 采用读取 300 秒、外层 350 秒，现因耗时过长按用户要求暂停：基线 72/72、紧凑提示 11/72，两个执行进程均已退出，不自动续跑。累计 532 次请求、已知 1,153,518 token，另保留历史一笔未知用量；完整配对结论仍缺失。详见 [正式报告](docs/evaluations/OFFICIAL_112_20260907.md)、[首轮实测与后续方案](docs/evaluations/ACCURACY_PILOT_20260907.md) 和 [提分计划](docs/evaluations/ACCURACY_NEXT_20260907.md)。
 
 > **截断缺陷修复（`dfb5ce8`）**：强制单次输出不超过用户确认的官方 8192 上限，修复生成预算耗尽丢弃已有合格答案、未知验证被判错及冲突元数据覆盖截断；明确 length 的空内容允许原预算内恢复。默认 unknown 不触发纠错，Q1 calibrated_verifier 仅进一步收紧标签格式。两个 Python 版本各 452 项完整门禁通过，详见 [修复与验证](docs/evaluations/TRUNCATION_REPAIR_20260906.md)。这些代码修复不代表真实截断率已降低；更新后的 18 次诊断计划全部在 8192 内，真实执行需单独额度授权。
 
 最新 0 请求事故的本地根因已经闭环：judge 预载的同名 `llm_client` 被项目裸导入复用，随后 `isinstance` 误把官方 client 当成项目私有 client，并在第一次请求前访问不存在的 `chat_with_metadata`。永久防复发规则和重建顺序见 [工程底线与重建规范](docs/ENGINEERING_SPECIFICATION.md)，完整证据见 [2026-09-04 官方运行故障报告](docs/evaluations/OFFICIAL_112_20260904_RUNTIME_FAILURE.md)。该根因能解释提交 `1fc98b7`，不能被扩大为此前所有包结构 0 分的唯一原因。
+
+> **2026-09-08 核验与补修**：已取得 `0641043` 源码，确认其正式调用显式传 `thinking_mode=False`；本地快进至 `5c2f7a0` 后保留正式求解行为，修复离线中继丢参数和回放忽略参数差异。旧响应解析诊断与完整请求回放分别标记。历史有日期的三参数、测试数量和未知 SHA 描述只代表当时状态；最新证据见 [参数修复与验收](docs/evaluations/PROTOCOL_REPAIR_20260908.md)。Python 3.12/3.10 完整 formal 各 666 项通过；本轮不调用真实 API，不承诺提升正确率。
 
 ## 核心接口
 
@@ -204,5 +206,5 @@ python verify_math.py --execute --max-requests 40 --retry-failures
 - 协作规则见 [AGENTS.md](AGENTS.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - 每个项目 Skill 都有 `PROJECT_POLICY.md`；使用第三方 Skill 也不能绕过全局红线和授权边界。
 - 安全边界见 [SECURITY.md](SECURITY.md)，缺陷与路线见 [审计与优化方案](docs/AUDIT_AND_OPTIMIZATION.md)。
-- 任何重新拆分必须保持根入口真实声明 `ReasoningAgent`，禁止用可碰撞的通用模块类身份开启私有 client 能力，并通过官方预加载顺序、严格三参数 client、隔离导入和模块污染矩阵。
+- 任何重新拆分必须保持根入口真实声明 `ReasoningAgent`，禁止用可碰撞的通用模块类身份开启私有 client 能力，并通过官方预加载顺序、严格四参数 client（含 thinking_mode=False）、隔离导入和模块污染矩阵。
 - [技术报告](技术报告.md) 与 [创新点说明](创新点说明.md) 是比赛陈述材料，不作为架构规范；提交信息见 [SUBMISSION_INFO.md](SUBMISSION_INFO.md)。

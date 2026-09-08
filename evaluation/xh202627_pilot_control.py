@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 import time
 
+_UNSET = object()
+
 
 class PilotStopped(BaseException):
     """A global stop must escape the agent's ordinary fallback handlers."""
@@ -155,7 +157,7 @@ def _event(directory, value):
         os.fsync(handle.fileno())
 
 
-def _payload(messages, temperature, max_tokens):
+def _payload(messages, temperature, max_tokens, *, thinking_mode=_UNSET):
     if (type(max_tokens) is not int or not 1 <= max_tokens <= 8192
             or type(temperature) not in (int, float) or not math.isfinite(temperature)
             or not 0 <= temperature <= 2 or type(messages) is not list or not 1 <= len(messages) <= 128):
@@ -165,20 +167,25 @@ def _payload(messages, temperature, max_tokens):
                 or message["role"] not in ("system", "user", "assistant") or type(message["content"]) is not str):
             raise ValueError("invalid text message")
     result = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
+    if thinking_mode is not _UNSET:
+        if type(thinking_mode) is not bool:
+            raise ValueError("thinking_mode must be an explicit boolean or omitted")
+        result["thinking_mode"] = thinking_mode
     if len(json.dumps(result, ensure_ascii=False).encode()) > 1_900_000:
         raise ValueError("oversized payload")
     return result
 
 
 class RelayClient:
-    """Offline controller side, compatible with the public three-argument contract."""
+    """Text-only controller; preserve explicit thinking settings through transport."""
     def __init__(self, directory, *, clock=time.monotonic, sleep=time.sleep):
         self.directory, self.clock, self.sleep = Path(directory), clock, sleep
 
     def chat(self, *, messages, temperature, max_tokens,
-             thinking_mode=None, tools=None, tool_choice=None):
-        # 2026-09-06 公开协议修订：容忍扩展关键字，载荷仍按三键规范记录。
-        payload = _payload(messages, temperature, max_tokens)
+             thinking_mode=_UNSET, tools=None, tool_choice=None):
+        if tools is not None or tool_choice is not None:
+            raise ValueError("text-only relay does not support tool parameters")
+        payload = _payload(messages, temperature, max_tokens, thinking_mode=thinking_mode)
         with _gate(self.directory):
             state = _state(self.directory)
             if state["status"] != "running":
@@ -343,6 +350,7 @@ def _http_once(payload, authorization, model):
     """One HTTP send, called only inside the bounded network child."""
     import requests
     from requests.adapters import HTTPAdapter
+    payload = _payload(**payload)
     with requests.Session() as session:
         session.mount("https://", HTTPAdapter(max_retries=0))
         response = session.post("https://chat.intern-ai.org.cn/api/v1/chat/completions",

@@ -32,7 +32,7 @@
 
 | 工作表面 | 自动触发规则 | agent 必须先确认 |
 | --- | --- | --- |
-| `user_agent.py`、client、gateway、入口加载 | `ANCHOR-001`、`IMPORT-001/002`、`CLIENT-001/002`、`ENTRY-001/002` | 当前阶段是否允许改运行时；是否只使用三参数公开协议；是否存在类身份提权、私有读取或同名碰撞 |
+| `user_agent.py`、client、gateway、入口加载 | `ANCHOR-001`、`IMPORT-001/002`、`CLIENT-001/002`、`ENTRY-001/002` | 是否遵循 CLIENT-001 的公开四参数协议（含 `thinking_mode=False`）；是否存在类身份提权、私有读取或同名碰撞 |
 | 新增/移动/重命名 Python 模块 | `IMPORT-001`、`TEST-IMPORT-001`、`CHANGE-001`、`DOC-001` | 是否使用唯一前缀；是否同时改变求解行为；导入闭包和污染矩阵是否存在 |
 | prompt、模型、候选、温度、token、工具、聚合 | `CHANGE-001`、`EVAL-001`、`API-AUTH-001` | 是否只有一个实验变量；是否冻结数据、配置和成本；真实 API 是否另获授权 |
 | parser、normalizer、equivalence、validator、状态机 | `PBT-001`、`SECURITY-001` | 是否使用 property-based-testing；是否有固定历史反例和最强可验证性质 |
@@ -63,7 +63,7 @@ python .agents/policy_guard.py --anchor-canary
 python .agents/policy_guard.py --formal
 ```
 
-`--anchor-canary` 只验证活动运行时仍与 `350a267f` 一致，不证明旧请求参数、trace 或截断边界安全；运行时在 R1 加固中偏离锚点后，该检查即不再适用。`--formal` 自 2026-09-05 阶段进入 R1 起作为正式改动版门禁；改动版必须先完成 `CLIENT-001` 三参数投影等加固项才能通过。
+`--anchor-canary` 只验证活动运行时仍与 `350a267f` 一致，不证明旧请求参数、trace 或截断边界安全；运行时在 R1 加固中偏离锚点后，该检查即不再适用。`--formal` 自 2026-09-05 阶段进入 R1 起作为正式改动版门禁；当前 CLIENT-001 采用经 2026-09-08 源码核验和用户决策保留的四参数协议，历史三参数限制已被替代。离线中继不得丢弃思考参数，严格回放必须比较完整已记录参数。
 
 ## 证据不足时
 
