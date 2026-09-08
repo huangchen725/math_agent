@@ -1,5 +1,9 @@
 # XH-202627 数学推理智能体
 
+> **2026-09-08 第一批 K/C 已实施并验证**：公开教材检索 `corpus_retrieval`、完整受限任务核验 `bounded_math`、题意条件检查 `condition_checks` 已接入独立 Q1 开关，默认均关闭。Python 3.10/3.12 最终完整门禁各 773 项通过；36 次 397B/False 小批请求完成，0 截断、27,930 token。单阶段正确交付 B1 为 4→3/4、B2 为 2→3/8、C2a 为 5→4/6；最终检索英文/中文明确有用均 2/12，C1 现有公开开发题覆盖 0/72，因此没有启用正式新策略。六文件闭包需包含 `xh202627_corpus.py`，检索需携带 `resources/hefferon-v1/`。实现、回执、参考争议和限制见 [本批验收](docs/evaluations/FIRST_BATCH_20260908.md)。
+
+> **最新正式结果（2026-09-08）**：平台抓取 `9acff7e`（正式求解代码等同 `5c2f7a0`），25/112 correct（22.32%）、79 incorrect、8 invalid；112 success / 0 error。731 请求中 50 次截断（6.84%），总 token 减少但墙钟升至约 3 小时 2 分。上一批为 26/112、0 invalid；提分收益未证实，新增 invalid 需逐题核对。B1/B2 不在被测提交中；后续本地小批结果另见上方验收，默认仍关闭。详见 [本批分析](docs/evaluations/OFFICIAL_112_20260908.md)。下方历史结果按日期理解。
+
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
 > **2026-09-07 第一批提分工程**：A3→A1→A2→A4→A5 已完成离线实施，Python 3.10/3.12 完整 formal 各 625 项通过。修复有界多行/粗体答案提取和符号补答传递；新增旧响应严格回放、本地小批限额与暂停控制、参考争议匿名复核材料。原实测维持暂停，本轮零 API；不改变模型、提示、候选数与预算，不承诺正式分数增幅。交付与复验见 [第一批工程报告](docs/evaluations/ACCURACY_ENGINEERING_IMPLEMENTATION_20260907.md)。下方有日期的测试数量属于相应历史版本。
@@ -18,7 +22,7 @@
 
 ## 核心接口
 
-> **2026-09-08 B1/B2 离线候选**：`Q1Policy(tool_aware_prompts=True)` 让纯文本生成提示匹配其能力，保留领域数学内容及显式适配器的工具提示；`Q1Policy(concise_recovery=True)` 使用一致的简短补答系统提示，保持 512 上限。两项默认关闭、单独比较，正式默认请求保持 `9acff7e` 行为；未实测收益。实施与验收见 [B1/B2 离线报告](docs/evaluations/B1_B2_OFFLINE_20260908.md)。
+> **2026-09-08 B1/B2 实验候选**：`Q1Policy(tool_aware_prompts=True)` 让纯文本生成提示匹配其能力，保留领域数学内容及显式适配器的工具提示；`Q1Policy(concise_recovery=True)` 使用一致的简短补答系统提示，保持 512 上限。两项默认关闭、单独比较，默认请求保持 `9acff7e` 行为。原工程见 [B1/B2 离线报告](docs/evaluations/B1_B2_OFFLINE_20260908.md)，本地小批结果见 [第一批验收](docs/evaluations/FIRST_BATCH_20260908.md)，完整流程收益尚未验证。
 
 修复范围、失败反例与验证证据见 [R1 修复与复验](docs/evaluations/R1_REPAIR_VALIDATION_20260905.md)。
 

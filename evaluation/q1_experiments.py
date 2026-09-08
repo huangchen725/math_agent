@@ -16,7 +16,8 @@ from user_agent import AgentConfig, Q1Policy, ReasoningAgent
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ("baseline", "recover_plain", "deterministic", "compact_routing",
             "calibrated_verifier", "diverse_candidates", "no_critic", "no_reflection",
-            "no_tools", "combined", "tool_aware_prompts", "concise_recovery")
+            "no_tools", "combined", "tool_aware_prompts", "concise_recovery",
+            "corpus_retrieval", "bounded_math", "condition_checks")
 
 
 def source_hash():
@@ -24,7 +25,8 @@ def source_hash():
              "domain_prompts.py", "llm_client.py", "math_tools.py", "tool_executor.py",
              "local_support/xh202627_local_adapter.py", "evaluation/q1_experiments.py",
              "evaluation/q0_pipeline.py", "evaluation/score_run.py", "evaluation/judge.py",
-             "deterministic_verifier.py")
+             "deterministic_verifier.py", "xh202627_corpus.py",
+             "resources/hefferon-v1/cards.json", "resources/hefferon-v1/manifest.json")
     return digest({name: sha256((ROOT/name).read_bytes()).hexdigest() for name in files})
 
 

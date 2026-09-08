@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Tuple
 
 # The source closure is fixed; neither cwd/sys.path nor preloaded bare modules
 # determine its ownership. A fresh private namespace never replaces foreign state.
-_FORMAL_SOURCE_FILES = ("agent_types.py", "budget.py", "domain_prompts.py", "answer_equivalence.py")
+_FORMAL_SOURCE_FILES = ("agent_types.py", "budget.py", "domain_prompts.py", "answer_equivalence.py", "xh202627_corpus.py")
 MAX_OUTPUT_TOKENS = 8192  # User-confirmed official single-request bound (2026-09-06).
 
 
@@ -59,6 +59,7 @@ BudgetExceeded = _dependencies["budget"].BudgetExceeded
 ExecutionBudget = _dependencies["budget"].ExecutionBudget
 get_domain_prompt = _dependencies["domain_prompts"].get_domain_prompt
 text_only_domain_prompt = _dependencies["domain_prompts"].text_only_domain_prompt
+load_public_corpus = _dependencies["xh202627_corpus"].load_corpus
 
 
 _ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
@@ -417,8 +418,8 @@ class ReasoningAgent:
             if self.config.enable_fallback:
                 fb = self._quick_fallback(problem, trace)
                 if fb:
-                    if self.local_policy.deterministic:
-                        if _complete_task_check(problem, str(fb)) == "fail":
+                    if self.local_policy.deterministic or self.local_policy.bounded_math:
+                        if self._task_check(problem, str(fb)) == "fail":
                             trace.append({"step": "deterministic_fail", "content": "[内容已省略]"})
                             return {"final_response": "未解出", "trace": trace}
                     return {"final_response": self._build_response("", fb), "trace": trace}
@@ -496,7 +497,7 @@ class ReasoningAgent:
             trace.append({"step": "reflect_budget_exhausted", "content": _clip_for_trace(str(e))})
 
         # 阶段6：加权聚合
-        if self.local_policy.deterministic:
+        if self.local_policy.deterministic or self.local_policy.bounded_math:
             scored = self._apply_exact_evidence(problem, scored, trace)
         final_answer, best_content = self._aggregate(scored, trace)
         if not final_answer:
@@ -541,11 +542,14 @@ class ReasoningAgent:
             for i in range(self.config.plain_candidates):
                 if self.local_policy.diverse_candidates:
                     cand = self._chat(self._plain_generation_prompt(domain_prompt),
-                        f"{problem}\n\n请用独立方法复核后给出完整解答。",
+                        f"{self._generation_problem(problem, reference=i == 0)}\n\n请用独立方法复核后给出完整解答。",
                         temperature=min(1.0, self.config.policy_temperature + 0.2),
                         max_tokens=self.config.max_tokens)
                 else:
-                    cand = self._solve_plain(problem, domain_prompt)
+                    if self.local_policy.corpus_retrieval and i == 0:
+                        cand = self._solve_plain(problem, domain_prompt, reference=True)
+                    else:
+                        cand = self._solve_plain(problem, domain_prompt)
                 if self.local_policy.recover_plain and self.config.enable_fallback and not self._extract_answer(cand):
                     trace.append({"step": f"truncated_{i}", "content": "[内容已省略]"})
                     recovered = self._quick_fallback(problem, trace)
@@ -562,13 +566,13 @@ class ReasoningAgent:
         try:
             messages = [
                 {"role": "system", "content": domain_prompt or POLICY_PROMPT},
-                {"role": "user", "content": f"{problem}\n\n请调用工具验证关键计算。候选编号：{cid}"},
+                {"role": "user", "content": f"{self._generation_problem(problem)}\n\n请调用工具验证关键计算。候选编号：{cid}"},
             ]
             if self.local_adapter is None:
                 if self.local_policy.tool_aware_prompts:
                     messages = [
                         {"role": "system", "content": self._plain_generation_prompt(domain_prompt)},
-                        {"role": "user", "content": f"{problem}\n\n请用数学推导复核关键计算，直接给出完整解答。候选编号：{cid}"},
+                        {"role": "user", "content": f"{self._generation_problem(problem)}\n\n请用数学推导复核关键计算，直接给出完整解答。候选编号：{cid}"},
                     ]
                 # The public text-only path has no dependency on local tools/client.
                 response = self._chat(messages[0]["content"], messages[1]["content"],
@@ -603,10 +607,25 @@ class ReasoningAgent:
         prompt = domain_prompt or POLICY_NO_TOOL_PROMPT
         return text_only_domain_prompt(prompt) if self.local_policy.tool_aware_prompts else prompt
 
-    def _solve_plain(self, problem: str, domain_prompt: str) -> str:
+    def _generation_problem(self, problem: str, *, reference: bool = False) -> str:
+        text = problem
+        if self.local_policy.condition_checks:
+            text += ("\n\n解题检查：先确认所求对象、数域、参数范围、定义域和边界；"
+                     "不要补造题目未给的条件。涉及全部解、积分常数、绝对值、重数时逐项核对。"
+                     "在最终答案中保留必要条件，并检查结论与推导一致；给出完整解答。")
+        if reference and self.local_policy.corpus_retrieval:
+            try:
+                # Per-call read-only resource; no cross-question state or hidden inputs.
+                text += load_public_corpus().context(problem)
+            except (OSError, ValueError, TypeError, KeyError):
+                # An unavailable/corrupted optional corpus cannot prevent normal solving.
+                pass
+        return text
+
+    def _solve_plain(self, problem: str, domain_prompt: str, *, reference: bool = False) -> str:
         try:
             prefix = self._plain_generation_prompt(domain_prompt)
-            return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
+            return self._chat(prefix, f"{self._generation_problem(problem, reference=reference)}\n\n请给出完整解答。",
                               temperature=self.config.policy_temperature,
                               max_tokens=self.config.max_tokens)
         except BudgetExceeded:
@@ -963,7 +982,7 @@ class ReasoningAgent:
         for candidate in candidates:
             if not candidate.answer.raw:
                 continue
-            status = _complete_task_check(problem, candidate.answer.raw)
+            status = self._task_check(problem, candidate.answer.raw)
             trace.append({"step": "deterministic_" + status, "content": "[内容已省略]"})
             candidate.verifications.append(Verification("deterministic:complete_problem", status,
                 1.0 if status == "pass" else 0.0, "bounded exact arithmetic"))
@@ -973,6 +992,11 @@ class ReasoningAgent:
                 remaining.append(candidate)
         # A complete exact problem proof outranks model votes. Unparsed tasks never change order.
         return passed if passed else remaining
+
+    def _task_check(self, problem, answer):
+        if self.local_policy.bounded_math:
+            return _bounded_task_check(problem, answer)
+        return _complete_task_check(problem, answer)
 
     @staticmethod
     def _is_correct(verdict: str) -> bool:
@@ -994,6 +1018,9 @@ class Q1Policy:
     diverse_candidates: bool = False
     tool_aware_prompts: bool = False
     concise_recovery: bool = False
+    corpus_retrieval: bool = False
+    bounded_math: bool = False
+    condition_checks: bool = False
 
 
 _ROUTE_HINTS = {
@@ -1151,3 +1178,118 @@ def _complete_task_check(problem, answer):
     except (ValueError, SyntaxError, TypeError, ZeroDivisionError, RecursionError, OverflowError):
         return "unknown"
     return "unknown"
+
+
+def _math_body(text):
+    """Remove only whole-expression math delimiters; never remove conditions."""
+    if type(text) is not str or not 0 < len(text) <= 1200:
+        raise ValueError("math text bounds")
+    text = text.strip()
+    for left, right in ((r"\[", r"\]"), (r"\(", r"\)"), ("$$", "$$"), ("$", "$")):
+        if text.startswith(left) and text.endswith(right) and len(text) > len(left) + len(right):
+            text = text[len(left):-len(right)].strip()
+            break
+    return text
+
+
+def _rational_literal(value):
+    if type(value) is int and abs(value) <= 1_000_000_000:
+        return Fraction(value)
+    if type(value) is not str:
+        raise ValueError("exact numeric type")
+    value = _math_body(value)
+    value = re.sub(r"\\frac\{([+-]?\d+)\}\{([+-]?\d+)\}", r"\1/\2", value)
+    if len(value) > 40 or not re.fullmatch(r"[+-]?\d+(?:\.\d+)?(?:/[+-]?\d+)?", value):
+        raise ValueError("exact numeric syntax")
+    # Fraction accepts decimal OR ratio, not a ratio with a decimal numerator.
+    if "/" in value:
+        numerator, denominator = value.split("/")
+        result = Fraction(numerator) / Fraction(denominator)
+    else:
+        result = Fraction(value)
+    if abs(result) > 1_000_000_000:
+        raise ValueError("exact numeric magnitude")
+    return result
+
+
+def _polynomial_body(text):
+    text = _math_body(text)
+    text = re.sub(r"\\frac\{([^{}]+)\}\{([+-]?\d+)\}", r"((\1)/(\2))", text)
+    text = re.sub(r"\^\{(\d+)\}", r"^\1", text)
+    text = text.replace(r"\cdot", "*")
+    text = re.sub(r"(?<=[0-9)])\s*(?=x)", "*", text)
+    text = re.sub(r"(?<=[0-9x)])\s*(?=\()", "*", text)
+    return _bounded_polynomial(text)
+
+
+def _bounded_determinant(text):
+    text = _math_body(text)
+    if text.startswith("[["):
+        matrix = json.loads(text)
+    else:
+        match = re.fullmatch(r"\\begin\{([pbv]?matrix)\}(.*?)\\end\{\1\}", text, re.S)
+        if not match:
+            raise ValueError("matrix grammar")
+        matrix = [row.split("&") for row in re.split(r"\\\\", match[2])]
+    if (type(matrix) is not list or not 1 <= len(matrix) <= 6
+            or any(type(row) is not list or len(row) != len(matrix) for row in matrix)):
+        raise ValueError("matrix dimensions")
+    rows = [[_rational_literal(value) for value in row] for row in matrix]
+    result = Fraction(1)
+    for col in range(len(rows)):
+        pivot = next((i for i in range(col, len(rows)) if rows[i][col]), None)
+        if pivot is None:
+            return Fraction(0)
+        if pivot != col:
+            rows[pivot], rows[col] = rows[col], rows[pivot]
+            result = -result
+        divisor = rows[col][col]
+        result *= divisor
+        for i in range(col + 1, len(rows)):
+            factor = rows[i][col] / divisor
+            rows[i] = [a - factor*b for a, b in zip(rows[i], rows[col])]
+    return result
+
+
+def _bounded_task_check(problem, answer):
+    """C1: whole-task, bounded rational proofs only; no free-form tool claims."""
+    if type(problem) is not str or type(answer) is not str or max(len(problem), len(answer)) > 1200:
+        return "unknown"
+    try:
+        text = problem.strip().rstrip("。？?.")
+        derivative = re.fullmatch(r"(?:求函数\s*f\(x\)\s*=\s*(.+?)\s*的导数|Differentiate\s+(?:f\(x\)\s*=\s*)?(.+?)(?:\s+with respect to x)?)", text, re.I)
+        integral = re.fullmatch(r"(?:计算\s*(.+?)\s*关于\s*x\s*的不定积分|Find the indefinite integral of\s+(.+?)(?:\s+with respect to x)?)", text, re.I)
+        matrix = re.fullmatch(r"(?:计算|求)(?:矩阵)?\s*(.+?)\s*的行列式", text)
+        if matrix is None:
+            matrix = re.fullmatch(r"(?:Compute|Calculate|Find)\s+the determinant of\s+(?:the matrix\s+)?(.+)", text, re.I)
+        if matrix:
+            return "pass" if _bounded_determinant(matrix[1]) == _rational_literal(answer) else "fail"
+        if derivative:
+            original = _polynomial_body(next(x for x in derivative.groups() if x))
+            expected = {k-1: k*v for k, v in original.items() if k}
+            return "pass" if _polynomial_body(answer) == expected else "fail"
+        if integral:
+            candidate = _math_body(answer)
+            match = re.fullmatch(r"(.+?)\s*\+\s*C", candidate)
+            if not match:
+                return "unknown"
+            original = _polynomial_body(match[1])
+            derivative_poly = {k-1: k*v for k, v in original.items() if k}
+            expected = _polynomial_body(next(x for x in integral.groups() if x))
+            return "pass" if derivative_poly == expected else "fail"
+        # Extend public notations for two whole-task finite computations.
+        combo = re.fullmatch(r"(?:计算|求|Compute|Calculate)\s*(?:C\((\d+),\s*(\d+)\)|\\binom\{(\d+)\}\{(\d+)\})", text, re.I)
+        modular = re.fullmatch(r"(?:计算|求|Compute|Calculate)\s*([+-]?\d+)\s*\^\s*(\d+)\s*(?:mod|模)\s*(\d+)", text, re.I)
+        if combo:
+            n, k = [int(x) for x in combo.groups() if x is not None]
+            if not 0 <= k <= n <= 1000:
+                return "unknown"
+            return "pass" if Fraction(math.comb(n, k)) == _rational_literal(answer) else "fail"
+        if modular:
+            base, exponent, modulus = map(int, modular.groups())
+            if abs(base) > 10**9 or not 0 <= exponent <= 10**6 or not 1 <= modulus <= 10**9:
+                return "unknown"
+            return "pass" if Fraction(pow(base, exponent, modulus)) == _rational_literal(answer) else "fail"
+        return _complete_task_check(problem, answer)
+    except (ValueError, TypeError, ZeroDivisionError, SyntaxError, OverflowError, RecursionError):
+        return "unknown"
