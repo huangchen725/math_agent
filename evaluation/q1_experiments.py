@@ -16,7 +16,7 @@ from user_agent import AgentConfig, Q1Policy, ReasoningAgent
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = ("baseline", "recover_plain", "deterministic", "compact_routing",
             "calibrated_verifier", "diverse_candidates", "no_critic", "no_reflection",
-            "no_tools", "combined")
+            "no_tools", "combined", "tool_aware_prompts")
 
 
 def source_hash():
@@ -40,7 +40,10 @@ def make_plan(bundle: Path, *, split="dev", model="intern-s2-preview-397b", loca
         if name in policy:
             policy[name] = True
         elif name == "combined":
-            policy = dict.fromkeys(policy, True)
+            # Freeze the original combined hypothesis when new independent
+            # experiments are added; do not silently enable new strategies here.
+            policy.update({key: True for key in ("recover_plain", "deterministic",
+                "compact_routing", "calibrated_verifier", "diverse_candidates")})
         elif name == "no_critic":
             config["enable_critic"] = False
         elif name == "no_reflection":

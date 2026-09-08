@@ -355,7 +355,8 @@ def _formal_behavior_checks() -> list[Finding]:
                 "test_official_import_collision.py", "test_trace_hygiene.py",
                 "test_truncation_isolation.py", "test_lifecycle_fallback.py")
     if {"Q0", "Q1"}.intersection(load_manifest().get("offline_workstreams", [])):
-        required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py")
+        required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py",
+                     "test_prompt_policies.py")
     if "Q2" in load_manifest().get("offline_workstreams", []):
         required += ("test_q2_pipeline.py", "test_q2_commands.py", "test_answer_delivery.py",
                      "test_pilot_control.py", "test_response_replay.py")

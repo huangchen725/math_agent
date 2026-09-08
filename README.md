@@ -18,6 +18,8 @@
 
 ## 核心接口
 
+> **2026-09-08 B1 离线候选**：`Q1Policy(tool_aware_prompts=True)` 让纯文本生成的系统/用户提示匹配其能力，保留领域数学内容及显式适配器的工具提示。默认关闭，正式默认请求保持 `9acff7e` 行为；未实测收益。实施与验收计划见 [B1/B2 离线报告](docs/evaluations/B1_B2_OFFLINE_20260908.md)。
+
 修复范围、失败反例与验证证据见 [R1 修复与复验](docs/evaluations/R1_REPAIR_VALIDATION_20260905.md)。
 
 ```python
@@ -111,7 +113,7 @@ python -m evaluation.q0_pipeline review-merge PACKET_JSON REVIEWER_A_JSON REVIEW
 
 从原始来源重建：`python -m evaluation.import_umath OUTPUT_SOURCE` 只下载公开数据；然后执行 `python -m evaluation.q0_pipeline freeze OUTPUT_SOURCE/records.jsonl NEW_BUNDLE`。冻结文件、题号、近重复、来源、代码/配置和运行输出指纹不一致时拒绝使用。旧 v1–v3 为被审核淘汰的中间产物。
 
-Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。十组计划覆盖基线、五项单变量、critic/reflection/tools 消融和组合候选；`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
+Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。计划包含基线、独立策略开关、critic/reflection/tools 消融和原五项组合；新增策略不自动加入 `combined`。`tool_aware_prompts` 为 B1 单变量候选。`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
 
 Q2 离线入口（默认三次重复，冻结后不得减少候选、重复次数或修改阈值）：
 

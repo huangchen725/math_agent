@@ -58,6 +58,7 @@ numeric_value = _dependencies["answer_equivalence"].numeric_value
 BudgetExceeded = _dependencies["budget"].BudgetExceeded
 ExecutionBudget = _dependencies["budget"].ExecutionBudget
 get_domain_prompt = _dependencies["domain_prompts"].get_domain_prompt
+text_only_domain_prompt = _dependencies["domain_prompts"].text_only_domain_prompt
 
 
 _ACTIVE_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar(
@@ -534,7 +535,7 @@ class ReasoningAgent:
                 trace.extend(tt)
             for i in range(self.config.plain_candidates):
                 if self.local_policy.diverse_candidates:
-                    cand = self._chat(domain_prompt or POLICY_NO_TOOL_PROMPT,
+                    cand = self._chat(self._plain_generation_prompt(domain_prompt),
                         f"{problem}\n\n请用独立方法复核后给出完整解答。",
                         temperature=min(1.0, self.config.policy_temperature + 0.2),
                         max_tokens=self.config.max_tokens)
@@ -559,6 +560,11 @@ class ReasoningAgent:
                 {"role": "user", "content": f"{problem}\n\n请调用工具验证关键计算。候选编号：{cid}"},
             ]
             if self.local_adapter is None:
+                if self.local_policy.tool_aware_prompts:
+                    messages = [
+                        {"role": "system", "content": self._plain_generation_prompt(domain_prompt)},
+                        {"role": "user", "content": f"{problem}\n\n请用数学推导复核关键计算，直接给出完整解答。候选编号：{cid}"},
+                    ]
                 # The public text-only path has no dependency on local tools/client.
                 response = self._chat(messages[0]["content"], messages[1]["content"],
                     temperature=self.config.policy_temperature, max_tokens=self.config.max_tokens)
@@ -588,9 +594,13 @@ class ReasoningAgent:
             # Transport/contract failures do not authorize a blind retry as a plain candidate.
             raise
 
+    def _plain_generation_prompt(self, domain_prompt: str) -> str:
+        prompt = domain_prompt or POLICY_NO_TOOL_PROMPT
+        return text_only_domain_prompt(prompt) if self.local_policy.tool_aware_prompts else prompt
+
     def _solve_plain(self, problem: str, domain_prompt: str) -> str:
         try:
-            prefix = domain_prompt or POLICY_NO_TOOL_PROMPT
+            prefix = self._plain_generation_prompt(domain_prompt)
             return self._chat(prefix, f"{problem}\n\n请给出完整解答。",
                               temperature=self.config.policy_temperature,
                               max_tokens=self.config.max_tokens)
@@ -976,6 +986,7 @@ class Q1Policy:
     compact_routing: bool = False
     calibrated_verifier: bool = False
     diverse_candidates: bool = False
+    tool_aware_prompts: bool = False
 
 
 _ROUTE_HINTS = {

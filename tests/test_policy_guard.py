@@ -266,7 +266,7 @@ def test_formal_behavior_gate_requires_q2_regressions(monkeypatch):
 
 def test_formal_behavior_gate_requires_protocol_and_delivery_regressions(monkeypatch):
     original = Path.is_file
-    required = {"test_pilot_control.py", "test_response_replay.py", "test_answer_delivery.py"}
+    required = {"test_pilot_control.py", "test_response_replay.py", "test_answer_delivery.py", "test_prompt_policies.py"}
     monkeypatch.setattr(Path, "is_file", lambda path: False if path.name in required else original(path))
     findings = guard._formal_behavior_checks()
     assert len(findings) == 1 and findings[0].rule == "TEST-IMPORT-001"
