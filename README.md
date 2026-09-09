@@ -1,5 +1,11 @@
 # XH-202627 数学推理智能体
 
+> **最新正式结果（2026-09-09）**：同一提交 `9acff7e`、同一输入哈希，本次 **30/112 correct（26.79%）、82 incorrect、0 invalid**；804 请求、78 次截断（9.70%），Agent 约 2 小时 10 分。上一轮同版本为 25/112、8 invalid；结果差异不能归因于尚未进入被测提交的 B1/B2/K/C 工程，也不能证明 invalid 已永久消失。完整核验及比较见 [本次正式报告](docs/evaluations/OFFICIAL_112_20260909.md)。下方有日期记录保留为相应历史状态。
+
+> **2026-09-08 第一批 K/C 已实施并验证**：公开教材检索 `corpus_retrieval`、完整受限任务核验 `bounded_math`、题意条件检查 `condition_checks` 已接入独立 Q1 开关，默认均关闭。Python 3.10/3.12 最终完整门禁各 773 项通过；36 次 397B/False 小批请求完成，0 截断、27,930 token。单阶段正确交付 B1 为 4→3/4、B2 为 2→3/8、C2a 为 5→4/6；最终检索英文/中文明确有用均 2/12，C1 现有公开开发题覆盖 0/72，因此没有启用正式新策略。六文件闭包需包含 `xh202627_corpus.py`，检索需携带 `resources/hefferon-v1/`。实现、回执、参考争议和限制见 [本批验收](docs/evaluations/FIRST_BATCH_20260908.md)。
+
+> **最新正式结果（2026-09-08）**：平台抓取 `9acff7e`（正式求解代码等同 `5c2f7a0`），25/112 correct（22.32%）、79 incorrect、8 invalid；112 success / 0 error。731 请求中 50 次截断（6.84%），总 token 减少但墙钟升至约 3 小时 2 分。上一批为 26/112、0 invalid；提分收益未证实，新增 invalid 需逐题核对。B1/B2 不在被测提交中；后续本地小批结果另见上方验收，默认仍关闭。详见 [本批分析](docs/evaluations/OFFICIAL_112_20260908.md)。下方历史结果按日期理解。
+
 本仓库是“基于 Intern-S1 的数学智能体设计与推理创新”竞赛项目。当前实现采用 **领域路由 → 多候选生成 → 工具计算 → 验证 → 反思 → 聚合** 的单一流水线。
 
 > **2026-09-07 第一批提分工程**：A3→A1→A2→A4→A5 已完成离线实施，Python 3.10/3.12 完整 formal 各 625 项通过。修复有界多行/粗体答案提取和符号补答传递；新增旧响应严格回放、本地小批限额与暂停控制、参考争议匿名复核材料。原实测维持暂停，本轮零 API；不改变模型、提示、候选数与预算，不承诺正式分数增幅。交付与复验见 [第一批工程报告](docs/evaluations/ACCURACY_ENGINEERING_IMPLEMENTATION_20260907.md)。下方有日期的测试数量属于相应历史版本。
@@ -17,6 +23,8 @@
 > **2026-09-08 核验与补修**：已取得 `0641043` 源码，确认其正式调用显式传 `thinking_mode=False`；本地快进至 `5c2f7a0` 后保留正式求解行为，修复离线中继丢参数和回放忽略参数差异。旧响应解析诊断与完整请求回放分别标记。历史有日期的三参数、测试数量和未知 SHA 描述只代表当时状态；最新证据见 [参数修复与验收](docs/evaluations/PROTOCOL_REPAIR_20260908.md)。Python 3.12/3.10 完整 formal 各 666 项通过；本轮不调用真实 API，不承诺提升正确率。
 
 ## 核心接口
+
+> **2026-09-08 B1/B2 实验候选**：`Q1Policy(tool_aware_prompts=True)` 让纯文本生成提示匹配其能力，保留领域数学内容及显式适配器的工具提示；`Q1Policy(concise_recovery=True)` 使用一致的简短补答系统提示，保持 512 上限。两项默认关闭、单独比较，默认请求保持 `9acff7e` 行为。原工程见 [B1/B2 离线报告](docs/evaluations/B1_B2_OFFLINE_20260908.md)，本地小批结果见 [第一批验收](docs/evaluations/FIRST_BATCH_20260908.md)，完整流程收益尚未验证。
 
 修复范围、失败反例与验证证据见 [R1 修复与复验](docs/evaluations/R1_REPAIR_VALIDATION_20260905.md)。
 
@@ -111,7 +119,7 @@ python -m evaluation.q0_pipeline review-merge PACKET_JSON REVIEWER_A_JSON REVIEW
 
 从原始来源重建：`python -m evaluation.import_umath OUTPUT_SOURCE` 只下载公开数据；然后执行 `python -m evaluation.q0_pipeline freeze OUTPUT_SOURCE/records.jsonl NEW_BUNDLE`。冻结文件、题号、近重复、来源、代码/配置和运行输出指纹不一致时拒绝使用。旧 v1–v3 为被审核淘汰的中间产物。
 
-Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。十组计划覆盖基线、五项单变量、critic/reflection/tools 消融和组合候选；`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
+Q1 开关通过 `ReasoningAgent(client, local_policy=Q1Policy(...))` 显式启用，默认不启用实验策略。计划包含基线、独立策略开关、critic/reflection/tools 消融和原五项组合；新增策略不自动加入 `combined`。`tool_aware_prompts` / `concise_recovery` 分别为 B1/B2 单变量候选。`run_plan()` 只接受调用方提供的 client，命令行不会创建真实客户端或自动花费额度。模拟运行必须标记 `fixture`，评分时显式指定 `--execution fixture`；不能据此晋升实验策略或声称正确率提升。正式工具能力与本地适配器实验分开记录。
 
 Q2 离线入口（默认三次重复，冻结后不得减少候选、重复次数或修改阈值）：
 

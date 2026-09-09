@@ -400,6 +400,27 @@ DOMAIN_ALIASES = {
 }
 
 
+# Only repository-owned tool guidance is rendered differently. Mathematical
+# strategies, caveats and examples stay intact; problem/model text is never edited.
+_TEXT_ONLY_GUIDANCE = (
+    ("遇到具体计算时调用工具验证。", "遇到具体计算时用数学推导复核，直接完成解答。"),
+    ("遇到计算时调用工具验证。", "遇到计算时用数学推导复核，直接完成解答。"),
+    ("【推荐工具】solve_equation 解特征方程，calculate 化简行列式", "【计算复核】解特征方程，化简行列式"),
+    ("【推荐工具】limit 计算极限", "【计算复核】计算极限"),
+    ("【推荐工具】residue 直接计算留数，limit 计算极限", "【计算复核】计算留数，计算极限"),
+    ("【推荐工具】differentiate 求导，integrate 积分，limit 求极限", "【计算复核】求导，积分，求极限"),
+    ("【推荐工具】solve_equation 解特征方程，differentiate 验证解", "【计算复核】解特征方程，求导验证解"),
+    ("【推荐工具】integrate 计算积分，differentiate 验证", "【计算复核】计算积分，求导验证"),
+)
+
+
+def text_only_domain_prompt(prompt: str) -> str:
+    """Render the fixed domain/compact prompt for a text-only generation stage."""
+    for tool_guidance, reasoning_guidance in _TEXT_ONLY_GUIDANCE:
+        prompt = prompt.replace(tool_guidance, reasoning_guidance)
+    return prompt
+
+
 def get_domain_prompt(domain: str) -> str:
     """根据领域名获取专属 prompt，未匹配则返回通用 prompt。"""
     if not domain:

@@ -177,6 +177,18 @@ def test_stale_code_plan_cannot_make_any_request(tmp_path):
     assert not (tmp_path/"run").exists()
 
 
+def test_new_prompt_experiments_do_not_expand_legacy_combined(tmp_path):
+    plan = make_plan(bundle_at(tmp_path/"bundle"))
+    baseline = plan["variants"]["baseline"]["policy"]
+    assert not any(baseline.values())
+    assert {k for k, v in plan["variants"]["combined"]["policy"].items() if v} == {
+        "recover_plain", "deterministic", "compact_routing", "calibrated_verifier", "diverse_candidates"}
+    for name in ("tool_aware_prompts", "concise_recovery"):
+        candidate = plan["variants"][name]
+        assert candidate["agent"] == plan["variants"]["baseline"]["agent"]
+        assert {k for k, v in candidate["policy"].items() if v} == {name}
+
+
 def test_scoring_nan_and_checkpoint_mismatch_are_diagnostic_not_crashes(tmp_path):
     (tmp_path/"0.json").write_text(json.dumps({"idx": "wrong", "status": "success", "final_response": "最终答案：2"}), encoding="utf-8")
     result = score_run([examples()[0]], tmp_path)

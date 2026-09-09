@@ -293,11 +293,15 @@ def evaluate(
     # DOC-001 强制运行时变更同步 ARCHITECTURE.md，因此架构文档的出现不能
     # 作为拓扑迁移信号；物理拓扑信号是新增顶层正式模块（根目录 .py 且
     # 不在锚点中），tests/、.agents/、evaluation/ 等支持目录不构成拓扑。
+    # --formal 扫描整个运行闭包，但 CHANGE-001 约束的是实际变更组合。
+    # 保留全量安全扫描，同时用 Git 变更判断是否混入策略修改；否则任何
+    # 已加入 manifest 的新模块都会与未改动的策略文件永久产生误报。
+    change_surface = changed_paths() if formal else normalized
     topology_changed = any(
         "/" not in path
         and path.endswith(".py")
         and not _anchor_contains(path, manifest)
-        for path in normalized
+        for path in change_surface
     )
     strategy_paths = {
         "domain_prompts.py",
@@ -305,7 +309,7 @@ def evaluate(
         "deterministic_verifier.py",
         "answer_equivalence.py",
     }
-    if topology_changed and strategy_paths.intersection(normalized):
+    if topology_changed and strategy_paths.intersection(change_surface):
         blockers.append(
             Finding(
                 "CHANGE-001",
@@ -355,7 +359,8 @@ def _formal_behavior_checks() -> list[Finding]:
                 "test_official_import_collision.py", "test_trace_hygiene.py",
                 "test_truncation_isolation.py", "test_lifecycle_fallback.py")
     if {"Q0", "Q1"}.intersection(load_manifest().get("offline_workstreams", [])):
-        required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py")
+        required += ("test_q0_pipeline.py", "test_q0_commands.py", "test_q1_runtime.py", "test_q1_audit.py",
+                     "test_prompt_policies.py", "test_first_batch.py", "test_xh_corpus.py")
     if "Q2" in load_manifest().get("offline_workstreams", []):
         required += ("test_q2_pipeline.py", "test_q2_commands.py", "test_answer_delivery.py",
                      "test_pilot_control.py", "test_response_replay.py")

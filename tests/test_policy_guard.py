@@ -224,6 +224,38 @@ def test_formal_audit_checks_runtime_contract_without_doc_paths() -> None:
     assert "DOC-001" not in rules
 
 
+def test_formal_change_check_uses_git_changes_not_full_scan(monkeypatch):
+    manifest = guard.load_manifest()
+    paths = [*manifest["runtime_files"], "xh202627_helper.py"]
+    for changes in ([], ["xh202627_helper.py"], ["domain_prompts.py"]):
+        monkeypatch.setattr(guard, "changed_paths", lambda: changes)
+        _, blockers = guard.evaluate(paths, manifest, formal=True)
+        assert "CHANGE-001" not in {finding.rule for finding in blockers}
+
+
+def test_formal_still_blocks_actual_topology_and_strategy_changes(monkeypatch):
+    manifest = guard.load_manifest()
+    monkeypatch.setattr(
+        guard, "changed_paths", lambda: ["xh202627_helper.py", "domain_prompts.py"]
+    )
+    _, blockers = guard.evaluate(manifest["runtime_files"], manifest, formal=True)
+    assert "CHANGE-001" in {finding.rule for finding in blockers}
+
+
+def test_formal_scans_unchanged_runtime_files(monkeypatch):
+    manifest = guard.load_manifest()
+    monkeypatch.setattr(guard, "changed_paths", lambda: [])
+    scanned = []
+
+    def scan(path, manifest):
+        scanned.append(path)
+        return []
+
+    monkeypatch.setattr(guard, "_scan_python", scan)
+    guard.evaluate(manifest["runtime_files"], manifest, formal=True)
+    assert set(scanned) == set(manifest["runtime_files"])
+
+
 def test_anchor_canary_reports_r1_runtime_divergence() -> None:
     manifest = guard.load_manifest()
 
@@ -266,7 +298,7 @@ def test_formal_behavior_gate_requires_q2_regressions(monkeypatch):
 
 def test_formal_behavior_gate_requires_protocol_and_delivery_regressions(monkeypatch):
     original = Path.is_file
-    required = {"test_pilot_control.py", "test_response_replay.py", "test_answer_delivery.py"}
+    required = {"test_pilot_control.py", "test_response_replay.py", "test_answer_delivery.py", "test_prompt_policies.py"}
     monkeypatch.setattr(Path, "is_file", lambda path: False if path.name in required else original(path))
     findings = guard._formal_behavior_checks()
     assert len(findings) == 1 and findings[0].rule == "TEST-IMPORT-001"

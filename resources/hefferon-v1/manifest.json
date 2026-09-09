@@ -1,0 +1,13 @@
+{
+  "eligible": 262,
+  "selected": 160,
+  "excluded": {
+    "context_or_size": 127,
+    "source_math_qualification": 1
+  },
+  "cards_sha256": "9036640a559b17c13a08db86deade0fe5089f3bb329bca54e566d931544429c5",
+  "revision": "df2262e089a02651c127f1dd12649c4622ee1383",
+  "extractor_sha256": "d1a3a8f8edf6896176d2ea35dd8611f76a128c29a1b8122e874ac3b8b258266a",
+  "source_manifest_sha256": "42660c229261eb61a8d762c74a4e45724274ba6ea9b1fb1109911ba179f45d1f",
+  "evidence": "source extraction and structural checks; not retrieval or accuracy measurement"
+}

@@ -7,6 +7,12 @@
 > 运行时基线：`0641043` 获正式 26/112；`5c2f7a0` 继承思考关闭并增加答案交付加固，收益未证实
 > 本文件是仓库唯一的架构事实源。工程底线、恢复门禁和重建路线由 `docs/ENGINEERING_SPECIFICATION.md` 规定，但不另行定义组件架构。
 
+> **2026-09-08 第一批 K/C 实施补充**：新增独立且默认关闭的 Q1 开关 `corpus_retrieval`、`bounded_math`、`condition_checks`。正式代码闭包新增唯一前缀 `xh202627_corpus.py`，仍由入口位置加载到私有命名空间，不读取或覆盖官方预加载同名模块。语料读取只在检索开关开启、指定普通候选生成时发生；首批 160 条公开教材参考位于 `resources/hefferon-v1/`，读取前比对代码绑定的 SHA-256，单文件最多 1.5 MB，最多两个参考、6000 字符。不可用或无匹配时回到原生成路径，无跨题缓存、无联网和无直接查表返回。
+
+`condition_checks` 只为初始生成消息追加完整题意和必要条件核查，不改题面、温度、候选数或请求预算，不改变补答/verifier 的提示。`bounded_math` 在现有精确证据位置检查完整有界任务，新增中文/英文及受限 LaTeX 表示、小型有理数矩阵行列式、完整多项式导数/原函数、组合数和模运算；未支持的条件、参数、函数或复合任务保持 unknown。原 `deterministic` 与默认请求行为保留。检索只影响首个普通候选（默认第三个生成），其余候选及 verifier 无语料注入；所有模式仍使用公开四参数且显式 False。
+
+Q1 指纹包含新增模块及语料、清单，单变量计划登记三项新开关，旧 combined 仍只包含原五项。分发检索候选时必须包含新模块与资源；全量门禁新增 `test_first_batch.py`、`test_xh_corpus.py`，旧默认行为和污染测试继续执行。工程实现与真实模型验证分别记录于 `docs/evaluations/FIRST_BATCH_20260908.md`。
+
 > **2026-09-06 截断修复补充**：单次输出参数强制 1–8192；生成预算耗尽保留已完成合格候选；任一来源的未完成状态不能被 stop 覆盖；明确 length 且 content=null 可进入已有预算内的恢复。无完整验证标签默认 unknown，不触发批评/反思。真实模型截断率仍待实测，详见 `docs/evaluations/TRUNCATION_REPAIR_20260906.md`。
 
 > **2026-09-07 答案交付补充**：`_extract_answer` 读取最后一个有界最终答案块，支持粗体、标题、连续编号、逐行等式及闭合显示公式；完整响应上限 100000 字符、答案上限 2048 字符/128 行。最后标记为空、结构不完整、代码围栏示例及显式非 stop 状态继续拒绝；不回取更早答案。`_quick_fallback` 返回保留 finish_reason 的已验证答案体，候选恢复由 `_candidate_from_recovery` 恢复最终标记；最终兜底直接输出，确定性检查接收普通字符串。导入闭包、公开 client 协议、提示与预算不变。
@@ -14,6 +20,10 @@
 > **离线边界（2026-09-08）**：回放支持旧平铺和新队列封装的录制，严格比较完整请求参数；缺失/null/False/True 不互相替代。新快照指纹包含思考及工具参数；不执行 solve 的 compare 明确标记 parser_only。中继保留显式布尔思考开关到 HTTP，并在排队前拒绝不支持的工具参数；Q2 文本观察器同样拒绝工具参数。队列、暂停、全局限额、单次发送、旧证据只读和正式导入隔离保持不变。已暂停实测不自动恢复；当前离线修复不代表新增正式成绩。
 
 ## 1. 目标与边界
+
+2026-09-08 B1 实验补充：`Q1Policy.tool_aware_prompts` 默认 False。开启后，纯文本候选只替换仓库固定领域提示中的工具指导，领域方法、易错点、公式和 few-shot 原样保留；普通候选（含本地适配器的普通请求）、无适配器工具候选和多样性候选均覆盖。紧凑提示本身不含工具指导，仍保持原内容。真实工具循环的消息不变，反思/验证/恢复阶段不受 B1 改动。工具能力由显式 `local_adapter` 与调用路径决定，不探测 client。Q1 新增同名单变量候选，原 `combined` 固定为原五项开关。默认请求仍与 `9acff7e` 一致；本地小批未取得正向信号，尚未通过端到端收益验证。
+
+2026-09-08 B2 实验补充：`Q1Policy.concise_recovery` 默认 False。开启后，`_quick_fallback` 改用专用 `CONCISE_RECOVERY_PROMPT`，系统与原有用户提示均要求只交付简短最终答案。仅此系统消息变化；原题文本、用户提示、512 上限、温度 0、思考 False、请求预算、恢复时机、metadata 完整性及答案资格均保持不变。工具来源恢复、Q1 普通候选恢复、整题最终恢复共用该路径，B1/B2 可分别启用。原 combined 不自动开启 B2。
 
 系统面向竞赛数学题，在调用方注入的 Intern 兼容模型客户端上完成领域提示、候选生成、可选符号计算、模型验证、低置信度反思和答案聚合。
 
@@ -39,7 +49,7 @@ ReasoningAgent(client).solve(problem, metadata)
 
 构造形式是 `ReasoningAgent(client, config=None, *args, local_adapter=None, **kwargs)`。仅接受此入口真实定义的 `AgentConfig` 为配置；不透明参数和未知 kwargs 不污染配置，也不触发 client 能力探测。未知 client 一律按上述四参数调用 `chat`。本地入口可显式传入 `LocalToolAdapter`，`complete()` 返回 `{response, metadata}`，`run_tools()` 返回文本、工具 trace 与本次 metadata；不存在共享最近响应 getter。
 
-正式导入闭包为根 `user_agent.py` 及 `_FORMAL_SOURCE_FILES` 中四个源文件：`agent_types.py`、`budget.py`、`domain_prompts.py`、`answer_equivalence.py`。入口按自身 `__file__` 确定源目录，以标准加载 API 装入新建的 `xh202627_runtime_<uuid>` 私有命名空间。等价模块在该空间内使用相对类型导入；不修改 `sys.path`、不复用或替换平台的同名缓存。这是现有根源文件的加载隔离，没有新增物理包目录或复制第二套实现。正式入口不导入 SymPy、工具执行器、HTTP client 或本地适配器；本地工具由显式适配器按原有可 spawn 路径调用。
+正式导入闭包为根 `user_agent.py` 及 `_FORMAL_SOURCE_FILES` 中五个源文件：`agent_types.py`、`budget.py`、`domain_prompts.py`、`answer_equivalence.py`、`xh202627_corpus.py`，合计六个文件。入口按自身 `__file__` 确定源目录，以标准加载 API 装入新建的 `xh202627_runtime_<uuid>` 私有命名空间。等价模块在该空间内使用相对类型导入；不修改 `sys.path`、不复用或替换平台的同名缓存。没有新增物理包目录或复制第二套实现；语料模块只依赖标准库，默认关闭时不读取语料。正式入口不导入 SymPy、工具执行器、HTTP client 或本地适配器；本地工具由显式适配器按原有可 spawn 路径调用。
 
 ## 3. 组件与数据流
 
@@ -49,6 +59,7 @@ flowchart LR
     I --> A[ReasoningAgent]
     C --> A
     D[domain_prompts.py<br/>18 领域提示] --> A
+    K[可选 xh202627_corpus.py<br/>公开只读参考] --> A
     B[ExecutionBudget] --> A
     A --> L[显式本地 LocalToolAdapter]
     L --> T[math_tools.py<br/>11 个受限 SymPy 工具]
@@ -67,6 +78,7 @@ flowchart LR
 | `answer_equivalence.py` | 保守归一化数值、集合和多解；无法证明的关系返回 `unknown` |
 | `budget.py` | 统一记录和限制每题模型请求、usage token、工具调用及阶段 deadline |
 | `domain_prompts.py` | 提供 18 个领域提示；关键词路由在本地完成，不额外调用模型 |
+| `xh202627_corpus.py` | 默认关闭的本地词项检索；校验固定语料、至多两条参考只注入一个候选；精确引用查找不返回库存答案 |
 | `math_tools.py` | 声明工具 schema，安全执行 SymPy，并驱动 tool-calling 循环 |
 | `tool_executor.py` | 在可终止子进程中执行数学计算，并施加墙钟硬超时 |
 | `deterministic_verifier.py` | 提供方程、导数、积分、行列式、模幂、组合数及符号等价验证原语；当前尚未接入候选选择 |
