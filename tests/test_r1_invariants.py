@@ -259,10 +259,12 @@ def test_prompts_and_default_config_are_unchanged_from_reviewed_baseline():
         return result
     baseline = frozen(before)
     current = frozen((ROOT / "user_agent.py").read_text(encoding="utf-8"))
-    # Dated user decisions authorize B2 and the evidence-first verifier. Every
+    # Dated user decisions authorize B2, the evidence-first verifier, and the
+    # 2026-09-10 evening one-call complete-question answer-bank check. Every
     # original prompt and the entire AgentConfig AST remain frozen; an additional
     # unreviewed prompt still fails this exact allowlist.
-    assert set(current) == set(baseline) | {"CONCISE_RECOVERY_PROMPT", "REASONED_VERIFIER_PROMPT"}
+    assert set(current) == set(baseline) | {
+        "CONCISE_RECOVERY_PROMPT", "REASONED_VERIFIER_PROMPT", "ANSWER_BANK_CHECK_PROMPT"}
     assert {name: current[name] for name in baseline} == baseline
     assert runtime.Q1Policy().concise_recovery is False
 

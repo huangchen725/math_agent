@@ -28,6 +28,26 @@ def near_template(left, right):
         matcher.ratio() >= 0.88 or SequenceMatcher(None, right, left).ratio() >= 0.88)
 
 
+def _has_near_template_overlap(templates):
+    """Reject impossible pairs before rebuilding SequenceMatcher's histograms.
+
+    quick_ratio is exactly twice the multiset intersection over total length.
+    Reuse only these per-validation histograms, then retain the original final
+    bidirectional predicate. No file, question or verdict survives this call.
+    """
+    features = [(len(text), Counter(text)) for text in templates]
+    for index, left in enumerate(templates):
+        left_length, left_counts = features[index]
+        for other in range(index + 1, len(templates)):
+            right_length, right_counts = features[other]
+            total = left_length + right_length
+            matches = sum(min(count, right_counts.get(char, 0)) for char, count in left_counts.items())
+            upper = 2.0 * matches / total if total else 1.0
+            if upper >= 0.88 and near_template(left, templates[other]):
+                return True
+    return False
+
+
 def development_references():
     refs = default_references()
     root = Path(__file__).resolve().parents[1]
@@ -164,7 +184,7 @@ def verify_bundle(bundle: Path):
     if len(all_rows) != manifest["total"] or len({normalize_template(r["problem"]) for r in all_rows}) != len(all_rows):
         raise ValueError("count or template overlap")
     templates = [normalize_template(row["problem"]) for row in all_rows]
-    if any(near_template(left, right) for i,left in enumerate(templates) for right in templates[i+1:]):
+    if _has_near_template_overlap(templates):
         raise ValueError("near template overlap")
     return manifest
 

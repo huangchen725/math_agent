@@ -1,0 +1,507 @@
+{
+  "schema_version": 1,
+  "retrieved_at": "2026-09-10",
+  "sources": {
+    "umath": {
+      "source": "https://huggingface.co/api/datasets/toloka/u-math",
+      "revision": "7210f97b3f21122c3a90126935e966ca7d8951b6",
+      "retrieval": "https://datasets-server.huggingface.co/rows?dataset=toloka%2Fu-math&config=default&split=test",
+      "total_source_rows": 1100,
+      "text_only_rows": 900,
+      "truncated_text_cells": 0,
+      "records_sha256": "3c8afc194fdde029bd5275ea487353262485fcdb9e23c5239b959e3d3cc59af5",
+      "readme_sha256": "c13bf3579ababfb2510ca76ca0de6185ef2ff97caaf69ebf6a89d761c8c42871",
+      "source_claim": "Rows API snapshot; revision checked before/after; snapshot hash is definitive",
+      "limitations": "English, six university subjects; public exposure; not unseen/competition calibrated",
+      "original_acquisition": "2026-09-06; reused and verified fixed source snapshot on 2026-09-10",
+      "license_file": {
+        "url": "https://raw.githubusercontent.com/Toloka/u-math/7c23fea9823f26aa3f8736d47fc339ebb3404fcc/LICENSE",
+        "sha256": "5411a00355681004961d8486c53ea1a1d7530b0c719a647f2012da5d02b4d720",
+        "bytes": 1065
+      }
+    },
+    "diffyqs": {
+      "repo": "jirilebl/diffyqs",
+      "revision": "658bcae9fb710f3fae2c9da4ca4524ce157453af",
+      "files": [
+        {
+          "path": "LICENSE.md",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/LICENSE.md",
+          "bytes": 467,
+          "sha256": "682fedaab34d7d47962da7276284e608f43881c07c3c887cb66368688748c13d"
+        },
+        {
+          "path": "README.md",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/README.md",
+          "bytes": 3578,
+          "sha256": "ed7ece5f4949f37d2002338cf0a9d280a3ed3c4ffdd4f31149567c6d2d645830"
+        },
+        {
+          "path": "ap-laplace-list.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ap-laplace-list.tex",
+          "bytes": 3785,
+          "sha256": "cb122a8fb7a265d0f2482e6fc2c6ab82800727c00e843b63fdce86288c652632"
+        },
+        {
+          "path": "ap-linear-algebra.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ap-linear-algebra.tex",
+          "bytes": 160503,
+          "sha256": "0e631eb103c1762578e1b0f150d5c414c89177d155716d41b61b8b46642b6992"
+        },
+        {
+          "path": "ch-eigenvalue-probs.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-eigenvalue-probs.tex",
+          "bytes": 50598,
+          "sha256": "b8085bcb7c855faa43eaae6cdc73a3d2091060715bf1db47ae7c0d047ae58858"
+        },
+        {
+          "path": "ch-first-order-ode.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-first-order-ode.tex",
+          "bytes": 139339,
+          "sha256": "ff4ce0721f080eaf4c6211e83e47814b1ab1b1272030eb4789b88532172aea45"
+        },
+        {
+          "path": "ch-fourier-and-pde.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-fourier-and-pde.tex",
+          "bytes": 214850,
+          "sha256": "a0d6bef05fbf00f191f29ab6f177359c91c33715bf94267ef7542df6049033ae"
+        },
+        {
+          "path": "ch-higher-order-ode.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-higher-order-ode.tex",
+          "bytes": 110149,
+          "sha256": "efc70bb9171451a10bc4b7d1cfcc45b536e3b0a48b44dd4fbf2d98fe1c70c88c"
+        },
+        {
+          "path": "ch-intro.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-intro.tex",
+          "bytes": 41918,
+          "sha256": "c690f51ad02e77124727162df6c4895ba932b5f10d03643d2f227bcb65b61029"
+        },
+        {
+          "path": "ch-laplace.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-laplace.tex",
+          "bytes": 79264,
+          "sha256": "c51ef5852e86c0738fcef2018e12f0fb11bbb713f57dac67817605c752377849"
+        },
+        {
+          "path": "ch-nonlin-systems.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-nonlin-systems.tex",
+          "bytes": 108130,
+          "sha256": "9af714bde1b6d84f45c7812829e1d5ad099a0866bd0f7d6588f5d2277edc7d22"
+        },
+        {
+          "path": "ch-power-ser.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-power-ser.tex",
+          "bytes": 58187,
+          "sha256": "de7449e1ae3041d018ae3189fd4cb99433fd0007e1a57c859b1f8ad9aebd6511"
+        },
+        {
+          "path": "ch-systems.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/ch-systems.tex",
+          "bytes": 206739,
+          "sha256": "4cb522f322c8e30bb10f9a3b168860865d77d2130ed43192fb81a2fd82f0efd6"
+        },
+        {
+          "path": "diffyqs.tex",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/diffyqs.tex",
+          "bytes": 15680,
+          "sha256": "1c55f164180dc0c470bff67e15347e71cd4fd278cad6f7dd31cd21f35a7f0963"
+        },
+        {
+          "path": "diffyqssetup.sty",
+          "url": "https://raw.githubusercontent.com/jirilebl/diffyqs/658bcae9fb710f3fae2c9da4ca4524ce157453af/diffyqssetup.sty",
+          "bytes": 11164,
+          "sha256": "8c8e80bf6ab0e3a03a2e364ae4bf34f22103ddf28d76d4d64a38918ae8fbf925"
+        }
+      ]
+    },
+    "dmoi3": {
+      "repo": "oscarlevin/discrete-book",
+      "revision": "1e2e26b0be8f47c9862b756ba5d7265b60c47854",
+      "files": [
+        {
+          "path": "LICENSE",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/LICENSE",
+          "bytes": 188,
+          "sha256": "e1cd4008924dcbef0964c59284648bd97ae640077e1137014d23db1f61838e64"
+        },
+        {
+          "path": "README.md",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/README.md",
+          "bytes": 2328,
+          "sha256": "46332db9a7bcb5ae5c6aed188768e3a614f86d1e32515ad11d426044d6ad1d5d"
+        },
+        {
+          "path": "source/bookinfo.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/bookinfo.ptx",
+          "bytes": 99143,
+          "sha256": "2afe21ed0c2219a6bcde8f156b00182a2eb6a4b863031eb19a6cb38c47fc2168"
+        },
+        {
+          "path": "source/dmoi.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/dmoi.ptx",
+          "bytes": 660,
+          "sha256": "b246fb0beecb98a67e6b13491e7dd034eaa64aecc7f9d4a75751a5bdc5ac5bf1"
+        },
+        {
+          "path": "source/exercises/addtops-genfun.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/addtops-genfun.ptx",
+          "bytes": 9907,
+          "sha256": "0f6dcc6a9197bbe2f4963d5d2e063c020d395ee856eb8f0d683cb7b170420492"
+        },
+        {
+          "path": "source/exercises/addtops-numbth.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/addtops-numbth.ptx",
+          "bytes": 9659,
+          "sha256": "a1b0b21738a793d9ee1017df49628eb0f3a0f750e14659f1b38fbc955dd099be"
+        },
+        {
+          "path": "source/exercises/counting-addmult.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-addmult.ptx",
+          "bytes": 5604,
+          "sha256": "274d1f858a5b36f6429d2eed7d6b3a5246eb600bf2eb2687bd0948090771febe"
+        },
+        {
+          "path": "source/exercises/counting-advPIE.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-advPIE.ptx",
+          "bytes": 4554,
+          "sha256": "247433f9db5deb3566fd4bfbc622ff98e5a7946815bbdbb264237ef3f4e1452a"
+        },
+        {
+          "path": "source/exercises/counting-binom.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-binom.ptx",
+          "bytes": 2372,
+          "sha256": "882f25cd6c06981658eba93b2fc4dc166da600d0e5421427eae4e5506ab70560"
+        },
+        {
+          "path": "source/exercises/counting-combperm.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-combperm.ptx",
+          "bytes": 10119,
+          "sha256": "9eeb3bb7780f9585d4f66e13edb2294b2233c842a1f3a55ef90975e27cadd334"
+        },
+        {
+          "path": "source/exercises/counting-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-conc.ptx",
+          "bytes": 17867,
+          "sha256": "dca690376ab9132f4037b8e2354c2669cd989080ddb4f45a25b6bb0bf5a66f29"
+        },
+        {
+          "path": "source/exercises/counting-proofs.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-proofs.ptx",
+          "bytes": 18646,
+          "sha256": "ab91beac3454ca9715ad930548ca9c70fe52ee694f8a02bf9c1ec126448df201"
+        },
+        {
+          "path": "source/exercises/counting-starsbars.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/counting-starsbars.ptx",
+          "bytes": 5562,
+          "sha256": "eebfc573234f14fe09a986ac50f72255ffe7aebc1d5809d3f55840106b81ea2f"
+        },
+        {
+          "path": "source/exercises/gt-coloring.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-coloring.ptx",
+          "bytes": 19048,
+          "sha256": "fe0601aae154d6c24b3b0d9efa54eb667dcf207b9b917c88f7c0cee5332c6307"
+        },
+        {
+          "path": "source/exercises/gt-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-conc.ptx",
+          "bytes": 35606,
+          "sha256": "f7894d8a1d49570df9bbd518fd5bc6201dc9c243c06e71c70a2c4fcd2590373f"
+        },
+        {
+          "path": "source/exercises/gt-intro.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-intro.ptx",
+          "bytes": 22966,
+          "sha256": "b925cacc75ef317d7d0ef600d0956975297f07fcb182523c0b9caa658e4f20de"
+        },
+        {
+          "path": "source/exercises/gt-matchings.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-matchings.ptx",
+          "bytes": 16916,
+          "sha256": "bfb77606e7590e2c76f19b73b52b3c5ef7ec366c0ede9c07bc6f0ee4cb0b2754"
+        },
+        {
+          "path": "source/exercises/gt-paths.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-paths.ptx",
+          "bytes": 16188,
+          "sha256": "ee686e9011b1755ced1c49fbded1c1b107fdafe5a4f795da45b3196963eb8241"
+        },
+        {
+          "path": "source/exercises/gt-planar.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-planar.ptx",
+          "bytes": 13080,
+          "sha256": "035cb8422c23407c2e5dbd2c60e331e8513af6c55e8edf555a5b158aade1f6a2"
+        },
+        {
+          "path": "source/exercises/gt-trees.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/gt-trees.ptx",
+          "bytes": 18192,
+          "sha256": "eb693ff913cce7e214a39b82cfcc02e0596e8fd8a23c8e3e9f3bdf616c5c7b26"
+        },
+        {
+          "path": "source/exercises/intro-functions.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/intro-functions.ptx",
+          "bytes": 27135,
+          "sha256": "a6f55df0e62417a41866297d0ef771eb65013562f2656c414257a388a284c170"
+        },
+        {
+          "path": "source/exercises/intro-intro.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/intro-intro.ptx",
+          "bytes": 151,
+          "sha256": "cc52532d797621c9c0e1c1336a81acf8e4aa9413b33d70e3a1c191a0119ba266"
+        },
+        {
+          "path": "source/exercises/intro-sets.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/intro-sets.ptx",
+          "bytes": 19348,
+          "sha256": "9b87ac15eeaef02cc03c3150eb7d560d371f65766c59d6b1643238cbe002c113"
+        },
+        {
+          "path": "source/exercises/intro-statements.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/intro-statements.ptx",
+          "bytes": 22393,
+          "sha256": "feb88295cdf47366212d3b9a13c2d44c45a0b57ce4d114ce1800229a659722bd"
+        },
+        {
+          "path": "source/exercises/logic-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/logic-conc.ptx",
+          "bytes": 25831,
+          "sha256": "88ab116bb0dcfc92874cb04dea9bbc27b91bd4ebbb7c721960ca1a25ac18ab85"
+        },
+        {
+          "path": "source/exercises/logic-proofs.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/logic-proofs.ptx",
+          "bytes": 22391,
+          "sha256": "2a1b998cfa70d3f63243126ac1ec0067880f4c06d9c26364bc838ffc78b19e0d"
+        },
+        {
+          "path": "source/exercises/logic-prop.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/logic-prop.ptx",
+          "bytes": 18971,
+          "sha256": "172296dea4457f858478fa081f0ba32306882adbf5f1fb546324389dc14f6c15"
+        },
+        {
+          "path": "source/exercises/seq-arithgeom.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-arithgeom.ptx",
+          "bytes": 13006,
+          "sha256": "9d5e59de5b336cc50035adfa0f35205b88559652900dfdab420d6b566dae01a1"
+        },
+        {
+          "path": "source/exercises/seq-basics.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-basics.ptx",
+          "bytes": 17060,
+          "sha256": "a672b4a555246ee693fb59bfd847e4f9eb1fabfbdec709c677ae85c1c3339347"
+        },
+        {
+          "path": "source/exercises/seq-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-conc.ptx",
+          "bytes": 15159,
+          "sha256": "ed59cc60ba269e227f0c427f4cf42665192aa4a52b5bc7aa56758c842f48b7fe"
+        },
+        {
+          "path": "source/exercises/seq-induction.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-induction.ptx",
+          "bytes": 35278,
+          "sha256": "e7488a867945169f1606917a49d3f3037589602c59683280a4343e79b1c491b1"
+        },
+        {
+          "path": "source/exercises/seq-polyfit.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-polyfit.ptx",
+          "bytes": 8226,
+          "sha256": "2e7a10e8be336576b1c7b84b1688780bb4835e2a474a84f21c07ae79f3c1cad8"
+        },
+        {
+          "path": "source/exercises/seq-recurrence.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/exercises/seq-recurrence.ptx",
+          "bytes": 9260,
+          "sha256": "9093748fd5096eaab343d05b3604a823b27ef5faaf6a702a36a1d83a7210c7dd"
+        },
+        {
+          "path": "source/frontmatter.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/frontmatter.ptx",
+          "bytes": 13682,
+          "sha256": "55020488a1961edb052b88cb197669ef9a9c5e8cb40cf26aa0494969c7fd7f26"
+        },
+        {
+          "path": "source/sec_addtops-genfun.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_addtops-genfun.ptx",
+          "bytes": 27531,
+          "sha256": "5ec07f33c80dd2f084187f582b85be66973d5a7a56bef317a3d7ea20eda55195"
+        },
+        {
+          "path": "source/sec_addtops-numbth.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_addtops-numbth.ptx",
+          "bytes": 52431,
+          "sha256": "8a8903ffac22a61d3d3879570b40095da4b663947a47069625ca47f98f827b41"
+        },
+        {
+          "path": "source/sec_counting-addmult.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-addmult.ptx",
+          "bytes": 35887,
+          "sha256": "a42326987fcf5133d1c2bd503a46dd3235dabea55bb7c2677d139bb3b937e5d7"
+        },
+        {
+          "path": "source/sec_counting-advPIE.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-advPIE.ptx",
+          "bytes": 41924,
+          "sha256": "97c071155e011453285285c28a5b948c10d581fe0bfcc0807aeb936ccab1216f"
+        },
+        {
+          "path": "source/sec_counting-binom.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-binom.ptx",
+          "bytes": 33531,
+          "sha256": "dd9fb91efaf0a96ab8a8f340286a2b3027ec6a251ee3d1d92f473871abee633e"
+        },
+        {
+          "path": "source/sec_counting-combperm.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-combperm.ptx",
+          "bytes": 17891,
+          "sha256": "c993e9afa00312434d6a6f5a9658dcc66ae2a070fa9b64c39bcd91b926950e2f"
+        },
+        {
+          "path": "source/sec_counting-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-conc.ptx",
+          "bytes": 6637,
+          "sha256": "8b096d04f9ce354dd0f3e3f0e6d76895a835e56b5eb8b2c40d5b2aa75314bc21"
+        },
+        {
+          "path": "source/sec_counting-proofs.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-proofs.ptx",
+          "bytes": 34768,
+          "sha256": "7c70b25b7b7f39b24845c372d6c04c4dadb0b994eca9509b272d39caee857c55"
+        },
+        {
+          "path": "source/sec_counting-starsbars.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_counting-starsbars.ptx",
+          "bytes": 17662,
+          "sha256": "637ea9445a627f7e9441ce841c78320efae0ec326846d022d66a038e7b13791b"
+        },
+        {
+          "path": "source/sec_gt-coloring.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-coloring.ptx",
+          "bytes": 33024,
+          "sha256": "fcb1c7ce04305f9dae69f9b772c7fbaa658429089740361e9e6c97d4c23dcf5a"
+        },
+        {
+          "path": "source/sec_gt-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-conc.ptx",
+          "bytes": 3035,
+          "sha256": "49adfd9284c923f7ba2697a23185bebb63a87b11361a37f68946c81cb4486d6a"
+        },
+        {
+          "path": "source/sec_gt-intro.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-intro.ptx",
+          "bytes": 55170,
+          "sha256": "304a1d0c2c59e343175d9dd755f9e942c9a210db0a286a7b2e2527939d8d112b"
+        },
+        {
+          "path": "source/sec_gt-matchings.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-matchings.ptx",
+          "bytes": 11046,
+          "sha256": "ab42c5f21446db856f2b21eb36832db5df5d753b4fe41400d3f4c9d7e8041d9c"
+        },
+        {
+          "path": "source/sec_gt-paths.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-paths.ptx",
+          "bytes": 18715,
+          "sha256": "6548962735b23721cca4986f6921fb879857cf719e14ee77803fef9ab38c54da"
+        },
+        {
+          "path": "source/sec_gt-planar.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-planar.ptx",
+          "bytes": 27415,
+          "sha256": "daeb0a0b2efc6cac788b5336960e615b14e91464ad1afbb6b24f10df5924b55a"
+        },
+        {
+          "path": "source/sec_gt-trees.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_gt-trees.ptx",
+          "bytes": 31608,
+          "sha256": "392ce3f05ec56bc3d5d9daa65febc346192e373ef98261cdd8bfbb7542e56430"
+        },
+        {
+          "path": "source/sec_intro-functions.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_intro-functions.ptx",
+          "bytes": 52314,
+          "sha256": "2b9418d5304570a92b807aa7a59228b730d12dca298fc219d112f93da0e49e14"
+        },
+        {
+          "path": "source/sec_intro-intro.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_intro-intro.ptx",
+          "bytes": 7205,
+          "sha256": "09beb8ac8143637c4e125a22b316fd79d8783eb2fcb1f7d76083c60e3adce0f2"
+        },
+        {
+          "path": "source/sec_intro-sets.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_intro-sets.ptx",
+          "bytes": 46710,
+          "sha256": "f50a699089307bfe09c3d0743b59cc5b8f19af3ea79235a2a99590c0ba78bf9f"
+        },
+        {
+          "path": "source/sec_intro-statements.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_intro-statements.ptx",
+          "bytes": 52567,
+          "sha256": "294dbcafa1c55157b6939252697abac6730eb75a98f9f2dc6a0bd44e2171d216"
+        },
+        {
+          "path": "source/sec_logic-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_logic-conc.ptx",
+          "bytes": 4364,
+          "sha256": "dbb65ab1555dc0d33289ac48c84b8431aa8c908a696742eb4a8736cb52c4b429"
+        },
+        {
+          "path": "source/sec_logic-proofs.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_logic-proofs.ptx",
+          "bytes": 33534,
+          "sha256": "92f58e491638498867957a8e5d2dd8b96a5be0079b6a71a7d23bbd705101fb74"
+        },
+        {
+          "path": "source/sec_logic-prop.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_logic-prop.ptx",
+          "bytes": 43543,
+          "sha256": "3a0d4d5297749f66e801093173f26b7987fdf4af2a58e6d5d6e75dd02d3ec780"
+        },
+        {
+          "path": "source/sec_seq-arithgeom.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-arithgeom.ptx",
+          "bytes": 34349,
+          "sha256": "62dc096bdb58c0602c9c15fdb7dee38c865924d37c72c687d8740964204bc547"
+        },
+        {
+          "path": "source/sec_seq-basics.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-basics.ptx",
+          "bytes": 26670,
+          "sha256": "dcff31eba1150ec39837b264e0f35c9952598e71f709c9a17bbe04069fec1866"
+        },
+        {
+          "path": "source/sec_seq-conc.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-conc.ptx",
+          "bytes": 5185,
+          "sha256": "24431ff11cc6c0c8d946783c5dd7c0a5b8558d525b26d77886f4c0c4d5d50d46"
+        },
+        {
+          "path": "source/sec_seq-induction.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-induction.ptx",
+          "bytes": 41001,
+          "sha256": "b836b41b23d46a1f57f571966864b8df2ddbdad43519c1a6864c628583d0ecfa"
+        },
+        {
+          "path": "source/sec_seq-polyfit.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-polyfit.ptx",
+          "bytes": 14942,
+          "sha256": "b3b597bc98dbd0dc9a7f1c2cdb6bb95a0cddd4f65bd6128ad29aec92376622ec"
+        },
+        {
+          "path": "source/sec_seq-recurrence.ptx",
+          "url": "https://raw.githubusercontent.com/oscarlevin/discrete-book/1e2e26b0be8f47c9862b756ba5d7265b60c47854/source/sec_seq-recurrence.ptx",
+          "bytes": 25695,
+          "sha256": "8a263f442c9f8b4a4088aa5a38f8f9b22d3d277a73ace91a715e24409229162d"
+        }
+      ]
+    }
+  },
+  "scope": "Only licensed public releases; no Q0 labels or hidden competition material used",
+  "data_records_sha256": "d8a1e550f0bc7fa774fae3b33620612dcc731dd33b44f31f62fffe0879a27c40",
+  "resource_manifest_sha256": "4ed168f2a36c48d314ddc33c37b64aa7c71eafc5a1489598553154d8adaa93b1"
+}

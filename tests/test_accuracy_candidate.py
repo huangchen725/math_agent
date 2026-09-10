@@ -15,7 +15,8 @@ def candidate(answer, status, confidence=None):
 def test_ordinary_constructor_activates_named_candidate_and_explicit_baseline_is_frozen():
     default = runtime.ReasoningAgent(object())
     assert {name for name, enabled in asdict(default.local_policy).items() if enabled} == {
-        "concise_recovery", "bounded_math", "evidence_selection", "reasoned_verifier"}
+        "concise_recovery", "bounded_math", "evidence_selection", "reasoned_verifier",
+        "answer_bank_fastpath", "answer_bank_reference", "completed_answer_repair"}
     baseline = runtime.ReasoningAgent(object(), local_policy=runtime.Q1Policy())
     assert not any(asdict(baseline.local_policy).values())
     assert asdict(default.config) == asdict(baseline.config)

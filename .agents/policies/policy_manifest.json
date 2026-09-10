@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-09-10.1",
+  "policy_version": "2026-09-10.2",
   "protocol_decision": "2026-09-08: user authorized retaining verified 0641043/5c2f7a0 thinking_mode=False; repair offline relay propagation and exact request replay without changing formal solving behavior or claiming accuracy gain",
   "phase": "R1",
   "accuracy_batch_decision": "2026-09-10: user authorizes combined routing, full-pipeline public diagnostics and bounded math candidate; single-variable strategy scheduling superseded for this batch only; protocol, False, 8192, import topology, dependencies and safety gates unchanged; at most 96 local API requests, 300000 requested output tokens and 90 minutes dispatch; no automatic retry/resume/submission",
+  "day1_corpus_decision": "2026-09-10 evening: user authorizes first day of NEXT_48H_PLAN before local midnight. Combined public answer-bank, bounded exact-match one-call checking, single-candidate references and proven complete-answer delivery repair; preserve formal topology, dependencies, client False, 8192 and per-question budgets. Separate new diagnostics: at most 200 requests, 650000 requested output tokens and 3 hours including bounded finish, no retries/resume, end before midnight. Existing experiment remains completed. User excludes GitCode work. No automatic official submission or unreviewed main push.",
   "offline_workstreams": ["Q0", "Q1", "Q2"],
   "schedule_decision": "2026-09-06: user authorized Q0/Q1 offline work; 2026-09-07: user authorized Q2 offline engineering preparation while R1 official acceptance and actual model evidence remain pending",
   "authoritative_spec": "docs/ENGINEERING_SPECIFICATION.md",

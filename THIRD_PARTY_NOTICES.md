@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Public mathematics answer bank (2026-09-10)
+
+`resources/answer_bank/` contains 1,054 adapted public question/answer pairs. These data retain their upstream licenses and are excluded from the repository's all-rights-reserved code notice. Preserve this notice with any distribution of the bank, including standalone resource or minimal runtime packages.
+
+| Source and attribution | Included pairs | Data license |
+| --- | ---: | --- |
+| U-MATH, Konstantin Chernyshev et al., Toloka AI and Gradarius; Copyright (c) 2024 Toloka.ai | 606 | MIT |
+| Notes on Diffy Qs; Copyright © 2008–2026 Jiří Lebl | 222 | CC BY-SA 4.0 (selected from the source dual license) |
+| Discrete Mathematics: An Open Introduction, third edition; Copyright 2013–2019 Oscar Levin | 226 | CC BY-SA 4.0 |
+
+The Diffy Qs copyright statement is reproduced from [the fixed source, line 139](https://github.com/jirilebl/diffyqs/blob/658bcae9fb710f3fae2c9da4ca4524ce157453af/diffyqs.tex#L139). License notices, fixed revisions, per-record source URLs and adaptation details accompany the bank in `resources/answer_bank/licenses/`, `SOURCE_PROVENANCE.json` and `README.md`. Adaptations pair existing questions and answers, remove presentation markup and expand explicitly defined presentation macros; they do not claim endorsement or independent mathematical verification. CC BY-SA-derived records and adaptations retain [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
 This repository does not vendor the source code of its Python dependencies. The active R0 recovery tree currently uses the historical `requirements*.txt` inputs and does not include the later hash locks; `requirements.lock`, `requirements-dev.lock`, and `requirements-demo.lock` remain archived at `archive/s1-s6-1fc98b7` until the S5 supply-chain controls are deliberately restored. The table below records that archived S5 runtime closure and must not be presented as the active R0 installation proof.
 
 | Package | Archived S5 locked version | License metadata | Project |

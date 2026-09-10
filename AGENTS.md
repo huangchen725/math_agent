@@ -19,6 +19,8 @@ User authorization for cost, network, or push does not waive competition, securi
 
 ## Non-negotiable contracts
 
+The user's 2026-09-10 evening instruction authorizes the first day of `docs/evaluations/NEXT_48H_PLAN_20260910.md` before local midnight: public answer-bank and strictly checked fast answers, bounded references, and proven complete-answer delivery repair. The new diagnostic batch is capped at 200 requests, 650000 requested output tokens, three hours including bounded finish, and midnight. It does not resume earlier experiments, waive safety gates, authorize official submission, or include GitCode work. See policy version 2026-09-10.2 in the engineering specification.
+
 The user's 2026-09-10 decision authorizes one combined accuracy candidate (routing, complete-pipeline diagnostics, and bounded mathematical verification), superseding single-variable strategy scheduling for this batch. Preserve the public client protocol, thinking_mode=False, token bounds, import topology, dependencies, secret/data isolation and full release checks. Keep historical experimental baselines explicit; do not relabel changed deployment defaults as the old baseline. See the dated decision in `docs/ENGINEERING_SPECIFICATION.md`.
 
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.

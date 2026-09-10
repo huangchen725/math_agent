@@ -303,3 +303,14 @@ def test_formal_behavior_gate_requires_protocol_and_delivery_regressions(monkeyp
     findings = guard._formal_behavior_checks()
     assert len(findings) == 1 and findings[0].rule == "TEST-IMPORT-001"
     assert all(name in findings[0].message for name in required)
+
+
+def test_formal_behavior_gate_requires_new_corpus_and_shared_budget_regressions(monkeypatch):
+    original = Path.is_file
+    required = {"test_day1_runtime.py", "test_answer_bank.py",
+                "test_xh_answer_sources.py", "test_day1_diagnostic.py",
+                "test_q0_overlap_performance.py", "test_day1_confirmation.py"}
+    monkeypatch.setattr(Path, "is_file", lambda path: False if path.name in required else original(path))
+    findings = guard._formal_behavior_checks()
+    assert len(findings) == 1 and findings[0].rule == "TEST-IMPORT-001"
+    assert all(name in findings[0].message for name in required)
