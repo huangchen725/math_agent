@@ -437,3 +437,127 @@ def get_domain_prompt(domain: str) -> str:
             return DOMAIN_PROMPTS[key]
     return _COMMON_PREFIX + """【领域策略：通用】
 请根据题目特点选择合适的数学方法求解。遇到计算时调用工具验证。"""
+
+
+# These are topic cues, not answer templates or a lookup table. Keep the legacy
+# prompt bodies above unchanged while allowing English public problems to route.
+_ENGLISH_DOMAIN_CUES = {
+    "抽象代数": ("交换环", "整环", "商环", "理想", "finite group", "finite groups", "abelian group", "cyclic group", "subgroup", "subgroups",
+               "quotient group", "commutative ring", "polynomial ring", "maximal ideal", "prime ideal",
+               "finite field", "finite fields", "Galois", "homomorphism",
+               "isomorphism", "automorphism"),
+    "数论": ("prime number", "prime numbers", "divisible", "divisibility",
+             "congruence", "congruences", "coprime", "Diophantine", "totient", "modulo"),
+    "线性代数": ("matrix", "matrices", "determinant", "determinants", "eigenvalue", "eigenvalues",
+               "eigenvector", "eigenvectors", "vector space", "vector spaces", "linear map",
+               "linear maps", "linearly independent", "null space", "rank", "matrix trace"),
+    "实分析": ("series", "sequence", "sequences", "converge", "converges", "convergence",
+               "diverge", "diverges", "divergence", "uniformly continuous", "uniform convergence",
+               "Taylor series", "Taylor polynomial", "power series", "Cauchy sequence"),
+    "复分析": ("residue", "residues", "holomorphic", "analytic continuation", "complex analysis",
+               "complex plane", "Laurent", "contour integral", "contour integrals", "pole", "poles"),
+    "微积分": ("derivative", "derivatives", "differentiate", "differentiation", "integral", "integrals",
+               "integrate", "integration", "antiderivative", "antiderivatives", "partial derivative",
+               "partial derivatives", "gradient", "Hessian", "local maximum", "local maxima",
+               "local minimum", "local minima", "concave", "inflection", "extreme values",
+               "solid of revolution", "solids of revolution", "积分", "∫", r"\int", r"\iint", r"\iiint"),
+    "微分方程": ("常微分方程", "differential equation", "differential equations", "ordinary differential equation",
+               "initial value problem", "initial value problems", "integrating factor"),
+    "偏微分方程": ("偏微分方程", "partial differential equation", "partial differential equations", "heat equation",
+                 "wave equation", "Laplace equation", "Poisson equation"),
+    "泛函分析": ("Banach space", "Banach spaces", "Hilbert space", "Hilbert spaces", "normed space",
+                 "bounded operator", "compact operator", "weak convergence", "Hahn-Banach"),
+    "测度积分": ("Lebesgue", "measurable", "measure space", "measure spaces", "sigma algebra",
+                 "dominated convergence", "monotone convergence", "Radon-Nikodym"),
+    "几何": ("triangle", "triangles", "circle", "circles", "sphere", "spheres", "prism", "prisms",
+             "parallelepiped", "polygon", "polygons", "circumcircle", "incircle", "isosceles"),
+    "微分几何": ("curvature", "Gaussian curvature", "mean curvature", "geodesic", "geodesics",
+                 "torsion", "fundamental form", "Frenet", "Gauss-Bonnet"),
+    "拓扑": ("环面", "topological", "topology", "homotopy", "homology", "fundamental group", "fundamental groups",
+             "homeomorphic", "homeomorphism", "Euler characteristic", "simply connected"),
+    "代数几何": ("affine variety", "affine varieties", "projective variety", "projective varieties",
+                 "projective space", "Riemann-Roch", "affine scheme", "projective scheme", "Bezout"),
+    "运筹学": ("linear programming", "integer programming", "objective function", "feasible region",
+               "simplex method", "complementary slackness", "Karush-Kuhn-Tucker"),
+    "概率论": ("probability", "probabilities", "random variable", "random variables", "expectation",
+               "expected value", "variance", "covariance", "Bayes", "binomial distribution",
+               "normal distribution", "Poisson distribution", "Markov chain"),
+    "组合": ("permutation", "permutations", "combination", "combinations", "inclusion-exclusion",
+             "pigeonhole", "Catalan", "generating function", "generating functions", "factorial"),
+    "离散数学": ("graph", "graphs", "tree", "trees", "bipartite", "chromatic", "adjacency",
+                 "Hamiltonian", "Eulerian", "Boolean", "recurrence relation", "recurrence relations"),
+}
+
+# A single generic word or differential is not enough to select a specialized
+# prompt. For example, F(x) is not evidence for measure theory and min can be a
+# unit of time. Mathematical task words and longer phrases still participate.
+_AMBIGUOUS_DOMAIN_CUES = frozenset({
+    "环", "域", "阶", "模", "因子", "基", "谱", "层", "边", "图", "距离", "坐标",
+    "向量", "法向量", "路径", "约束", "最优", "连续", "有界", "开集", "闭集", "反函数", "共轭",
+    "f(x)", "dx", "dy", "y'", "y''", "max", "min", "s.t.", "∫", "积分",
+})
+
+
+from functools import lru_cache
+
+
+@lru_cache(maxsize=8)
+def _compiled_domain_cues(keyword_items: tuple) -> tuple:
+    """Cache bounded topic configurations, never problems, answers or matches."""
+    import re
+
+    compiled = []
+    for domain, legacy in keyword_items:
+        terms = dict.fromkeys((*legacy, *_ENGLISH_DOMAIN_CUES.get(domain, ())))
+        for term in terms:
+            if term.casefold() in _AMBIGUOUS_DOMAIN_CUES:
+                if domain != "微积分" or term not in ("积分", "∫"):
+                    continue
+            left = r"(?<![a-zA-Z0-9])" if term[0].isascii() and term[0].isalnum() else ""
+            right = r"(?![a-zA-Z0-9])" if term[-1].isascii() and term[-1].isalnum() else ""
+            pattern = left + re.escape(term).replace(r"\ ", r"\s+") + right
+            compiled.append((domain, term, re.compile(pattern, re.IGNORECASE)))
+    return tuple(compiled)
+
+
+def domain_keyword_matches(problem: str, legacy_keywords: dict) -> dict:
+    """Return auditable topic cues with ASCII word boundaries and longest matches.
+
+    Chinese words and mathematical symbols do not have whitespace boundaries.
+    ASCII endpoints do: Res in Express, tr in triangle and min in determine are
+    not mathematical evidence. Matching is bounded and never evaluates input.
+    """
+    if not isinstance(problem, str) or len(problem) > 100_000:
+        return {}
+    matches = []
+    keyword_items = tuple((domain, tuple(legacy)) for domain, legacy in legacy_keywords.items())
+    for domain, term, pattern in _compiled_domain_cues(keyword_items):
+        for match in pattern.finditer(problem):
+            matches.append((match.start(), match.end(), domain, term))
+    # A specific phrase suppresses its contained generic cue across domains:
+    # partial differential equation must not vote for ODE as a second topic.
+    matches.sort(key=lambda item: (item[0], -item[1]))
+    longest = []
+    farthest, farthest_start = -1, -1
+    for start, end, domain, term in matches:
+        if end < farthest or (end == farthest and start > farthest_start):
+            continue
+        farthest, farthest_start = end, start
+        longest.append((domain, term))
+    result = {}
+    for domain, term in longest:
+        if term not in result.setdefault(domain, []):
+            result[domain].append(term)
+    return result
+
+
+def detect_domain(problem: str, legacy_keywords: dict) -> str:
+    """Select a domain only from unambiguous topic evidence; abstain on ties."""
+    matches = domain_keyword_matches(problem, legacy_keywords)
+    scores = {domain: sum(2 if " " in term or (not term.isascii() and len(term) >= 3) else 1
+                         for term in terms) for domain, terms in matches.items()}
+    if not scores:
+        return ""
+    best = max(scores.values())
+    winners = [domain for domain, score in scores.items() if score == best]
+    return winners[0] if len(winners) == 1 else ""

@@ -259,9 +259,10 @@ def test_prompts_and_default_config_are_unchanged_from_reviewed_baseline():
         return result
     baseline = frozen(before)
     current = frozen((ROOT / "user_agent.py").read_text(encoding="utf-8"))
-    # User-authorized B2 adds one opt-in prompt; every original prompt and the
-    # entire AgentConfig AST remain frozen. Other new prompts still fail here.
-    assert set(current) == set(baseline) | {"CONCISE_RECOVERY_PROMPT"}
+    # Dated user decisions authorize B2 and the evidence-first verifier. Every
+    # original prompt and the entire AgentConfig AST remain frozen; an additional
+    # unreviewed prompt still fails this exact allowlist.
+    assert set(current) == set(baseline) | {"CONCISE_RECOVERY_PROMPT", "REASONED_VERIFIER_PROMPT"}
     assert {name: current[name] for name in baseline} == baseline
     assert runtime.Q1Policy().concise_recovery is False
 
@@ -273,7 +274,9 @@ def test_prompts_and_default_config_are_unchanged_from_reviewed_baseline():
             self.calls.append(messages)
             return "最终答案：2"
     calls = []
-    for policy in (None, runtime.Q1Policy(concise_recovery=True)):
+    # Deployment was explicitly promoted on 2026-09-10. Keep the historical
+    # all-off regression explicit; the ordinary deployed entry is tested apart.
+    for policy in (runtime.Q1Policy(), runtime.Q1Policy(concise_recovery=True)):
         client = Client()
         agent = runtime.ReasoningAgent(client, local_policy=policy)
         assert agent._quick_fallback("synthetic task", []) == "2"

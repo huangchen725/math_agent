@@ -1,6 +1,6 @@
 """First-batch invariants with independent mathematics; no API requests."""
 import copy
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from fractions import Fraction
 from itertools import permutations
 import importlib.util
@@ -132,16 +132,18 @@ def test_condition_checks_apply_to_all_generation_without_changing_settings(extr
     assert [c[2] for c in client.calls] == [8192]*3 + [1024]*3
 
 
-def test_disabled_or_unavailable_corpus_preserves_normal_path(monkeypatch):
+@pytest.mark.parametrize("deployed", [False, True])
+def test_disabled_or_unavailable_corpus_preserves_normal_path(monkeypatch, deployed):
     calls = []
     def unavailable():
         calls.append(1)
         raise ValueError("broken corpus")
     monkeypatch.setattr(r, "load_public_corpus", unavailable)
     baseline, enabled = Client(), Client()
-    a = r.ReasoningAgent(baseline).solve("原题", {})
+    policy = r.deployment_policy() if deployed else r.Q1Policy()
+    a = r.ReasoningAgent(baseline, local_policy=policy).solve("原题", {})
     assert not calls
-    b = r.ReasoningAgent(enabled, local_policy=r.Q1Policy(corpus_retrieval=True)).solve("原题", {})
+    b = r.ReasoningAgent(enabled, local_policy=replace(policy, corpus_retrieval=True)).solve("原题", {})
     assert calls == [1]
     assert baseline.calls == enabled.calls
     assert a["final_response"] == b["final_response"]

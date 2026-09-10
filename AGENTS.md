@@ -19,6 +19,8 @@ User authorization for cost, network, or push does not waive competition, securi
 
 ## Non-negotiable contracts
 
+The user's 2026-09-10 decision authorizes one combined accuracy candidate (routing, complete-pipeline diagnostics, and bounded mathematical verification), superseding single-variable strategy scheduling for this batch. Preserve the public client protocol, thinking_mode=False, token bounds, import topology, dependencies, secret/data isolation and full release checks. Keep historical experimental baselines explicit; do not relabel changed deployment defaults as the old baseline. See the dated decision in `docs/ENGINEERING_SPECIFICATION.md`.
+
 - Preserve `ReasoningAgent(client).solve(problem, metadata) -> {"final_response": str, "trace": list}`.
 - Keep the client injected by the caller. Never embed API keys, bearer tokens, private dataset content, or credentials in code, tests, logs, docs, archives, or prompts.
 - Treat `sys.modules`, `sys.path`, the current working directory, and all judge-preloaded modules as untrusted. Never use a class imported from a collision-prone top-level module to classify the injected client and unlock private methods or extended request arguments. In particular, never recreate the `from llm_client import InternChatClient` + `isinstance(...)` + `chat_with_metadata` failure chain recorded as `IMPORT-001`/`IMPORT-002`.

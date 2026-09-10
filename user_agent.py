@@ -59,6 +59,7 @@ BudgetExceeded = _dependencies["budget"].BudgetExceeded
 ExecutionBudget = _dependencies["budget"].ExecutionBudget
 get_domain_prompt = _dependencies["domain_prompts"].get_domain_prompt
 text_only_domain_prompt = _dependencies["domain_prompts"].text_only_domain_prompt
+detect_math_domain = _dependencies["domain_prompts"].detect_domain
 load_public_corpus = _dependencies["xh202627_corpus"].load_corpus
 
 
@@ -194,6 +195,15 @@ VERIFIER_PROMPT = """你是数学答案验证器。请判断候选解答是否�
 
 只输出：VERDICT: A（正确）或 VERDICT: B（错误）"""
 
+REASONED_VERIFIER_PROMPT = """你是数学答案验证器。先独立核算，再判断候选答案。
+不要因为推导流畅或形式熟悉就判对。选取能决定对错的关键计算：积分对原函数求导；
+方程把解代回并检查是否漏解；不等式核对区间端点与符号；级数核对通项及边界；
+带参数问题先代入题目给定参数。反例足以判错，几个数值吻合不能证明恒等式。
+只输出两行，不重复候选全文：
+CHECK: 不超过200字的实际核算式或明确反例；无法核实时说明未确定之处
+VERDICT: A 或 B 或 UNKNOWN
+A表示已核实正确，B表示发现具体错误，UNKNOWN表示不能确认。最后一行只写一个结论。"""
+
 CRITIC_PROMPT = """你是数学解题批评者。请找出候选解答中的错误或可改进之处。
 
 检查：1.逻辑漏洞 2.计算错误 3.边界情况 4.答案格式
@@ -259,7 +269,7 @@ class ReasoningAgent:
         self.config = config if type(config) is AgentConfig else AgentConfig()
         self.client = client
         self.local_adapter = local_adapter
-        self.local_policy = local_policy if type(local_policy) is Q1Policy else Q1Policy()
+        self.local_policy = local_policy if type(local_policy) is Q1Policy else deployment_policy()
 
     def _chat(self, system_prompt: str, user_content: str,
               temperature: float, max_tokens: int) -> str:
@@ -498,7 +508,26 @@ class ReasoningAgent:
 
         # 阶段6：加权聚合
         if self.local_policy.deterministic or self.local_policy.bounded_math:
+            before_exact = scored
             scored = self._apply_exact_evidence(problem, scored, trace)
+            if (not scored and self.local_policy.evidence_selection and self.config.enable_reflection
+                    and any(item.answer.raw for item in before_exact)):
+                # Every eligible answer has a whole-task mathematical refutation.
+                # Spend at most one bounded correction, never recycle a refuted answer.
+                previous = max((item for item in before_exact if item.answer.raw),
+                               key=lambda item: item.confidence)
+                try:
+                    refined = self._reflect(problem, previous.content,
+                        "独立精确计算已证明候选最终答案不满足原题。请从原题重新计算，"
+                        "逐项检查系数与符号；若为不定积分，对最终原函数求导并化简，"
+                        "确认恰好等于被积函数且保留积分常数。不要仅重复原结论。", trace)
+                    answer = self._answer_for_aggregation(refined, len(candidates) + 1, trace)
+                    if answer.raw:
+                        repaired = Candidate(content=refined, strategy="reflection", answer=answer,
+                            confidence=0.3, raw_confidence=0.0, verifications=[])
+                        scored = self._apply_exact_evidence(problem, [repaired], trace)
+                except BudgetExceeded:
+                    trace.append({"step": "reflect_budget_exhausted", "content": "[内容已省略]"})
         final_answer, best_content = self._aggregate(scored, trace)
         if not final_answer:
             return {"final_response": "未解出", "trace": trace}
@@ -643,11 +672,14 @@ class ReasoningAgent:
         review_text = self._review_excerpt(candidate)
         for vid in range(self.config.verifier_voting_times):
             try:
-                verdict = self._chat(VERIFIER_PROMPT,
-                    f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n判断是否正确。只输出：VERDICT: A 或 VERDICT: B",
+                instruction = ("判断是否正确。先输出一行 CHECK: 实际核算，再单独输出 VERDICT: A / B / UNKNOWN 中一个结论。"
+                               if self.local_policy.reasoned_verifier else "判断是否正确。只输出：VERDICT: A 或 VERDICT: B")
+                verdict = self._chat(REASONED_VERIFIER_PROMPT if self.local_policy.reasoned_verifier else VERIFIER_PROMPT,
+                    f"题目：\n{problem}\n\n候选解答：\n{review_text}\n\n{instruction}",
                     temperature=self.config.verifier_temperature,
                     max_tokens=self.config.verifier_max_tokens)
-                status = self._verdict_status(verdict, allow_short_labels=not self.local_policy.calibrated_verifier)
+                status = (self._reasoned_verdict_status(verdict) if self.local_policy.reasoned_verifier
+                          else self._verdict_status(verdict, allow_short_labels=not self.local_policy.calibrated_verifier))
                 if self._response_cutoff(verdict) or status == "unknown":
                     if self._response_cutoff(verdict):
                         trace.append({"step": "response_truncated", "content": "[内容已省略]"})
@@ -712,6 +744,27 @@ class ReasoningAgent:
         with_ans = [candidate for candidate in scored if candidate.answer.raw]
         if not with_ans:
             return "", ""
+        if self.local_policy.evidence_selection:
+            # A repeated answer rejected by every completed verifier must not
+            # defeat a different answer with positive evidence merely by count.
+            # Unknown-only candidates remain eligible; model votes are not proofs.
+            def model_supported(candidate):
+                return any(v.source == "model" and v.status == "pass"
+                           for v in candidate.verifications)
+
+            def model_rejected(candidate):
+                votes = [v.status for v in candidate.verifications
+                         if v.source == "model" and v.status in ("pass", "fail")]
+                return bool(votes) and all(v == "fail" for v in votes)
+
+            if any(model_supported(candidate) for candidate in with_ans):
+                evidence_groups = {}
+                for candidate in with_ans:
+                    evidence_groups.setdefault(candidate.answer.canonical, []).append(candidate)
+                rejected_keys = {key for key, group in evidence_groups.items()
+                                 if all(model_rejected(candidate) for candidate in group)}
+                with_ans = [candidate for candidate in with_ans
+                            if candidate.answer.canonical not in rejected_keys]
         groups = {}
         for candidate in with_ans:
             groups.setdefault(candidate.answer.canonical, []).append(candidate)
@@ -778,16 +831,8 @@ class ReasoningAgent:
     }
 
     def _detect_domain(self, problem: str) -> str:
-        """关键词匹配检测数学子领域，不花API调用。"""
-        normalized_problem = problem.casefold()
-        scores = {}
-        for domain, keywords in self._DOMAIN_KEYWORDS.items():
-            score = sum(1 for kw in keywords if kw.casefold() in normalized_problem)
-            if score > 0:
-                scores[domain] = score
-        if scores:
-            return max(scores, key=scores.get)
-        return ""
+        """Bounded bilingual mathematical routing; no model request."""
+        return detect_math_domain(problem, self._DOMAIN_KEYWORDS)
 
     @staticmethod
     def _review_excerpt(text: str, limit: int = 3000) -> str:
@@ -977,6 +1022,24 @@ class ReasoningAgent:
                 return "fail"
         return "unknown"
 
+    @staticmethod
+    def _reasoned_verdict_status(verdict):
+        if not isinstance(verdict, str) or ReasoningAgent._response_cutoff(verdict) or len(verdict) > 1200:
+            return "unknown"
+        # Parse complete lines so whitespace cannot join a broken label or
+        # silently accept a three-line/empty evidence response.
+        # Blank separators are presentation only; broken nonempty labels are
+        # still separate lines and cannot be joined into a valid verdict.
+        lines = [line for line in verdict.strip().splitlines() if line.strip()]
+        if len(lines) not in (1, 2):
+            return "unknown"
+        if len(lines) == 2:
+            check = re.fullmatch(r"CHECK[ \t]*[:：][ \t]*([^\r\n]{1,1000})", lines[0], re.I)
+            if not check or not check[1].strip() or re.search(r"\bVERDICT\b", check[1], re.I):
+                return "unknown"
+        match = re.fullmatch(r"[ \t]*VERDICT[ \t]*[:：][ \t]*(A|B|UNKNOWN)[ \t]*", lines[-1], re.I)
+        return {"A": "pass", "B": "fail", "UNKNOWN": "unknown"}[match[1].upper()] if match else "unknown"
+
     def _apply_exact_evidence(self, problem, candidates, trace):
         passed, remaining = [], []
         for candidate in candidates:
@@ -1010,7 +1073,7 @@ class ReasoningAgent:
 
 @dataclass(frozen=True)
 class Q1Policy:
-    """Explicit offline experiment switches; the public default remains R1."""
+    """Explicit all-off experiment configuration; deployment has a named preset."""
     recover_plain: bool = False
     deterministic: bool = False
     compact_routing: bool = False
@@ -1021,6 +1084,18 @@ class Q1Policy:
     corpus_retrieval: bool = False
     bounded_math: bool = False
     condition_checks: bool = False
+    evidence_selection: bool = False
+    reasoned_verifier: bool = False
+
+
+def deployment_policy() -> Q1Policy:
+    """2026-09-10 combined candidate, used by the ordinary injected entrypoint.
+
+    Keep Q1Policy() all-off so existing explicitly frozen experiments never
+    silently change when deployment is promoted. No environment/metadata toggle.
+    """
+    return Q1Policy(concise_recovery=True, bounded_math=True, evidence_selection=True,
+                    reasoned_verifier=True)
 
 
 _ROUTE_HINTS = {
@@ -1255,6 +1330,9 @@ def _bounded_task_check(problem, answer):
     """C1: whole-task, bounded rational proofs only; no free-form tool claims."""
     if type(problem) is not str or type(answer) is not str or max(len(problem), len(answer)) > 1200:
         return "unknown"
+    calculus = _calculus_task_check(problem, answer)
+    if calculus != "unknown":
+        return calculus
     try:
         text = problem.strip().rstrip("。？?.")
         derivative = re.fullmatch(r"(?:求函数\s*f\(x\)\s*=\s*(.+?)\s*的导数|Differentiate\s+(?:f\(x\)\s*=\s*)?(.+?)(?:\s+with respect to x)?)", text, re.I)
@@ -1291,5 +1369,378 @@ def _bounded_task_check(problem, answer):
                 return "unknown"
             return "pass" if Fraction(pow(base, exponent, modulus)) == _rational_literal(answer) else "fail"
         return _complete_task_check(problem, answer)
+    except (ValueError, TypeError, ZeroDivisionError, SyntaxError, OverflowError, RecursionError):
+        return "unknown"
+
+
+class _CalcAlgebra:
+    """Bounded exact Q(x, sqrt(P)); P is positive quadratic or nonsquare constant.
+
+    A polynomial is a coefficient tuple, a rational function a pair of them,
+    and a field element a pair of rational functions a + b*sqrt(P). No input
+    is executed. Algebra and Sturm sign proofs share one fixed operation cap.
+    """
+
+    def __init__(self):
+        self.operations = 0
+        self.radical = None
+        self.zero = ((), (Fraction(1),))
+        self.one = ((Fraction(1),), (Fraction(1),))
+
+    def tick(self, count=1):
+        self.operations += count
+        if self.operations > 20000:
+            raise ValueError("calculus operation bound")
+
+    def poly(self, coefficients):
+        self.tick()
+        values = list(coefficients)
+        while values and not values[-1]:
+            values.pop()
+        if len(values) > 33 or any(max(v.numerator.bit_length(), v.denominator.bit_length()) > 1024 for v in values):
+            raise ValueError("calculus polynomial bound")
+        return tuple(values)
+
+    def addp(self, a, b):
+        return self.poly([(a[i] if i < len(a) else Fraction(0)) + (b[i] if i < len(b) else Fraction(0)) for i in range(max(len(a), len(b)))])
+
+    def negp(self, a):
+        return tuple(-v for v in a)
+
+    def mulp(self, a, b):
+        if not a or not b:
+            return ()
+        if len(a) + len(b) > 34:
+            raise ValueError("calculus degree bound")
+        self.tick(len(a) * len(b))
+        out = [Fraction(0)] * (len(a) + len(b) - 1)
+        for i, u in enumerate(a):
+            for j, v in enumerate(b):
+                out[i+j] += u*v
+                if max(out[i+j].numerator.bit_length(), out[i+j].denominator.bit_length()) > 1024:
+                    raise ValueError("calculus coefficient bound")
+        return self.poly(out)
+
+    def divp(self, a, b):
+        if not b:
+            raise ValueError("calculus zero divisor")
+        quotient = [Fraction(0)] * max(0, len(a)-len(b)+1)
+        while a and len(a) >= len(b):
+            self.tick()
+            degree, scale = len(a)-len(b), a[-1]/b[-1]
+            quotient[degree] = scale
+            a = self.addp(a, self.poly([Fraction(0)]*degree + [-scale*v for v in b]))
+        return self.poly(quotient), a
+
+    def rational(self, numerator, denominator=None):
+        denominator = self.one[1] if denominator is None else denominator
+        if not denominator:
+            raise ValueError("calculus zero rational denominator")
+        if not numerator:
+            return self.zero
+        a, b = numerator, denominator
+        while b:
+            _, remainder = self.divp(a, b)
+            a, b = b, remainder
+        numerator, _ = self.divp(numerator, a)
+        denominator, _ = self.divp(denominator, a)
+        scale = denominator[-1]
+        return self.poly([v/scale for v in numerator]), self.poly([v/scale for v in denominator])
+
+    def addr(self, a, b):
+        if not a[0]:
+            return b
+        if not b[0]:
+            return a
+        return self.rational(self.addp(self.mulp(a[0], b[1]), self.mulp(b[0], a[1])), self.mulp(a[1], b[1]))
+
+    def negr(self, a):
+        return self.negp(a[0]), a[1]
+
+    def mulr(self, a, b):
+        return self.rational(self.mulp(a[0], b[0]), self.mulp(a[1], b[1]))
+
+    def divr(self, a, b):
+        return self.rational(self.mulp(a[0], b[1]), self.mulp(a[1], b[0]))
+
+    def constant(self, number):
+        return self.rational(self.poly([Fraction(number)])), self.zero
+
+    def add(self, a, b):
+        return self.addr(a[0], b[0]), self.addr(a[1], b[1])
+
+    def neg(self, a):
+        return self.negr(a[0]), self.negr(a[1])
+
+    def multiply(self, a, b):
+        base = self.mulr(a[0], b[0])
+        if a[1][0] and b[1][0]:
+            base = self.addr(base, self.mulr(self.mulr(a[1], b[1]), self.rational(self.radical)))
+        return base, self.addr(self.mulr(a[0], b[1]), self.mulr(a[1], b[0]))
+
+    def divide(self, a, b):
+        if not b[1][0]:
+            return self.divr(a[0], b[0]), self.divr(a[1], b[0])
+        norm = self.addr(self.mulr(b[0], b[0]), self.negr(self.mulr(self.mulr(b[1], b[1]), self.rational(self.radical))))
+        conjugate_product = self.multiply(a, (b[0], self.negr(b[1])))
+        return self.divr(conjugate_product[0], norm), self.divr(conjugate_product[1], norm)
+
+    def power(self, value, exponent):
+        if abs(exponent) > 6:
+            raise ValueError("calculus exponent bound")
+        out = self.constant(1)
+        for _ in range(abs(exponent)):
+            out = self.multiply(out, value)
+        return self.divide(self.constant(1), out) if exponent < 0 else out
+
+    def signp(self, polynomial):
+        """Strict sign on ALL real x, established by Sturm's exact root count."""
+        if not polynomial:
+            return 0
+        if len(polynomial) == 1:
+            return 1 if polynomial[0] > 0 else -1
+        if (len(polynomial)-1) % 2:
+            return 0
+        chain = [polynomial, self.poly([i*v for i, v in enumerate(polynomial) if i])]
+        while chain[-1]:
+            _, remainder = self.divp(chain[-2], chain[-1])
+            if not remainder:
+                break
+            chain.append(self.negp(remainder))
+        def changes(direction):
+            signs = [(1 if p[-1] > 0 else -1) * (direction ** (len(p)-1)) for p in chain]
+            return sum(a != b for a, b in zip(signs, signs[1:]))
+        if changes(-1) != changes(1):
+            return 0
+        return 1 if polynomial[-1] > 0 else -1
+
+    def signr(self, value):
+        return self.signp(value[0]) * self.signp(value[1])
+
+    def sign(self, value):
+        a, b = value
+        sa, sb = self.signr(a), self.signr(b)
+        if not b[0]:
+            return sa
+        if not a[0]:
+            return sb
+        if sa and sa == sb:
+            return sa
+        norm = self.addr(self.mulr(a, a), self.negr(self.mulr(self.mulr(b, b), self.rational(self.radical))))
+        sn = self.signr(norm)
+        return sa if sn > 0 and sa else sb if sn < 0 and sb else 0
+
+    def root(self, value):
+        a, b = value
+        if b[0] or a[1] != self.one[1] or len(a[0]) > 3 or self.signp(a[0]) != 1:
+            raise ValueError("calculus root domain")
+        polynomial, scale = a[0], Fraction(1)
+        if len(polynomial) == 1:
+            number = polynomial[0]
+            if number.numerator > 1000000 or number.denominator > 1000000:
+                raise ValueError("calculus radical size")
+            # Rationalize the denominator, then remove square factors. Each
+            # factorization has at most 1000 trial divisions per input integer.
+            square, free = 1, 1
+            for integer in (number.numerator, number.denominator):
+                factor = 2
+                while factor*factor <= integer:
+                    self.tick()
+                    count = 0
+                    while integer % factor == 0:
+                        integer //= factor
+                        count += 1
+                    square *= factor ** (count//2)
+                    free *= factor ** (count % 2)
+                    factor += 1
+                free *= integer
+            scale = Fraction(square, number.denominator)
+            if free == 1:
+                return self.constant(scale)
+            polynomial = (Fraction(free),)
+        if self.radical is None:
+            self.radical = polynomial
+        elif self.radical != polynomial:
+            raise ValueError("calculus second radical")
+        return self.zero, self.rational((scale,))
+
+    def iszero(self, value):
+        return value is not None and not value[0][0] and not value[1][0]
+
+    def differentiate(self, tree):
+        """Dual evaluation; transcendental values stay opaque, never guessed."""
+        zero, one = self.constant(0), self.constant(1)
+        def visit(node):
+            self.tick()
+            if isinstance(node, ast.Constant) and type(node.value) is int and abs(node.value) <= 1000000:
+                return self.constant(node.value), zero
+            if isinstance(node, ast.Name) and node.id == "x":
+                return (self.rational((Fraction(0), Fraction(1))), self.zero), one
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+                value, derivative = visit(node.operand)
+                return (self.neg(value) if value is not None else None, self.neg(derivative)) if isinstance(node.op, ast.USub) else (value, derivative)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and len(node.args) == 1 and not node.keywords:
+                value, derivative = visit(node.args[0])
+                if value is None:
+                    raise ValueError("calculus nested transcendental")
+                name = node.func.id
+                if name == "sqrt":
+                    root = self.root(value)
+                    return root, self.divide(derivative, self.multiply(self.constant(2), root))
+                if name in ("ln", "log", "logabs"):
+                    sign = self.sign(value)
+                    if sign != 1 and not (name == "logabs" and sign == -1):
+                        raise ValueError("calculus logarithm domain")
+                    return None, self.divide(derivative, value)
+                if name == "atan":
+                    return None, self.divide(derivative, self.add(one, self.multiply(value, value)))
+                raise ValueError("calculus function")
+            if not isinstance(node, ast.BinOp):
+                raise ValueError("calculus syntax")
+            left, dl = visit(node.left)
+            right, dr = visit(node.right)
+            if isinstance(node.op, (ast.Add, ast.Sub)):
+                if isinstance(node.op, ast.Sub):
+                    right = self.neg(right) if right is not None else None
+                    dr = self.neg(dr)
+                return self.add(left, right) if left is not None and right is not None else None, self.add(dl, dr)
+            if isinstance(node.op, ast.Mult):
+                # Constant multiples of ln/atan differentiate without ever
+                # assigning an algebraic value to those functions.
+                if (left is None and not self.iszero(dr)) or (right is None and not self.iszero(dl)):
+                    raise ValueError("calculus transcendental product")
+                derivative = self.add(zero if self.iszero(dl) else self.multiply(dl, right), zero if self.iszero(dr) else self.multiply(left, dr))
+                return self.multiply(left, right) if left is not None and right is not None else None, derivative
+            if isinstance(node.op, ast.Div):
+                if right is None or not self.sign(right) or (left is None and not self.iszero(dr)):
+                    raise ValueError("calculus denominator domain")
+                derivative = self.divide(self.add(self.multiply(dl, right), zero if self.iszero(dr) else self.neg(self.multiply(left, dr))), self.multiply(right, right))
+                return self.divide(left, right) if left is not None else None, derivative
+            if isinstance(node.op, ast.Pow):
+                if left is None or right is None or not self.iszero(dr) or right[1][0] or len(right[0][0]) > 1 or right[0][1] != self.one[1]:
+                    raise ValueError("calculus power syntax")
+                exponent = right[0][0][0] if right[0][0] else Fraction(0)
+                if exponent.denominator != 1 or abs(exponent) > 6 or (exponent <= 0 and not self.sign(left)):
+                    raise ValueError("calculus power bound or domain")
+                n = int(exponent)
+                return self.power(left, n), zero if n == 0 else self.multiply(self.multiply(self.constant(n), self.power(left, n-1)), dl)
+            raise ValueError("calculus operator")
+        return visit(tree)
+
+
+def _calculus_expression(text):
+    """Translate only an explicit, bounded elementary grammar to inert AST."""
+    text = _math_body(text).replace(r"\left", "").replace(r"\right", "").replace("−", "-")
+    text = re.sub(r"√(\d{1,7})(?![\w.])", r"sqrt(\1)", text)
+    text = text.replace("√(", "sqrt(")
+    text = re.sub(r"\\[,;! ]", " ", text).replace(r"\cdot", "*").replace(r"\times", "*")
+    text = text.replace(r"\arctan", "atan").replace("arctan", "atan")
+    text = re.sub(r"\\(ln|log|sqrt)\b", r"\1", text)
+    tokens = re.findall(r"\\(?:dfrac|tfrac|frac)|[A-Za-z]+|[0-9]+|\*\*|[+*/^(){}|\-]|\S", text)
+    if len(tokens) > 256:
+        raise ValueError("calculus token bound")
+    index = 0
+    def group(depth=0, closing=None):
+        nonlocal index
+        if depth > 16:
+            raise ValueError("calculus nesting")
+        out = []
+        while index < len(tokens):
+            token = tokens[index]
+            if token == closing:
+                index += 1
+                return out
+            index += 1
+            if token in ("(", "{"):
+                atom = ["("] + group(depth+1, ")" if token == "(" else "}") + [")"]
+            elif token in (r"\frac", r"\dfrac", r"\tfrac"):
+                pieces = []
+                for _ in range(2):
+                    if index >= len(tokens) or tokens[index] != "{":
+                        raise ValueError("calculus fraction groups")
+                    index += 1
+                    pieces.append(group(depth+1, "}"))
+                atom = ["(", "("] + pieces[0] + [")", "/", "("] + pieces[1] + [")", ")"]
+            elif token in ("ln", "log") and index < len(tokens) and tokens[index] == "|":
+                index += 1
+                atom = ["logabs", "("] + group(depth+1, "|") + [")"]
+            elif token in ("x", "sqrt", "ln", "log", "atan") or re.fullmatch(r"\d{1,7}", token):
+                atom = [token]
+            elif token in ("+", "-", "*", "/", "^", "**"):
+                atom = ["**" if token == "^" else token]
+            else:
+                raise ValueError("calculus token")
+            if out and out[-1].isdigit() and atom[0].isdigit():
+                raise ValueError("calculus adjacent numeric literals")
+            if out and (out[-1] == ")" or out[-1] == "x" or out[-1].isdigit()) and (atom[0] == "(" or atom[0] in ("x", "sqrt", "ln", "log", "atan", "logabs") or atom[0].isdigit()):
+                out.append("*")
+            out.extend(atom)
+        if closing is not None:
+            raise ValueError("calculus unclosed group")
+        return out
+    source = " ".join(group())
+    if len(source) > 3000:
+        raise ValueError("calculus expanded size")
+    # Common TeX arctan\frac{...}{...} is one function argument. Bare
+    # function application to x is deliberately not guessed.
+    tree = ast.parse(source, mode="eval")
+    if sum(1 for _ in ast.walk(tree)) > 192:
+        raise ValueError("calculus AST bound")
+    return tree.body
+
+
+def _calculus_task_check(problem, answer):
+    """Whole single real indefinite integrals; exact proofs, otherwise unknown."""
+    if type(problem) is not str or type(answer) is not str or max(len(problem), len(answer)) > 1200:
+        return "unknown"
+    try:
+        text = problem.strip().rstrip("。？?.")
+        # Bind the complete explicit integer parameter block, never discard
+        # trailing conditions or silently reuse values from another question.
+        split = re.split(r"\s+where\s+", text, flags=re.I)
+        if len(split) > 2:
+            return "unknown"
+        if len(split) == 2:
+            text, assignments = split
+            assignments = re.sub(r",?\s+and\s+", ",", assignments, flags=re.I)
+            pieces = assignments.split(",")
+            if not 1 <= len(pieces) <= 6:
+                return "unknown"
+            bindings = {}
+            for piece in pieces:
+                assignment = _math_body(piece)
+                binding = re.fullmatch(r"([A-Za-z])\s*=\s*([+-]?\d{1,6})", assignment)
+                if not binding or binding[1] in ("x", "C") or binding[1] in bindings:
+                    return "unknown"
+                bindings[binding[1]] = int(binding[2])
+            for name, number in bindings.items():
+                text, count = re.subn(r"(?<![A-Za-z\\])"+re.escape(name)+r"(?![A-Za-z])", "("+str(number)+")", text)
+                if not count:
+                    return "unknown"
+        direct = re.fullmatch(r"(?:计算\s*(.+?)\s*关于\s*x\s*的不定积分|Find the indefinite integral of\s+(.+?)(?:\s+with respect to x)?)", text, re.I | re.S)
+        if direct:
+            integrand = next(value for value in direct.groups() if value is not None)
+        else:
+            match = re.fullmatch(r"(?:Calculate|Compute|Evaluate|Find)\s+(?:the\s+)?(?:indefinite\s+)?integral\s*[:：]?\s*(.+)|(?:计算|求)(?:下列|下面的)?(?:不定)?积分\s*[:：]?\s*(.+)", text, re.I | re.S)
+            if not match:
+                return "unknown"
+            formula = _math_body(next(value for value in match.groups() if value is not None))
+            formula = re.sub(r"\\[,;! ]", " ", formula)
+            integral = re.fullmatch(r"\\int\s+(.+?)\s*(?:d\s*x|\\mathrm\{d\}\s*x)", formula, re.S)
+            if not integral:
+                return "unknown"
+            integrand = integral[1]
+        body = _math_body(answer)
+        primitive = re.fullmatch(r"(.+?)\s*\+\s*C", body)
+        if not primitive:
+            return "unknown"
+        algebra = _CalcAlgebra()
+        expected, _ = algebra.differentiate(_calculus_expression(integrand))
+        if expected is None:
+            return "unknown"
+        _, derivative = algebra.differentiate(_calculus_expression(primitive[1]))
+        # sqrt(P) is irreducible over Q(x) by construction; both reduced
+        # coefficients vanish iff this algebraic function vanishes identically.
+        return "pass" if algebra.iszero(algebra.add(derivative, algebra.neg(expected))) else "fail"
     except (ValueError, TypeError, ZeroDivisionError, SyntaxError, OverflowError, RecursionError):
         return "unknown"

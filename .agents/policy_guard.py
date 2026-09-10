@@ -364,6 +364,9 @@ def _formal_behavior_checks() -> list[Finding]:
     if "Q2" in load_manifest().get("offline_workstreams", []):
         required += ("test_q2_pipeline.py", "test_q2_commands.py", "test_answer_delivery.py",
                      "test_pilot_control.py", "test_response_replay.py")
+    if load_manifest().get("accuracy_batch_decision"):
+        required += ("test_accuracy_candidate.py", "test_routing_accuracy.py",
+                     "test_calculus_evidence.py", "test_accuracy_diagnostic.py")
     missing = [name for name in required if not (ROOT / "tests" / name).is_file()]
     if missing:
         return [Finding("TEST-IMPORT-001", "Required R1 behavior tests missing: " + ", ".join(missing))]

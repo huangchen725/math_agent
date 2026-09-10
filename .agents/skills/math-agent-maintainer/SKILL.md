@@ -36,6 +36,8 @@ The active runtime is in R1 hardening after the successful R0 anchor run (`ba63a
 
 ## Reintroduce changes in order
 
+The 2026-09-10 user decision authorizes a combined accuracy candidate without waiting for separate official runs of each strategy. Follow the dated engineering specification for the combined plan and bounded local API budget. This decision does not waive import/client/parser safety or release checks, and it does not support single-component attribution from the combined result.
+
 Follow the recovery stages in `docs/ENGINEERING_SPECIFICATION.md`:
 
 The 2026-09-06 user scheduling decision permits Q0/Q1 offline work; the 2026-09-07 user authorization also permits Q2 offline engineering preparation while R1 official acceptance is pending. Keep the official candidate frozen separately; offline tests do not establish a model baseline or optimization benefit. Real API use still needs quota authorization. A1 large architecture changes remain deferred. The stage list below describes evidence gates, not a requirement to idle between official runs.
