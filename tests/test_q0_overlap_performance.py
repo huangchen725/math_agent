@@ -1,10 +1,13 @@
 """Local overlap prefilter must preserve the original exact decision oracle."""
 from difflib import SequenceMatcher
+from collections import Counter
+from itertools import product
 import random
 
 import pytest
 
 from evaluation.q0_pipeline import _has_near_template_overlap, near_template
+from evaluation import q0_pipeline
 
 
 def original_overlap(values):
@@ -60,3 +63,35 @@ def test_seeded_multi_item_permutations_match_original_without_retaining_old_val
         assert _has_near_template_overlap(values)
         values[-1] = "distinct fresh value"
         assert _has_near_template_overlap(values) is original_overlap(values)
+
+
+def test_packed_intersection_matches_independent_counter_oracle():
+    values = ["".join(chars) for length in range(6) for chars in product("ab", repeat=length)]
+    values += ["中文", "文中文", "a" * 22, "a" * 28, "a" * 199, "b" * 201]
+    counts = [Counter(value) for value in values]
+    packed = q0_pipeline._packed_template_counts(counts)
+    assert packed is not None
+    for i, left in enumerate(counts):
+        for j, right in enumerate(counts):
+            assert (packed[i] & packed[j]).bit_count() == sum((left & right).values())
+
+
+def test_packing_limit_uses_exact_original_counter_fallback():
+    assert q0_pipeline._packed_template_counts([Counter("a" * 65536)]) is not None
+    assert q0_pipeline._packed_template_counts([Counter("a" * 65537)]) is None
+    values = ["a" * 20000, "b" * 20000, "c" * 20000, "d" * 20000]
+    assert _has_near_template_overlap(values) is original_overlap(values) is False
+    assert _has_near_template_overlap([*values, values[0]]) is original_overlap([*values, values[0]]) is True
+
+
+def test_packed_prefilter_calls_original_predicate_for_exact_same_pairs(monkeypatch):
+    values = ["", "", "a" * 22, "a" * 28, "a" * 29, "中文", "文中", "a" * 200 + "b", "a" * 201]
+    expected = [(left, right) for i, left in enumerate(values) for right in values[i + 1:]
+                if SequenceMatcher(None, left, right).quick_ratio() >= 0.88]
+    called = []
+    def observe(left, right):
+        called.append((left, right))
+        return False
+    monkeypatch.setattr(q0_pipeline, "near_template", observe)
+    assert not _has_near_template_overlap(values)
+    assert called == expected

@@ -29,6 +29,9 @@ BASELINE = "b87e4b9f2f7383960c659b887c39daa809f228cb"
 POSITIONS = (0, 27, 29)
 ALLOWANCE = {"requests_per_variant": 48, "output_tokens_per_variant": 150000,
              "variants": 2, "wall_seconds": 5400, "request_wait_seconds": 350}
+# Windows readers can prevent replacing an open destination. Coordinate only
+# same-process file handles; do not hold this lock during JSON work or network I/O.
+_JSON_IO_LOCK = threading.RLock()
 
 
 def digest(value):
@@ -45,12 +48,14 @@ def write(path, value):
     if len(data) > 8_000_000:
         raise ValueError("oversized diagnostic record")
     temporary = path.with_suffix(".tmp")
-    temporary.write_bytes(data)
-    temporary.replace(path)
+    with _JSON_IO_LOCK:
+        temporary.write_bytes(data)
+        temporary.replace(path)
 
 
 def read(path):
-    data = Path(path).read_bytes()
+    with _JSON_IO_LOCK:
+        data = Path(path).read_bytes()
     if len(data) > 8_000_000:
         raise ValueError("oversized diagnostic record")
     return json.loads(data)

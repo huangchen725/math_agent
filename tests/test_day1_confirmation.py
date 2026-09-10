@@ -1,5 +1,6 @@
 """The repair confirmation carries forward cost and cannot resume old work."""
 from hashlib import sha256
+from pathlib import Path
 from types import SimpleNamespace
 import threading
 import time
@@ -143,3 +144,73 @@ def test_later_worker_failure_stops_before_earlier_slow_request_finishes(probe, 
     with pytest.raises(RuntimeError, match="local preparation failed"):
         confirm.run(directory, slow_send, clock=lambda: 0)
     assert witnessed and all(witnessed)
+
+
+def test_stop_persists_after_overlapping_real_json_reader_closes(tmp_path, monkeypatch):
+    path = tmp_path / "execution.json"
+    state = {"status": "running"}
+    helper.write(path, state)
+    admission = day1.Admission(path, state, lambda _: None)
+    reader_open = threading.Event()
+    release_reader = threading.Event()
+    writer_waiting = threading.Event()
+    writer_finished = threading.Event()
+    errors, observed = [], []
+    real_lock = threading.RLock()
+
+    class ObservedLock:
+        def __enter__(self):
+            if threading.current_thread().name == "json-stop-writer":
+                writer_waiting.set()
+            real_lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            real_lock.release()
+
+    original_read = Path.read_bytes
+
+    def held_read(target):
+        if target != path:
+            return original_read(target)
+        with target.open("rb") as stream:
+            reader_open.set()
+            assert release_reader.wait(3)
+            return stream.read()
+
+    def reader():
+        try:
+            observed.append(helper.read(path))
+        except BaseException as exc:
+            errors.append(exc)
+
+    def writer():
+        try:
+            admission.stop("local_execution_failure")
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            writer_finished.set()
+
+    monkeypatch.setattr(helper, "_JSON_IO_LOCK", ObservedLock())
+    monkeypatch.setattr(Path, "read_bytes", held_read)
+    threads = [threading.Thread(target=reader, name="json-state-reader"),
+               threading.Thread(target=writer, name="json-stop-writer")]
+    threads[0].start()
+    try:
+        assert reader_open.wait(3)
+        threads[1].start()
+        assert writer_waiting.wait(3)
+        assert not writer_finished.is_set(), "replace must wait for the open reader"
+    finally:
+        release_reader.set()
+        for thread in threads:
+            if thread.ident is not None:
+                thread.join(timeout=3)
+    assert not any(thread.is_alive() for thread in threads)
+    assert not errors
+    assert observed == [{"status": "running"}]
+    assert writer_finished.is_set()
+    assert state["status"] == "stopped"
+    assert helper.read(path) == {"status": "stopped", "stop_reason": "local_execution_failure"}
+    assert not path.with_suffix(".tmp").exists()

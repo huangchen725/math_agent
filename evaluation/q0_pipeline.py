@@ -28,6 +28,26 @@ def near_template(left, right):
         matcher.ratio() >= 0.88 or SequenceMatcher(None, right, left).ratio() >= 0.88)
 
 
+def _packed_template_counts(counts):
+    """Encode bounded character counts in disjoint unary bit fields.
+
+    AND plus bit_count is the exact multiset intersection, not a hash. Large
+    alphabets/counts retain the original Counter path before any large shift.
+    """
+    maxima = {}
+    for row in counts:
+        for char, count in row.items():
+            maxima[char] = max(count, maxima.get(char, 0))
+    offsets, span = {}, 0
+    for char, width in maxima.items():
+        offsets[char] = span
+        span += width
+    if span > 65536:
+        return None
+    return [sum(((1 << count) - 1) << offsets[char]
+                for char, count in row.items()) for row in counts]
+
+
 def _has_near_template_overlap(templates):
     """Reject impossible pairs before rebuilding SequenceMatcher's histograms.
 
@@ -36,12 +56,14 @@ def _has_near_template_overlap(templates):
     bidirectional predicate. No file, question or verdict survives this call.
     """
     features = [(len(text), Counter(text)) for text in templates]
+    packed = _packed_template_counts([counts for _, counts in features])
     for index, left in enumerate(templates):
         left_length, left_counts = features[index]
         for other in range(index + 1, len(templates)):
             right_length, right_counts = features[other]
             total = left_length + right_length
-            matches = sum(min(count, right_counts.get(char, 0)) for char, count in left_counts.items())
+            matches = ((packed[index] & packed[other]).bit_count() if packed is not None
+                       else sum(min(count, right_counts.get(char, 0)) for char, count in left_counts.items()))
             upper = 2.0 * matches / total if total else 1.0
             if upper >= 0.88 and near_template(left, templates[other]):
                 return True

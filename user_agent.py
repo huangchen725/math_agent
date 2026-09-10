@@ -633,15 +633,13 @@ class ReasoningAgent:
         if not start:
             return ""
         check_body = " ".join([start[1], *lines[2:-3]])
-        if re.search(
+        forbidden_field = re.compile(
             r"\b(?:CONDITIONS|CHECK|MATCH|VERDICT)\b[\s*_'\"`]*[:：]|"
-            r"最终答案[\s*_'\"`]*[:：]|```|~~~|[\u200b-\u200f\u202a-\u202e\u2066-\u2069]",
-            check_body, re.I
-        ):
-            return ""
+            r"(?:最终)?答案[\s*_'\"`]*[:：]|```|~~~|[\u200b-\u200f\u202a-\u202e\u2066-\u2069]",
+            re.I)
         for label, line in (("CONDITIONS", lines[0]), ("CHECK", "CHECK: " + check_body)):
             match = re.fullmatch(label + r":[ \t]*(.{8,2000})", line)
-            if not match or re.search(
+            if not match or forbidden_field.search(match[1]) or re.search(
                 r"\b(?:unknown|uncertain|unverified|cannot|can't|not checked|not verified)\b|"
                 r"无法|不能确定|未核实|未验证|未检查|不确定|仅凭|同意参考|参考正确", match[1], re.I
             ):
@@ -652,7 +650,13 @@ class ReasoningAgent:
             return ""
         if not lines[-1].startswith("最终答案："):
             return ""
-        return ReasoningAgent._extract_answer(lines[-1])
+        # This protocol has one exact answer field. The general extractor can
+        # select a later alias marker and discard a conflicting earlier value.
+        answer = lines[-1][len("最终答案："):].strip()
+        if (forbidden_field.search(answer) or _FINAL_INTENT.search(answer)
+                or not ReasoningAgent._valid_answer_body(answer)):
+            return ""
+        return answer
 
     def _checked_bank_answer(self, problem, record, trace):
         response = self._chat(ANSWER_BANK_CHECK_PROMPT,
