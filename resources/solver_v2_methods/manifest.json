@@ -1,0 +1,37 @@
+{
+  "builder_sha256": "650f317b4a796cf64a0811d71e7568d0daba554d5a08203ccd228fbce3448d37",
+  "cards_sha256": "1362e0f1dfdcb0ab6d75f70f7e7e5788da47c474810ef4caf2f0a9cd7d8dba16",
+  "evidence": "Complete source statements with structural/context filters; not independent math or retrieval accuracy verification.",
+  "kinds": {
+    "assemblage": 53,
+    "corollary": 1,
+    "lemma": 1,
+    "proposition": 1,
+    "theorem": 32
+  },
+  "records": 88,
+  "source_counts": {
+    "Jiří Lebl, Notes on Diffy Qs": 29,
+    "Oscar Levin, Discrete Mathematics: An Open Introduction": 59
+  },
+  "sources": [
+    {
+      "license_sha256": "682fedaab34d7d47962da7276284e608f43881c07c3c887cb66368688748c13d",
+      "provenance_sha256": "b80e44006fd9223cff51c1e9e1181135de088244797725f6ea58c72cd535dffc",
+      "revision": "658bcae9fb710f3fae2c9da4ca4524ce157453af",
+      "source": "diffyqs"
+    },
+    {
+      "license_sha256": "e1cd4008924dcbef0964c59284648bd97ae640077e1137014d23db1f61838e64",
+      "provenance_sha256": "842e855bff5c69dceff3526b5b00cc6348da97b5d69c9cfe486ccae3a3d39add",
+      "revision": "1e2e26b0be8f47c9862b756ba5d7265b60c47854",
+      "source": "dmoi3"
+    }
+  ],
+  "stats": {
+    "context_or_bounds_excluded": 29,
+    "duplicate_statements_excluded": 0,
+    "source_qualification_quarantined": 7,
+    "source_statements": 124
+  }
+}

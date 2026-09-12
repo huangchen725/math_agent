@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
-  "policy_version": "2026-09-10.2",
+  "policy_version": "2026-09-13.1",
+  "solver_v2_decision": "2026-09-13: user approved and requested the whole solving-controller replacement: licensed retrieval, independent routes, bounded declarative computation, evidence selection and adaptive scheduling. Joint strategy scheduling supersedes single-variable strategy scheduling for this candidate. Preserve the six-source formal import closure, public four-parameter chat with thinking_mode=False, dependencies, single-request 8192 and existing per-problem hard budgets, data boundaries and release checks. Freeze 1841685526e6f4d9c7211fb867d4db0aa65155d4 as baseline; explicit Q1Policy() remains legacy all-off. Separately authorized diagnostics: at most 120 requests, 360000 cumulative requested output tokens, 90 minutes dispatch, existing single-request limit no greater than 350 seconds, no retry or resume. No GitCode, push or official submission.",
   "protocol_decision": "2026-09-08: user authorized retaining verified 0641043/5c2f7a0 thinking_mode=False; repair offline relay propagation and exact request replay without changing formal solving behavior or claiming accuracy gain",
   "phase": "R1",
   "accuracy_batch_decision": "2026-09-10: user authorizes combined routing, full-pipeline public diagnostics and bounded math candidate; single-variable strategy scheduling superseded for this batch only; protocol, False, 8192, import topology, dependencies and safety gates unchanged; at most 96 local API requests, 300000 requested output tokens and 90 minutes dispatch; no automatic retry/resume/submission",

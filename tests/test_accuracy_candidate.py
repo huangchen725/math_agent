@@ -1,5 +1,6 @@
 """Deployment evidence and selection regressions; no provider calls."""
 from dataclasses import asdict
+import pytest
 
 import user_agent as runtime
 
@@ -16,7 +17,7 @@ def test_ordinary_constructor_activates_named_candidate_and_explicit_baseline_is
     default = runtime.ReasoningAgent(object())
     assert {name for name, enabled in asdict(default.local_policy).items() if enabled} == {
         "concise_recovery", "bounded_math", "evidence_selection", "reasoned_verifier",
-        "answer_bank_fastpath", "answer_bank_reference", "completed_answer_repair"}
+        "answer_bank_fastpath", "answer_bank_reference", "completed_answer_repair", "solver_v2"}
     baseline = runtime.ReasoningAgent(object(), local_policy=runtime.Q1Policy())
     assert not any(asdict(baseline.local_policy).values())
     assert asdict(default.config) == asdict(baseline.config)
@@ -57,7 +58,8 @@ def test_exact_proof_overrides_false_model_votes_and_preserves_reasoning_identit
     assert deployed._aggregate(eligible, [])[0] == "2"
 
 
-def test_default_complete_path_uses_only_public_false_protocol_and_no_reference_metadata():
+@pytest.mark.parametrize("legacy,expected_requests", [(False, 1), (True, 6)])
+def test_default_complete_path_uses_only_public_false_protocol_and_no_reference_metadata(legacy, expected_requests):
     class StrictClient:
         def __init__(self):
             self.calls = []
@@ -72,9 +74,12 @@ def test_default_complete_path_uses_only_public_false_protocol_and_no_reference_
             return "VERDICT: A" if "验证器" in messages[0]["content"] else "计算得到2。\n最终答案：2"
 
     client = StrictClient()
-    result = runtime.ReasoningAgent(client).solve("计算1+1", {"answer": "PRIVATE_LABEL_999"})
+    # The default controller stops at a whole-task exact proof. Preserve the
+    # old six-request public-contract coverage as an explicit second case.
+    options = {"local_policy": runtime.legacy_deployment_policy()} if legacy else {}
+    result = runtime.ReasoningAgent(client, **options).solve("计算1+1", {"answer": "PRIVATE_LABEL_999"})
     assert result["final_response"].endswith("最终答案：2")
-    assert len(client.calls) == 6
+    assert len(client.calls) == expected_requests
     assert all("PRIVATE_LABEL_999" not in str(item) for item in result["trace"])
 
 
@@ -96,7 +101,7 @@ def test_exact_refutation_gets_one_bounded_correction_even_when_model_wrongly_ap
     for reply, expected in (("最终答案：2", "最终答案：2"), ("最终答案：7", "未解出"),
                             ({"content": "最终答案：2", "finish_reason": "length"}, "未解出")):
         client = Client(reply)
-        result = runtime.ReasoningAgent(client).solve("计算1+1", {})
+        result = runtime.ReasoningAgent(client, local_policy=runtime.legacy_deployment_policy()).solve("计算1+1", {})
         assert result["final_response"].endswith(expected)
         assert len(client.calls) == 7
         assert client.calls[-1][1] == 8192
@@ -112,7 +117,8 @@ def test_exact_correction_respects_exhausted_budget_without_extra_request():
             return "VERDICT: A" if "验证器" in messages[0]["content"] else "最终答案：7"
 
     client = Client()
-    result = runtime.ReasoningAgent(client, runtime.AgentConfig(max_model_requests=6)).solve("计算1+1", {})
+    result = runtime.ReasoningAgent(client, runtime.AgentConfig(max_model_requests=6),
+                                    local_policy=runtime.legacy_deployment_policy()).solve("计算1+1", {})
     assert result["final_response"] == "未解出"
     assert client.calls == 6
 

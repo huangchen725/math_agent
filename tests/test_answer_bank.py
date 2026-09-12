@@ -432,9 +432,9 @@ def test_rejected_weak_references_preserve_complete_no_reference_request_sequenc
         assert reader.material(problem) == {"match": None, "context": ""}
         monkeypatch.setattr(runtime._dependencies["xh202627_corpus"], "load_answer_bank", lambda: reader)
         before, after = RecordedClient(), RecordedClient()
-        disabled = replace(runtime.deployment_policy(), answer_bank_fastpath=False, answer_bank_reference=False)
+        disabled = replace(runtime.legacy_deployment_policy(), answer_bank_fastpath=False, answer_bank_reference=False)
         old = runtime.ReasoningAgent(before, local_policy=disabled).solve(problem, {})
-        new = runtime.ReasoningAgent(after).solve(problem, {})
+        new = runtime.ReasoningAgent(after, local_policy=runtime.legacy_deployment_policy()).solve(problem, {})
         assert len(before.calls) == len(after.calls) == 6
         assert before.calls == after.calls
         assert old["final_response"] == new["final_response"]

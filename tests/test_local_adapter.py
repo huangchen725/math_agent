@@ -45,11 +45,12 @@ class RecordingClient:
 
 
 def _make_agent(config):
-    from user_agent import ReasoningAgent
+    from user_agent import ReasoningAgent, legacy_deployment_policy
 
     client = RecordingClient()
     adapter = _make_adapter(client)
-    return ReasoningAgent(client, config, local_adapter=adapter), client
+    return ReasoningAgent(client, config, local_adapter=adapter,
+                          local_policy=legacy_deployment_policy()), client
 
 
 def _make_adapter(client):

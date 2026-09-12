@@ -89,7 +89,7 @@ class Sequence:
 def test_complete_multiline_candidate_does_not_trigger_another_model_request():
     client = Sequence(["最终答案：\n1. x=2\n2. y=3", "VERDICT: A"])
     config = runtime.AgentConfig(tool_candidates=1, plain_candidates=0, enable_critic=False)
-    result = Agent(client, config).solve("分别给出 x 和 y。", {})
+    result = Agent(client, config, local_policy=runtime.legacy_deployment_policy()).solve("分别给出 x 和 y。", {})
     assert result["final_response"].endswith("最终答案：1. x=2;2. y=3")
     assert len(client.calls) == 2
 

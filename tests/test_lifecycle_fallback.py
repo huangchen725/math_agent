@@ -26,7 +26,7 @@ class SteadyClient:
 
 
 def test_verification_budget_exhaustion_preserves_candidates():
-    from user_agent import AgentConfig, ReasoningAgent
+    from user_agent import AgentConfig, ReasoningAgent, legacy_deployment_policy
 
     client = SteadyClient()
     config = AgentConfig(
@@ -36,7 +36,7 @@ def test_verification_budget_exhaustion_preserves_candidates():
         max_model_requests=2,
         enable_critic=False,
     )
-    result = ReasoningAgent(client, config).solve("计算 1+1。", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("计算 1+1。", {})
 
     assert result["final_response"] != "未解出"
     assert result["final_response"].endswith("最终答案：2")
@@ -45,7 +45,7 @@ def test_verification_budget_exhaustion_preserves_candidates():
 
 
 def test_generation_budget_exhaustion_preserves_completed_candidate():
-    from user_agent import AgentConfig, ReasoningAgent
+    from user_agent import AgentConfig, ReasoningAgent, legacy_deployment_policy
 
     client = SteadyClient()
     config = AgentConfig(
@@ -54,7 +54,7 @@ def test_generation_budget_exhaustion_preserves_completed_candidate():
         max_model_requests=1,
         enable_critic=False,
     )
-    result = ReasoningAgent(client, config).solve("计算 1+1。", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("计算 1+1。", {})
 
     assert result["final_response"] == "推理：1+1=2。\n最终答案：2"
     assert client.calls == 1

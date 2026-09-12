@@ -4,6 +4,8 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import random
+from functools import lru_cache
+from types import SimpleNamespace
 
 import pytest
 
@@ -51,8 +53,11 @@ def test_observer_preserves_entire_calls_and_final(scenario, monkeypatch):
 
 def test_observer_preserves_baseexception_without_retry():
     events, client = [], Client("stop")
+    class Legacy(runtime.ReasoningAgent):
+        def __init__(self, client):
+            super().__init__(client, local_policy=runtime.legacy_deployment_policy())
     with pytest.raises(control.PilotStopped):
-        diagnostic.observed_agent(runtime, client, events).solve("2+2", {})
+        diagnostic.observed_agent(SimpleNamespace(ReasoningAgent=Legacy), client, events).solve("2+2", {})
     assert len(client.calls) == 1
     assert events[-1]["status"] == "interrupted"
 
@@ -64,6 +69,15 @@ def test_strict_transport_rejects_protocol_or_cap_changes(changes):
     with pytest.raises(ValueError):
         diagnostic.strict_sender(lambda p: sent.append(p))(payload)
     assert sent == []
+
+
+@lru_cache(maxsize=1)
+def frozen_184_sources():
+    # Historical diagnostic fixtures must use historical source, not whichever
+    # deployment policy a later candidate happens to enable.
+    revision = "1841685526e6f4d9c7211fb867d4db0aa65155d4"
+    entry = diagnostic.git_bytes(revision, "user_agent.py")
+    return {name: diagnostic.git_bytes(revision, name) for name in diagnostic.formal_files(entry)}
 
 
 @pytest.fixture
@@ -81,11 +95,11 @@ def prepared(tmp_path):
     source = directory / "snapshots" / "baseline"
     source.mkdir(parents=True)
     files = {}
-    for name in diagnostic.formal_files((diagnostic.ROOT / "user_agent.py").read_bytes()):
+    for name, content in frozen_184_sources().items():
         target = source / name
-        target.write_bytes((diagnostic.ROOT / name).read_bytes())
+        target.write_bytes(content)
         files[name] = diagnostic.file_hash(target)
-    agent = runtime.ReasoningAgent(object())
+    agent = diagnostic.load_source(source).ReasoningAgent(object())
     config = {"agent": asdict(agent.config), "policy": asdict(agent.local_policy)}
     diagnostic.write(source / "snapshot.json", diagnostic.seal({
         "files": files, "source_sha256": diagnostic.digest(files), "config": config,

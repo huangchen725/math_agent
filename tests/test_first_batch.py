@@ -140,7 +140,7 @@ def test_disabled_or_unavailable_corpus_preserves_normal_path(monkeypatch, deplo
         raise ValueError("broken corpus")
     monkeypatch.setattr(r, "load_public_corpus", unavailable)
     baseline, enabled = Client(), Client()
-    policy = r.deployment_policy() if deployed else r.Q1Policy()
+    policy = r.legacy_deployment_policy() if deployed else r.Q1Policy()
     a = r.ReasoningAgent(baseline, local_policy=policy).solve("原题", {})
     assert not calls
     b = r.ReasoningAgent(enabled, local_policy=replace(policy, corpus_retrieval=True)).solve("原题", {})

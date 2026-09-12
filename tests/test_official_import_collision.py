@@ -9,9 +9,11 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+import pytest
 
 
-def test_official_llm_client_preload_does_not_block_first_request(monkeypatch):
+@pytest.mark.parametrize("legacy,expected_requests", [(False, 1), (True, 6)])
+def test_official_llm_client_preload_does_not_block_first_request(monkeypatch, legacy, expected_requests):
     calls = []
     official_module = types.ModuleType("llm_client")
 
@@ -41,8 +43,10 @@ def test_official_llm_client_preload_does_not_block_first_request(monkeypatch):
     spec.loader.exec_module(module)
 
     client = OfficialInternChatClient()
-    result = module.ReasoningAgent(client).solve("计算 2+2。", {})
+    options = {"local_policy": module.legacy_deployment_policy()} if legacy else {}
+    result = module.ReasoningAgent(client, **options).solve("计算 2+2。", {})
 
-    assert len(calls) == 6
+    # Exact proof ends the new flow early; both paths retain the preload check.
+    assert len(calls) == expected_requests
     assert result["final_response"].endswith("最终答案：4")
     assert not hasattr(client, "chat_with_metadata")

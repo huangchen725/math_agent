@@ -1,7 +1,7 @@
 import pytest
 
 from budget import BudgetExceeded, ExecutionBudget
-from user_agent import AgentConfig, ReasoningAgent
+from user_agent import AgentConfig, ReasoningAgent, legacy_deployment_policy
 
 
 class TextClient:
@@ -40,7 +40,7 @@ def test_agent_records_per_problem_budget_usage():
         enable_critic=False,
         max_model_requests=2,
     )
-    result = ReasoningAgent(client, config).solve("1+1", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("1+1", {})
 
     assert result["final_response"].endswith("最终答案：2")
     summary = result["trace"][-1]
@@ -59,7 +59,7 @@ def test_agent_stops_before_exceeding_model_request_budget():
         enable_critic=False,
         max_model_requests=1,
     )
-    result = ReasoningAgent(client, config).solve("1+1", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("1+1", {})
 
     assert result["final_response"] == "推理\n最终答案：2"
     assert client.calls == 1

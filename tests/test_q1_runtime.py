@@ -6,7 +6,7 @@ from itertools import combinations
 import pytest
 
 from user_agent import (AgentConfig, Candidate, Q1Policy, ReasoningAgent, _exact_problem_value,
-                        _exact_answer_value, _complete_task_check, build_answer)
+                        _exact_answer_value, _complete_task_check, build_answer, legacy_deployment_policy)
 
 
 class Client:
@@ -22,7 +22,8 @@ class Client:
 def solve(replies, policy=None, **config):
     client = Client(replies)
     settings = {"tool_candidates": 0, "plain_candidates": 1, "enable_critic": False, **config}
-    result = ReasoningAgent(client, AgentConfig(**settings), local_policy=policy).solve("计算1+1", {})
+    result = ReasoningAgent(client, AgentConfig(**settings),
+                            local_policy=legacy_deployment_policy() if policy is None else policy).solve("计算1+1", {})
     return client, result
 
 

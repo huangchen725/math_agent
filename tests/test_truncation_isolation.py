@@ -58,7 +58,7 @@ class AllTruncatedClient:
 
 
 def test_truncated_residue_does_not_enter_aggregation():
-    from user_agent import AgentConfig, ReasoningAgent
+    from user_agent import AgentConfig, ReasoningAgent, legacy_deployment_policy
 
     client = TruncationClient()
     config = AgentConfig(
@@ -67,7 +67,7 @@ def test_truncated_residue_does_not_enter_aggregation():
         verifier_voting_times=1,
         enable_critic=False,
     )
-    result = ReasoningAgent(client, config).solve("计算 1+1。", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("计算 1+1。", {})
 
     assert result["final_response"].endswith("最终答案：2")
     assert "详细步骤" not in result["final_response"].split("最终答案：")[-1]
@@ -75,7 +75,7 @@ def test_truncated_residue_does_not_enter_aggregation():
 
 
 def test_all_truncated_candidates_trigger_fallback():
-    from user_agent import AgentConfig, ReasoningAgent
+    from user_agent import AgentConfig, ReasoningAgent, legacy_deployment_policy
 
     client = AllTruncatedClient()
     config = AgentConfig(
@@ -84,7 +84,7 @@ def test_all_truncated_candidates_trigger_fallback():
         verifier_voting_times=1,
         enable_critic=False,
     )
-    result = ReasoningAgent(client, config).solve("计算 1+1。", {})
+    result = ReasoningAgent(client, config, local_policy=legacy_deployment_policy()).solve("计算 1+1。", {})
 
     assert result["final_response"] != "未解出"
     assert result["final_response"].endswith("最终答案：2")

@@ -25,7 +25,7 @@ def test_generation_budget_preserves_completed_candidates(limit, tools, answer):
     client = SequenceClient(["最终答案：" + answer] * 3)
     config = AgentConfig(tool_candidates=3 if tools else 0,
                          plain_candidates=0 if tools else 3, max_model_requests=limit)
-    result = ReasoningAgent(client, config).solve("synthetic independent problem", {})
+    result = ReasoningAgent(client, config, local_policy=runtime.legacy_deployment_policy()).solve("synthetic independent problem", {})
     assert result["final_response"] != "未解出"
     assert ReasoningAgent._extract_answer(result["final_response"]) == answer
     assert len(client.calls) == limit
@@ -108,7 +108,8 @@ def test_direct_request_boundary_rejects_invalid_output_limit(limit):
 
 def test_complete_negative_verdict_still_allows_critic():
     client = SequenceClient(["最终答案：2", "VERDICT: B", "NO ERROR"])
-    result = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1)).solve("计算1+1", {})
+    result = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1),
+                            local_policy=runtime.legacy_deployment_policy()).solve("计算1+1", {})
     assert len(client.calls) == 3
     assert result["final_response"] == "最终答案：2"
 

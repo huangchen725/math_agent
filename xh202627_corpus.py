@@ -558,3 +558,423 @@ class AnswerBank:
 
 def load_answer_bank() -> AnswerBank:
     return AnswerBank(Path(__file__).parent / "resources" / "answer_bank", ANSWER_BANK_SHA256)
+
+
+# Solver-v2 reads the same immutable QA bank and a separate answer-free source
+# collection. Historical material()/context() behavior and digests stay frozen.
+METHODS_SHA256 = "1362e0f1dfdcb0ab6d75f70f7e7e5788da47c474810ef4caf2f0a9cd7d8dba16"
+METHODS_MAX_BYTES = 1_500_000
+METHODS_MAX_CARDS = 512
+_V2_TERM_GROUPS = (
+    ("integral", "integrate", "integration", "antiderivative", "primitive"),
+    ("derivative", "differentiate", "differentiation"),
+    ("eigenvalue", "eigenvalues", "characteristic"),
+    ("eigenvector", "eigenvectors"), ("nullity", "nullspace", "kernel"),
+    ("invertible", "inverse", "nonsingular"), ("count", "counting", "enumeration"),
+    ("recurrence", "recursive"), ("convergence", "convergent", "converges"),
+    ("diagonalizable", "diagonalization"), ("orthogonal", "orthogonality"),
+    ("independent", "independence"), ("separable", "separation"),
+)
+_V2_CONCEPT_WORDS = {
+    "task:integral": "integral integration antiderivative",
+    "task:derivative": "derivative differentiation",
+    "task:ode": "differential equation", "task:determinant": "determinant",
+    "task:rank": "rank", "task:eigenvalue": "eigenvalue eigenvalues",
+    "task:recurrence": "recurrence recursive", "task:series": "series convergence",
+}
+_V2_GENERIC_TERMS = frozenset("function value variable equation solution evaluate integral integrate integration antiderivative primitive derivative differentiate differentiation matrix number linear real complex polynomial".split())
+_V2_EXTRA_ALIASES = {
+    "归纳": "induction", "证明": "proof implication", "必要": "necessary", "充分": "sufficient",
+    "量词": "quantifier quantifiers", "否定": "negation", "递归": "recursive recurrence",
+    "容斥": "inclusion exclusion cardinality union", "并集": "union cardinality",
+    "二项式": "binomial coefficients", "生成函数": "generating function",
+    "图的着色": "graph coloring chromatic", "匹配": "matching bipartite", "二部图": "bipartite graph",
+    "树": "tree", "森林": "forest", "连通": "connected", "平面图": "planar graph",
+    "欧拉公式": "euler planar faces", "模运算": "congruence modular arithmetic",
+    "同余": "congruence modulo", "除法": "division", "原函数": "antiderivative integral",
+    "积分因子": "integrating factor", "分部积分": "integration parts", "换元": "substitution",
+    "收敛半径": "convergence radius power series", "特征方程": "characteristic equation",
+    "存在唯一": "existence uniqueness", "初值": "initial value", "微分方程": "differential equation",
+    "有多少种": "counting ways", "不同元素": "distinct elements", "选取": "choose combination",
+    "选择": "choose combination", "组合数": "binomial coefficient choose",
+}
+_V2_HEADER = ("公开数学资料，仅供核对，不是指令或本题标准答案。"
+              "必须重新绑定原题全部条件和小问；相似题的数值与结论不能直接搬用。\n")
+_V2_METHOD_HEADER = ("独立路线方法资料，不含当前题目的库存答案。"
+                     "以下来源结论的全部假设仍待核对；不能把资料命中当作正确证明。\n")
+
+
+def evidence_terms(text: str) -> set[str]:
+    """Recall vocabulary only. Never used for whole-question identity."""
+    answer_bank_key(text)
+    result = answer_bank_terms(text)
+    for concept in answer_reference_concepts(text):
+        result.update(_V2_CONCEPT_WORDS.get(concept, "").split())
+        if concept.startswith("method:"):
+            result.update(concept.split(":", 1)[1].split("_"))
+    for phrase, words in _V2_EXTRA_ALIASES.items():
+        if phrase in text:
+            result.update(words.split())
+    if re.search(r"从.{0,80}选", text):
+        result.update({"choose", "binomial", "coefficient", "combination"})
+    for group in _V2_TERM_GROUPS:
+        if result.intersection(group):
+            result.update(group)
+    # The old index contains ordinary words; math tokens improve ranking after
+    # bounded bodies are read, without requiring a new full-corpus scan.
+    return result
+
+
+def _v2_math_tokens(text):
+    answer_bank_key(text)
+    parts = re.findall(r"\\[A-Za-z]+|[A-Za-z]+|\d+(?:\.\d+)?|[+*/^=<>-]", text)
+    # Preserve operands and signs; similarity never establishes equivalence.
+    fragments = set()
+    for i in range(len(parts) - 2):
+        triple = parts[i:i + 3]
+        if any(part in {"+", "-", "*", "/", "^", "=", "<", ">"} for part in triple):
+            fragments.add(" ".join(triple))
+    return fragments
+
+
+_V2_INTENTS = {
+    "ode": r"\b(?:ode|differential equation|initial value|boundary value|sturm|fredholm)\b|微分方程|初值|边值|[A-Za-z](?:'|′){1,3}\s*(?:[+\-=]|\})|\\frac\s*\{\s*d(?:\\[A-Za-z]+|[A-Za-z])\s*\}\s*\{\s*d[A-Za-z]\s*\}\s*=",
+    "fourier": r"\bfourier\b|\bpde\b|partial differential|傅里叶|偏微分",
+    "laplace": r"\blaplace\b|拉普拉斯",
+    "matrix": r"\b(?:matrix|matrices|rank|nullity|nullspace|eigenvalues?|eigenvectors?|determinants?|vectors?|basis|subspace|orthogonal)\b|矩阵|行列式|特征值|零空间|子空间|正交|向量|维数|秩",
+    "number_theory": r"\b(?:integers?|diophantine|congruence|congruent|modulo|modular|divisibility|divides|gcd|prime)\b|\\(?:pmod|equiv)\b|整数|同余|整除|素数|公约数|模运算",
+    "graph": r"\b(?:graphs?|vertices|vertex|bipartite|chromatic|spanning tree)\b|图论|二部图|顶点|无向图|有向图|生成树|图的",
+    "counting": r"\b(?:count|counting|how many|ways|permutation|combination|binomial|cardinality)\b|多少种|计数|排列|组合|二项式|容斥",
+    "series": r"\b(?:series|convergence|convergent)\b|\\sum\b|级数|收敛半径",
+    "sequence": r"\b(?:sequence|recurrence|recursive|induction|generating function)\b|数列|递推|递归|归纳|生成函数",
+    "logic": r"\b(?:logic|logical|implication|quantifier|negation|prove|proof|induction)\b|逻辑|量词|否定|证明|归纳|充要|必要|充分",
+    "sets": r"\b(?:sets?|union|intersection|bijection|injective|surjective)\b|集合|并集|交集|单射|满射|双射",
+    "limit": r"\\lim\b|\blimit\b|极限",
+    "integral": r"\\int\b|\b(?:integral|integration|integrate|antiderivative)\b|积分|原函数",
+    "algebra": r"\bequation\b|方程|解方程",
+}
+_V2_INTENT_PATTERNS = tuple((key, re.compile(pattern, re.I)) for key, pattern in _V2_INTENTS.items())
+
+
+def _v2_intents(text):
+    answer_bank_key(text)
+    return {key for key, pattern in _V2_INTENT_PATTERNS if pattern.search(text)}
+
+
+def _v2_series_targets(text):
+    patterns = {"radius": r"radius|收敛半径", "center": r"center|centre|中心",
+                "interval": r"interval|收敛域|收敛区间", "sum": r"sum of (?:the |this )?series|series sum|级数的和|级数和|求和",
+                "remainder": r"accuracy|partial sum|remainder|error|截断|余项|误差|精度|部分和",
+                "expansion": r"(?:find|obtain|derive).*power series|power series (?:of|for)|幂级数展开|展开成|展开为|幂级数表达",
+                "parameter": r"for (?:which|what)|range of|values of.*converg|哪些.*收敛|何时收敛|取值.*收敛"}
+    return {key for key, pattern in patterns.items() if re.search(pattern, text, re.I)}
+
+
+def _v2_polar_target(text):
+    if re.search(r"\b(?:petal|rose)\b|玫瑰|花瓣", text, re.I):
+        return "petal"
+    if re.search(r"region common|intersection|common (?:area|region)|共同|公共|交集", text, re.I):
+        return "intersection"
+    if re.search(r"\b(?:polar|area|region)\b|极坐标|面积|区域", text, re.I):
+        return "single_region"
+    return ""
+
+
+def _v2_graph_targets(text):
+    result = set()
+    if re.search(r"chromatic index|edge[- ]colo[ru]|color (?:the )?edges|边着色|边染色", text, re.I):
+        result.add("edge_coloring")
+    elif re.search(r"chromatic number|colo[ru](?:r|rs|ring|uring)?|着色|染色", text, re.I):
+        result.add("vertex_coloring")
+    if re.search(r"\bmatch(?:ing)?\b|匹配", text, re.I):
+        result.add("matching")
+    if re.search(r"\bdegrees?\b|handshak|度数|握手|顶点的度", text, re.I):
+        result.add("degree")
+    if re.search(r"\b(?:tree|forest|spanning)\b|树|森林", text, re.I):
+        result.add("tree")
+    if re.search(r"\b(?:path|circuit|cycle|eulerian)\b|路径|回路|环路", text, re.I):
+        result.add("path")
+    return result
+
+
+def _v2_task_compatible(problem, other):
+    query, reference = _v2_intents(problem), _v2_intents(other)
+    for specialized in ("ode", "number_theory", "graph", "matrix", "fourier", "laplace"):
+        if (specialized in query) != (specialized in reference):
+            return False
+    if "graph" in query and _v2_graph_targets(problem) != _v2_graph_targets(other):
+        return False
+    if "series" in query or "series" in reference:
+        if "series" not in query & reference or _v2_series_targets(problem) != _v2_series_targets(other):
+            return False
+        # Distinguish an index-squared exponent from an ordinary power-series
+        # variable. Equal token vocabularies cannot establish equal convergence
+        # mechanisms or endpoint behavior.
+        nested_power = r"\^\s*\{\s*[A-Za-z]\s*\^\s*\{?[2-9]"
+        if bool(re.search(nested_power, problem)) != bool(re.search(nested_power, other)):
+            return False
+    if (re.search(r"\br\s*=|极坐标|polar", problem, re.I)
+            or re.search(r"\br\s*=|极坐标|polar", other, re.I)):
+        if _v2_polar_target(problem) != _v2_polar_target(other):
+            return False
+    return True
+
+
+def _v2_worked_reference(row):
+    # A bare answer to different coefficients offers no derivation to transfer
+    # and can anchor a route on the wrong number. Source explanations with
+    # actual connective reasoning may be useful after the task/domain gate.
+    body = row["solution"] or row["answer"]
+    return (len(body) >= 160 and not re.match(r"\s*(?:the )?final answer\s*:", body, re.I)
+            and bool(re.search(r"\b(?:because|therefore|hence|since|substitut\w*|differentiat\w*|integrat\w*|factor\w*|we (?:can|have|need|must))\b|因为|因此|所以|代入|积分|求导|分解", body, re.I)))
+
+
+def _v2_method_compatible(problem, row):
+    intent = _v2_intents(problem)
+    url, title = row.get("source_url", ""), row["title"]
+    if row["source"].startswith("Jim Hefferon") or "ap-linear-algebra.tex" in url:
+        return "matrix" in intent
+    if "ch-fourier-and-pde.tex" in url:
+        return bool(intent & {"fourier", "ode"})
+    if "ch-laplace.tex" in url:
+        return bool(intent & {"laplace", "ode"})
+    if "ch-power-ser.tex" in url:
+        return "ode" in intent if "Frobenius" in title else "series" in intent
+    if any(name in url for name in ("ch-first-order", "ch-higher-order", "ch-systems", "ch-nonlin", "ch-eigenvalue", "ch-intro")):
+        return bool(intent & {"ode", "matrix"})
+    if "sec_addtops-numbth" in url:
+        return "number_theory" in intent
+    if "sec_gt-" in url:
+        if "graph" not in intent:
+            return False
+        graph_targets = _v2_graph_targets(problem)
+        if graph_targets and not graph_targets.intersection(_v2_graph_targets(title + " " + row["text"])):
+            return False
+        if "Four Color" in title and not re.search(r"\bplanar\b|平面图", problem, re.I):
+            return False
+        if ("Marriage" in title or "Matching" in title) and not re.search(r"\b(?:matching|bipartite)\b|匹配|二部", problem, re.I):
+            return False
+        return True
+    if "sec_counting-" in url:
+        return bool(intent & {"counting", "sets"})
+    if "sec_seq-" in url or "sec_addtops-genfun" in url:
+        return bool(intent & {"sequence", "series"})
+    if "sec_logic-" in url or "sec_intro-statements" in url:
+        return "logic" in intent
+    if "sec_intro-sets" in url or "sec_intro-functions" in url:
+        return bool(intent & {"sets", "counting", "matrix"})
+    return False
+
+
+def _v2_reference_score(problem, row, query_terms):
+    other = row["problem"]
+    if not _v2_task_compatible(problem, other) or not _v2_worked_reference(row):
+        return 0.0
+    concepts = answer_reference_concepts(problem)
+    shared = concepts & answer_reference_concepts(other)
+    if not any(c.startswith("task:") for c in shared):
+        return 0.0
+    if _reference_math_profile(problem) != _reference_math_profile(other):
+        return 0.0
+    other_terms = evidence_terms(other)
+    common = query_terms & other_terms
+    specific = common - _V2_GENERIC_TERMS
+    fragments = _v2_math_tokens(problem) & _v2_math_tokens(other)
+    explicit_method = any(c.startswith("method:") for c in shared)
+    # Broad topic aliases alone do not justify introducing a source answer.
+    if not (explicit_method or len(specific) >= 2 or len(fragments) >= 2):
+        return 0.0
+    coverage = len(common) / max(1, len(query_terms))
+    if coverage < .35:
+        return 0.0
+    return coverage + .25 * len(specific) + .5 * len(shared) + .2 * min(6, len(fragments))
+
+
+def _v2_qa_reference(row, *, same_question):
+    block = {"source": row["source"], "source_url": row["source_url"],
+             "license": row["license"], "identity": "same_full_question" if same_question else "different_question_reference_only",
+             "source_question_with_conditions": row["problem"],
+             "source_solution": row["solution"] or row["answer"],
+             "source_answer": row["answer"],
+             "applicability": "unproved: independently compare domains, signs, parameters, bounds, dimensions, quantifiers and every subquestion"}
+    text = _V2_HEADER + json.dumps(block, ensure_ascii=False, sort_keys=True)
+    # Never truncate a source question's conditions or a mathematical statement.
+    return text + "\n" if len(text) + 1 <= MAX_REFERENCE_CHARS else ""
+
+
+def _v2_bank_plan(bank, problem, counters):
+    """One byte/time/body budget shared by exact and related QA retrieval."""
+    budget = _AnswerReadBudget()
+    match, reference = None, ""
+    try:
+        manifest = bank._manifest(budget)
+        counters["bank_records"] = manifest["record_count"]
+        counters["bank_available"] = 1
+        match = bank._lookup(answer_bank_key(problem), manifest, budget)
+        if match is not None:
+            counters["exact_matches"] = 1
+            reference = _v2_qa_reference(match, same_question=True)
+            return match, reference
+        query_terms = evidence_terms(problem)
+        pages, candidates = {}, {}
+        # Query at most 12 prebuilt topic pages; processing is independent of
+        # full bank size and does not enumerate record shard files.
+        selected = sorted(query_terms, key=lambda term: (term in _V2_GENERIC_TERMS, -len(term), term))[:12]
+        for term in selected:
+            bucket = sha256(term.encode()).hexdigest()[:2]
+            if bucket not in pages:
+                pages[bucket] = bank._page("topics", bucket, manifest, budget)
+            refs = pages[bucket].get(term, [])
+            if type(refs) is not list or len(refs) > ANSWER_BANK_MAX_POSTINGS - budget.postings:
+                raise ValueError("answer posting budget")
+            budget.postings += len(refs)
+            weight = 1 / math.sqrt(max(1, len(refs)))
+            for ref in refs:
+                if type(ref) is not list or len(ref) != 5 or type(ref[4]) is not str or not _BANK_HASH.fullmatch(ref[4]):
+                    raise ValueError("answer posting reference")
+                if ref[4] in candidates:
+                    candidates[ref[4]][0] += weight
+                elif len(candidates) < ANSWER_BANK_MAX_CANDIDATES:
+                    candidates[ref[4]] = [weight, ref]
+            budget.check()
+        counters["qa_candidates"] = len(candidates)
+        ranked = sorted(candidates.items(), key=lambda pair: (-pair[1][0], pair[0]))
+        accepted = []
+        for _, (_, ref) in ranked[:ANSWER_BANK_MAX_BODIES - budget.bodies]:
+            row = bank._record(ref, budget)
+            score = _v2_reference_score(problem, row, query_terms)
+            if score > 0:
+                accepted.append((score, row["id"], row))
+            else:
+                counters["qa_rejected"] += 1
+        for _, _, row in sorted(accepted, key=lambda item: (-item[0], item[1])):
+            reference = _v2_qa_reference(row, same_question=False)
+            if reference:
+                counters["qa_references"] = 1
+                break
+        budget.check()
+        return None, reference
+    except Exception:
+        # Failure counts are intentionally numeric. Exception messages may
+        # expose local paths or input, and must not become runtime trace data.
+        counters["resource_errors"] += 1
+        return None, ""
+    finally:
+        counters["bank_bytes"] = budget.bytes
+        counters["bank_postings"] = budget.postings
+        counters["bank_bodies"] = budget.bodies
+
+
+def load_method_cards():
+    path = Path(__file__).resolve().parent / "resources" / "solver_v2_methods" / "cards.json"
+    with path.open("rb") as stream:
+        raw = stream.read(METHODS_MAX_BYTES + 1)
+    if len(raw) > METHODS_MAX_BYTES or sha256(raw).hexdigest() != METHODS_SHA256:
+        raise ValueError("method corpus integrity mismatch")
+    rows = _bank_decode(raw)
+    if type(rows) is not list or not 1 <= len(rows) <= METHODS_MAX_CARDS:
+        raise ValueError("method corpus bounds")
+    required = {"id", "kind", "title", "text", "source", "source_url", "source_revision",
+                "source_sha256", "license", "locator", "conditions", "caveat"}
+    seen = set()
+    for row in rows:
+        if type(row) is not dict or set(row) != required or any(type(value) is not str for value in row.values()):
+            raise ValueError("method card schema")
+        if (not _BANK_ID.fullmatch(row["id"]) or row["id"] in seen
+                or not 80 <= len(row["text"]) <= 2600 or not 1 <= len(row["title"]) <= 160
+                or row["kind"] not in {"theorem", "definition", "lemma", "corollary", "proposition", "algorithm", "assemblage"}
+                or row["license"] != "CC-BY-SA-4.0" or not _BANK_HASH.fullmatch(row["source_sha256"])
+                or not re.fullmatch(r"[0-9a-f]{40}", row["source_revision"])
+                or not row["source_url"].startswith("https://") or len(row["source_url"]) > 1600
+                or any(len(row[key]) > 1000 for key in ("conditions", "caveat", "source", "locator"))):
+            raise ValueError("method card provenance or bounds")
+        seen.add(row["id"])
+    return rows
+
+
+def _v2_methods(problem, counters):
+    rows = []
+    try:
+        rows.extend(load_method_cards())
+        counters["method_resource_available"] = 1
+    except Exception:
+        counters["resource_errors"] += 1
+    try:
+        corpus = load_corpus()
+        # The historical resource includes examples, whose answers must not leak
+        # into the independent route. Restrict it to theorem-like statements.
+        for row in corpus.cards:
+            if re.search(r"(?:\bexample\b|\bex:)", row["title"], re.I):
+                continue
+            rows.append({"id": row["id"], "title": row["title"], "text": row["text"],
+                         "source": row["source"], "license": row["license"],
+                         "conditions": "Check all hypotheses of this full source statement; applicability is unproved.",
+                         "caveat": "Do not substitute a source example's answer for the original problem."})
+        counters["legacy_method_resource_available"] = 1
+    except Exception:
+        counters["resource_errors"] += 1
+    counters["method_cards"] = len(rows)
+    if not rows:
+        return ""
+    query = evidence_terms(problem)
+    tokens = [evidence_terms(row["title"] + " " + row["text"]) for row in rows]
+    frequencies = Counter(term for group in tokens for term in group)
+    ranked = []
+    for row, group in zip(rows, tokens):
+        if not _v2_method_compatible(problem, row):
+            continue
+        common = query & group
+        specific = common - _V2_GENERIC_TERMS
+        if not specific:
+            continue
+        if len(common) / max(1, len(query)) < .15:
+            continue
+        score = sum(math.log(1 + len(rows) / frequencies[term]) for term in common)
+        score *= len(common) / max(1, len(query)) / (1 + len(group) / 180)
+        ranked.append((score, row["id"], row))
+    output = _V2_METHOD_HEADER
+    minimum_score = max((item[0] for item in ranked), default=0) * .40
+    for score, _, row in sorted(ranked, key=lambda item: (-item[0], item[1])):
+        if score < minimum_score:
+            break
+        block = json.dumps({key: row[key] for key in ("title", "source", "source_url", "license", "text", "conditions", "caveat") if key in row},
+                           ensure_ascii=False, sort_keys=True)
+        if len(output) + len(block) + 1 > MAX_REFERENCE_CHARS:
+            continue
+        output += block + "\n"
+        counters["method_references"] += 1
+        if counters["method_references"] >= 3:
+            break
+    return output if counters["method_references"] else ""
+
+
+def build_evidence_plan(problem: str) -> dict:
+    """Shared per-question retrieval, without an API call or retained query state.
+
+    QA reference is for the informed route only. The independent route receives
+    only methods. A numeric error counter distinguishes unavailable resources
+    from a healthy miss; valid partial resources can still produce ready data.
+    """
+    counters = dict.fromkeys(("bank_records", "bank_available", "exact_matches", "qa_candidates",
+                             "qa_references", "qa_rejected", "bank_bytes", "bank_postings", "bank_bodies",
+                             "method_cards", "method_references", "method_resource_available",
+                             "legacy_method_resource_available", "resource_errors", "invalid_input"), 0)
+    result = {"status": "miss", "exact_record": None, "reference": "", "methods": "", "counters": counters}
+    try:
+        answer_bank_key(problem)
+    except Exception:
+        counters["invalid_input"] = 1
+        return result
+    try:
+        result["exact_record"], result["reference"] = _v2_bank_plan(load_answer_bank(), problem, counters)
+    except Exception:
+        counters["resource_errors"] += 1
+    try:
+        result["methods"] = _v2_methods(problem, counters)
+    except Exception:
+        counters["resource_errors"] += 1
+    if result["exact_record"] is not None or result["reference"] or result["methods"]:
+        result["status"] = "ready"
+    elif counters["resource_errors"]:
+        result["status"] = "unavailable"
+    return result

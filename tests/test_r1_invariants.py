@@ -33,9 +33,11 @@ class SequenceClient:
 def solve_sequence(responses, **options):
     client = SequenceClient(responses)
     config = AgentConfig(tool_candidates=0, plain_candidates=1, enable_critic=False)
+    legacy = options.pop("legacy", False)
     for key, value in options.items():
         setattr(config, key, value)
-    result = ReasoningAgent(client, config).solve("计算1+1", {})
+    kwargs = {"local_policy": runtime.legacy_deployment_policy()} if legacy else {}
+    result = ReasoningAgent(client, config, **kwargs).solve("计算1+1", {})
     assert client.calls <= config.max_model_requests
     assert type(result["trace"]) is list
     return result, client.calls
@@ -57,7 +59,7 @@ def test_stage_length_never_becomes_answer_or_positive_vote(stage):
         "critic": ["最终答案：2", "VERDICT: B", cut],
         "reflection": ["最终答案：2", "VERDICT: B", "请修正计算", cut],
     }[stage]
-    result, calls = solve_sequence(responses, enable_critic=stage in ("critic", "reflection"))
+    result, calls = solve_sequence(responses, enable_critic=stage in ("critic", "reflection"), legacy=True)
     assert result["final_response"].endswith("最终答案：2")
     assert "999" not in result["final_response"]
     assert calls == len(responses)
@@ -68,14 +70,14 @@ def test_stage_length_never_becomes_answer_or_positive_vote(stage):
 @pytest.mark.parametrize("recovery", ["", "因此我们还需要计算", "最终答案：", r"\boxed{2",
     {"content": "最终答案：999", "finish_reason": "length"}, RuntimeError("fake failure")])
 def test_recovery_failure_cannot_revive_isolated_content(recovery):
-    result, calls = solve_sequence(["残文" * 2000, recovery])
+    result, calls = solve_sequence(["残文" * 2000, recovery], legacy=True)
     assert result["final_response"] == "未解出"
     assert calls == 2
 
 
 @pytest.mark.parametrize("budget", [1, 2, 3, 4])
 def test_recovery_and_verification_share_request_budget(budget):
-    result, calls = solve_sequence(["残文" * 2000, "最终答案：2"], max_model_requests=budget)
+    result, calls = solve_sequence(["残文" * 2000, "最终答案：2"], max_model_requests=budget, legacy=True)
     assert calls == min(budget, 2)
     assert result["final_response"] == ("未解出" if budget == 1 else "最终答案：2")
 
@@ -89,7 +91,7 @@ def test_transport_failure_does_not_trigger_plain_retry(tools):
 
 
 def test_verification_transport_failure_does_not_trigger_critic_retry():
-    result, calls = solve_sequence(["最终答案：2", PermissionError("fake")], enable_critic=True)
+    result, calls = solve_sequence(["最终答案：2", PermissionError("fake")], enable_critic=True, legacy=True)
     assert result["final_response"] == "未解出"
     assert calls == 2
 
@@ -97,7 +99,8 @@ def test_verification_transport_failure_does_not_trigger_critic_retry():
 @pytest.mark.parametrize("method", ["_detect_domain", "_generate_candidates", "_aggregate", "_build_response"])
 def test_faults_at_every_lifecycle_boundary_return_stable_result(method, monkeypatch):
     client = SequenceClient(["最终答案：2", "VERDICT: A"])
-    agent = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1, enable_critic=False))
+    agent = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1, enable_critic=False),
+                           local_policy=runtime.legacy_deployment_policy())
     def fail(*args, **kwargs):
         raise RuntimeError("synthetic private diagnostic")
     monkeypatch.setattr(agent, method, fail)
@@ -156,7 +159,8 @@ def test_local_finish_reason_reaches_generation_and_recovery():
             return "最终答案：999"
     client = Client()
     result = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1),
-                            local_adapter=LocalToolAdapter(client)).solve("计算1+1", {})
+                            local_adapter=LocalToolAdapter(client),
+                            local_policy=runtime.legacy_deployment_policy()).solve("计算1+1", {})
     assert result["final_response"] == "未解出"
     assert client.calls == 2
     assert result["trace"][-1]["content"]["total_tokens"] == 14
@@ -185,7 +189,8 @@ def test_same_agent_concurrent_solve_has_separate_usage_and_budget():
             return "最终答案：2"
     client = Client()
     agent = ReasoningAgent(client, AgentConfig(tool_candidates=0, plain_candidates=1, enable_critic=False),
-                           local_adapter=LocalToolAdapter(client))
+                           local_adapter=LocalToolAdapter(client),
+                           local_policy=runtime.legacy_deployment_policy())
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda p: agent.solve(p, {}), ["ONE", "TWO"]))
     assert [r["trace"][-1]["content"]["total_tokens"] for r in results] == [22, 58]
@@ -216,7 +221,8 @@ def test_local_tool_execution_through_formal_entry_preserves_request_accounting(
 
     client = Client()
     config = AgentConfig(tool_candidates=1, plain_candidates=0, enable_critic=False)
-    result = ReasoningAgent(client, config, local_adapter=LocalToolAdapter(client)).solve("计算1+1", {})
+    result = ReasoningAgent(client, config, local_adapter=LocalToolAdapter(client),
+                            local_policy=runtime.legacy_deployment_policy()).solve("计算1+1", {})
     assert result["final_response"].endswith("最终答案：2")
     assert client.calls == 3
     summary = result["trace"][-1]["content"]
@@ -264,7 +270,8 @@ def test_prompts_and_default_config_are_unchanged_from_reviewed_baseline():
     # original prompt and the entire AgentConfig AST remain frozen; an additional
     # unreviewed prompt still fails this exact allowlist.
     assert set(current) == set(baseline) | {
-        "CONCISE_RECOVERY_PROMPT", "REASONED_VERIFIER_PROMPT", "ANSWER_BANK_CHECK_PROMPT"}
+        "CONCISE_RECOVERY_PROMPT", "REASONED_VERIFIER_PROMPT", "ANSWER_BANK_CHECK_PROMPT",
+        "V2_ROUTE_PROMPT", "V2_REVIEW_PROMPT", "V2_REPAIR_PROMPT"}
     assert {name: current[name] for name in baseline} == baseline
     assert runtime.Q1Policy().concise_recovery is False
 

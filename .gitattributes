@@ -14,3 +14,4 @@
 # hard-break spaces in third-party notices. Authored code keeps normal checks.
 resources/answer_bank/SOURCE_PROVENANCE.json -text whitespace=cr-at-eol
 resources/answer_bank/licenses/* -text whitespace=-blank-at-eol,cr-at-eol
+resources/solver_v2_methods/*-LICENSE.txt -text whitespace=-blank-at-eol,cr-at-eol

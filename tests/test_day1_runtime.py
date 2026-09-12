@@ -10,7 +10,8 @@ import user_agent as runtime
 
 
 def policy(**changes):
-    return replace(runtime.deployment_policy(), answer_bank_fastpath=True,
+    # This suite preserves the 1841685 day-one flow; solver-v2 has separate gates.
+    return replace(runtime.legacy_deployment_policy(), answer_bank_fastpath=True,
                    answer_bank_reference=True, completed_answer_repair=True, **changes)
 
 
